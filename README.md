@@ -29,12 +29,57 @@ Trigger: INTENT → 1 PLAN → 2 DESIGN → 3 BUILD → 4 TEST → 5 DEPLOY → 
 | Build contract | `Makefile` | `format lint typecheck test build check deploy rollback evals` |
 
 ## Quickstart
+
+### 1. Install prerequisites
+| Tool | Needed? | Used for |
+|---|---|---|
+| `git`, `make`, `python3` + `pyyaml` | **Required** | Repo, contract commands, hooks, evals and control bands |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) | **Required** | The AI collaborator in every stage |
+| `gh` (GitHub CLI) | Optional | Opening PRs and reading issues from the terminal (`/pr`, `/intent #12`) |
+| `jq` | Optional | Faster hook JSON parsing (hooks fall back to python3) |
+
+**Ubuntu / Debian / WSL**
 ```bash
-scripts/bootstrap.sh my-project my-github-org   # personalise, git init
+sudo apt-get update && sudo apt-get install -y git make python3 python3-yaml jq
+sudo apt-get install -y gh            # optional
+```
+
+**macOS** (with [Homebrew](https://brew.sh))
+```bash
+brew install git make python pyyaml jq
+brew install gh                       # optional
+```
+
+**Windows**: use WSL. In an **admin PowerShell**, run `wsl --install`, reboot, open *Ubuntu*, and follow the Ubuntu steps above.
+
+**Claude Code** (any OS)
+```bash
+curl -fsSL https://claude.ai/install.sh | bash     # native installer, no Node.js needed
+# or: npm install -g @anthropic-ai/claude-code
+claude                                             # first run: log in
+```
+
+**GitHub CLI login** (optional): `gh auth login`
+
+**Check everything is ready:**
+```bash
+git --version && make --version | head -1 && python3 -c "import yaml; print('pyyaml ok')" && claude --version
+```
+
+### 2. Set up the project
+Create your repo with **"Use this template"** on GitHub (no `gh` needed), then clone it. Or use the CLI: `gh repo create my-project --private --template <owner>/ai-native-sdlc-template --clone`.
+```bash
+cd my-project
+scripts/bootstrap.sh my-project my-github-org   # check tools, personalise, git init if needed
 $EDITOR Makefile                                # wire your stack into the contract targets
-gh secret set ANTHROPIC_API_KEY                 # or /install-github-app in Claude Code
 make validate-template && make check
+```
+Repo admins (once): add the `ANTHROPIC_API_KEY` secret (Settings → Secrets and variables → Actions, or `gh secret set ANTHROPIC_API_KEY`, or `/install-github-app` in Claude Code), then apply [branch protection and environments](docs/branch-protection.md).
+
+### 3. Start working
+```bash
 claude
+> /onboard
 > /intent "Users can export their account data as CSV"
 ```
 
@@ -61,5 +106,4 @@ Repeated mistake? `/learn`: a lesson in CLAUDE.md plus a regression eval.
 - **Org level:** `governance/managed-settings.example.json`.
 
 ## Requirements
-`git`, `make`, `bash`, `python3` (+ `pyyaml` for evals and bands), `jq` recommended · Claude Code · `gh` ·
-optional: `shellcheck`, `actionlint`.
+See [Quickstart → Install prerequisites](#1-install-prerequisites). Maintainers who also want full template validation locally can install `shellcheck` and `actionlint` (CI installs them automatically).
