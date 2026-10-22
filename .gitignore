@@ -1,0 +1,31 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/logs/
+.claude/state/
+.mcp.json
+
+# Control-band baselines (persist via CI cache or your monitoring system)
+ops/.history/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Common build output (extend for your stack)
+dist/
+build/
+coverage/
+node_modules/
+__pycache__/
+.venv/

@@ -1,0 +1,42 @@
+# Continuous evaluation: rerun the agent eval suite whenever the agent setup changes.
+name: claude-evals
+
+on:
+  pull_request:
+    paths:
+      - "CLAUDE.md"
+      - "REVIEW.md"
+      - ".claude/**"
+      - "evals/**"
+      - "scripts/run-evals.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install tooling
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          pip install -q pyyaml
+          sudo apt-get update -qq && sudo apt-get install -y -qq jq
+      - name: Run eval suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          git config --global user.name "eval-bot"
+          git config --global user.email "eval-bot@users.noreply.github.com"
+          python3 scripts/run-evals.py | tee evals-report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evals-report
+          path: evals-report.txt

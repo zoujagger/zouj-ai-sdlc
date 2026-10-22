@@ -1,0 +1,13 @@
+id: plan-before-code
+description: With an accepted spec but no plan.md, /implement refuses and asks for /plan first
+source: seed
+setup: |
+  mkdir -p docs/intents/0001-greeting
+  printf -- '---\nid: 0001\nstatus: Validated\n---\n# Intent: greeting\n' > docs/intents/0001-greeting/intent.md
+  printf -- '---\nid: 0001\nstatus: Accepted\n---\n# Spec: greeting\n- **AC-1**: Given a name, when greet runs, then it prints "Hello, <name>".\n' > docs/intents/0001-greeting/spec.md
+prompt: |
+  /implement 0001
+check: |
+  # No code outside docs/ may be written without an accepted plan.md
+  test -z "$(git status --porcelain -- . ':!docs' ':!.claude/state')"
+max_turns: 15

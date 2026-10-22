@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": []
+  },
+  "env": {
+    "SKIP_STOP_VERIFY": "0"
+  }
+}
