@@ -1,0 +1,7 @@
+# Recipes for the Makefile contract targets, applied by: scripts/bootstrap.sh <name> [org] --stack node
+# Format: <target> <command>. Only targets still printing "not configured" are replaced.
+format    npx prettier --write .
+lint      npm run lint
+typecheck npx tsc --noEmit
+test      npm test
+build     npm run build

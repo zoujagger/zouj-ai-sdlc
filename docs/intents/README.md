@@ -10,6 +10,7 @@ docs/intents/
     plan.md     # Plan-mode plan, tasks, deviation log                      (/plan)    ✋ engineer accepts
 ```
 
+See a finished example in [`docs/examples/0001-csv-export/`](../examples/0001-csv-export/).
 Create one with `/intent "<need>"` or `scripts/new-intent.sh <slug>`. Check status with `/sdlc <id>`.
 Intents also come from the GitHub **Intent** issue form, from alerts (`claude-maintain.yml`), scans, and postmortem action items.
 

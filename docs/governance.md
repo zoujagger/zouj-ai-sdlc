@@ -31,6 +31,18 @@ The PR template links all three documents, and branch protection records who app
 A skill is **advisory**: it makes violations rare. A hook is **deterministic**: it makes them close to impossible.
 Put absolute rules (secrets, protected paths, test lock, prod deploy) in hooks. Put judgement (security policy, UX, brand) in skills.
 
+### Hook profiles (`SDLC_HOOK_PROFILE`)
+The inner-loop hooks have three strictness levels. The safety guards (`guard-bash`, `guard-files`, `guard-tests`, `guard-deploy`)
+ignore the profile. Production, test-lock, secrets and force-push rules hold in every profile, and `validate-template` checks this.
+| Profile | `post-edit-format` | `stop-verify` (definition of done) | Use for |
+|---|---|---|---|
+| `standard` (default) | lint failures block, format failures warn | `make check` must pass | Normal work |
+| `strict` | lint and format failures block | `make check` must pass | Mature codebases, release branches |
+| `spike` | lint failures warn | not enforced, unless a `/fix` test lock is active | Throwaway exploration that won't become a PR |
+
+Set it per session (`SDLC_HOOK_PROFILE=spike claude`) or per checkout in `.claude/settings.local.json` (git-ignored) (`"env": {"SDLC_HOOK_PROFILE": "spike"}`).
+The session-start hook announces a non-default profile. Leave spike mode before `/verify` or `/pr`. Org admins can pin it in managed settings.
+
 ## Managed settings (org-level enforcement)
 Copy `governance/managed-settings.example.json` to the OS managed-settings location
 (Linux/WSL: `/etc/claude-code/managed-settings.json`; macOS: `/Library/Application Support/ClaudeCode/managed-settings.json`).

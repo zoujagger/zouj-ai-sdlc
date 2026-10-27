@@ -79,6 +79,10 @@ expect 2 .claude/hooks/guard-deploy.sh '{"tool_name":"mcp__deploy__run","tool_in
 expect 0 .claude/hooks/guard-deploy.sh '{"tool_name":"Bash","tool_input":{"command":"make deploy ENV=staging"}}' "allows staging deploy"
 expect 0 .claude/hooks/guard-deploy.sh '{"tool_name":"Bash","tool_input":{"command":"grep -r product src/"}}' "allows non-deploy commands"
 expect 0 .claude/hooks/guard-tests.sh '{"tool_input":{"file_path":"tests/a_test.sh","content":"x"}}' "no lock: test edits allowed"
+# The spike profile relaxes only the inner-loop hooks; the safety guards must not move.
+SDLC_HOOK_PROFILE=spike expect 2 .claude/hooks/guard-deploy.sh '{"tool_name":"Bash","tool_input":{"command":"make deploy ENV=prod"}}' "spike profile: still blocks prod deploy"
+SDLC_HOOK_PROFILE=spike expect 2 .claude/hooks/guard-bash.sh '{"tool_input":{"command":"git push --force origin feat/x"}}' "spike profile: still blocks force push"
+SDLC_HOOK_PROFILE=spike expect 2 .claude/hooks/guard-files.sh '{"tool_input":{"file_path":".env","content":"X=1"}}' "spike profile: still blocks .env write"
 
 # Test lock scenarios run in a sandbox project root
 hook_root=$(mktemp -d)
@@ -92,6 +96,11 @@ expect 0 .claude/hooks/guard-tests.sh '{"tool_input":{"file_path":"src/add.sh","
 expect 2 .claude/hooks/guard-bash.sh '{"tool_input":{"command":"echo x > tests/a.test"}}' "lock: blocks shell write to tests"
 expect 2 .claude/hooks/guard-bash.sh '{"tool_input":{"command":"rm .claude/state/test-lock"}}' "lock: blocks removing lock"
 expect 0 .claude/hooks/guard-bash.sh '{"tool_input":{"command":"bash tests/add_test.sh"}}' "lock: allows running tests"
+# The sandbox has no Makefile, so `make check` fails there: stop-verify must block.
+SDLC_HOOK_PROFILE=spike expect 2 .claude/hooks/guard-tests.sh '{"tool_input":{"file_path":"src/app.test.ts","content":"x"}}' "spike + lock: still blocks test edit"
+SDLC_HOOK_PROFILE=spike expect 2 .claude/hooks/stop-verify.sh '{}' "spike + lock: definition of done still enforced"
+rm -f "$hook_root/.claude/state/test-lock"
+SDLC_HOOK_PROFILE=bogus expect 2 .claude/hooks/stop-verify.sh '{}' "unknown profile behaves as standard"
 rm -rf "$hook_root"; hook_root=$PWD
 
 echo "Evals & control bands"

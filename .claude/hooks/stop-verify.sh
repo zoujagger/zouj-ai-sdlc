@@ -2,6 +2,7 @@
 # Stop: enforce the definition of done (CLAUDE.md). If the working tree changed, `make check` must pass.
 # Exit 2 sends the failure back to Claude so it keeps working. A second consecutive stop is allowed through.
 # When make check is green, the /fix test lock is released.
+# SDLC_HOOK_PROFILE=spike skips the check (exploration only) unless a /fix test lock is active.
 set -uo pipefail
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 # shellcheck source=lib.sh
@@ -13,6 +14,10 @@ input=$(cat)
 command -v make >/dev/null 2>&1 || { echo "stop-verify: make not installed, skipping definition-of-done check" >&2; exit 0; }
 
 lock=.claude/state/test-lock
+if [[ "$(hook_profile)" == spike && ! -f "$lock" ]]; then
+  echo "stop-verify: spike profile, definition of done not enforced. Unset SDLC_HOOK_PROFILE before /verify or /pr." >&2
+  exit 0
+fi
 
 # Nothing changed → nothing to verify.
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then

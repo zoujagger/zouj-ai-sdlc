@@ -1,0 +1,7 @@
+# Recipes for the Makefile contract targets, applied by: scripts/bootstrap.sh <name> [org] --stack python
+# Format: <target> <command>. Only targets still printing "not configured" are replaced.
+format    ruff format .
+lint      ruff check .
+typecheck mypy .
+test      pytest -q
+build     python3 -m build   # needs: pip install build

@@ -18,6 +18,16 @@ print("" if v is None else v if isinstance(v, str) else json.dumps(v))' "$1"
   fi
 }
 
+# hook_profile: strict | standard (default) | spike, from SDLC_HOOK_PROFILE.
+# Only the inner-loop hooks (post-edit-format, stop-verify) read it. The safety guards (guard-bash, guard-files,
+# guard-tests, guard-deploy) never do: production, test-lock, secrets and force-push rules hold in every profile.
+hook_profile() {
+  case "${SDLC_HOOK_PROFILE:-standard}" in
+    strict|spike) printf '%s' "$SDLC_HOOK_PROFILE" ;;
+    *) printf 'standard' ;;
+  esac
+}
+
 # fail_closed <hook-name>: block when no JSON parser is available rather than silently allowing.
 fail_closed() {
   echo "BLOCKED by $1: neither jq nor python3 is installed, so the guardrail cannot inspect this call. Install jq." >&2

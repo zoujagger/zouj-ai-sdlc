@@ -26,7 +26,7 @@ Lost? `/sdlc <id>`. Artifacts live in `docs/intents/NNNN-slug/`: `intent.md` →
 
 ## Commands (configure in `Makefile`)
 `make format` · `make lint` · `make typecheck` · `make test` · `make build` · `make check` (= lint+typecheck+test)
-`make deploy ENV=staging` · `make rollback ENV=staging` · `make evals` · `make validate-template`
+`make deploy ENV=staging` · `make rollback ENV=staging` · `make evals` · `make validate-template` · `make doctor`
 
 ## Working style
 - **Auto mode** is fine for routine, well-tested tasks. Review the artifacts at the end of the session.

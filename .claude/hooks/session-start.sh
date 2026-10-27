@@ -25,6 +25,13 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     fi
   fi
 fi
+if command -v make >/dev/null 2>&1 && make -n check 2>/dev/null | grep -q "not configured"; then
+  echo "- ⚠️ Makefile contract not wired: make check verifies nothing yet. Tell the user to run make doctor (or bootstrap --stack)."
+fi
+case "${SDLC_HOOK_PROFILE:-standard}" in
+  spike) echo "- ⚠️ Hook profile: spike. make check is not enforced and lint does not block. Not for work headed to a PR." ;;
+  strict) echo "- Hook profile: strict (format failures block too)." ;;
+esac
 [[ -f .claude/state/test-lock ]] && echo "- ⚠️ Test lock active (/fix): test files are read-only until make check is green."
 echo "- Intents in repo: $(find docs/intents -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ') (/sdlc for status, /intent to start)"
 echo "- Done = make check green + plan.md synced + /verify VERIFIED. The agent stops at the production gate."

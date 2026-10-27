@@ -4,11 +4,12 @@
 #   typecheck: npx tsc --noEmit  | mypy .              | go vet ./...
 #   test:      npm test          | pytest -q          | go test ./...
 # A target still printing "not configured" counts as a pass, so the fresh template stays green.
+# Presets: scripts/bootstrap.sh <name> [org] --stack python|node|go (templates/stacks/). `make doctor` flags unwired targets.
 
 ENV ?= staging
 
 .DEFAULT_GOAL := help
-.PHONY: help format lint typecheck test build check deploy rollback evals validate-template
+.PHONY: help format lint typecheck test build check deploy rollback evals validate-template doctor
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -38,6 +39,9 @@ rollback: ## Roll back ENV=staging|prod in ONE command (pre-approved runbook; te
 
 evals: ## Run the agent eval suite (needs claude CLI + ANTHROPIC_API_KEY + pyyaml)
 	@python3 scripts/run-evals.py
+
+doctor: ## Check your setup (tools, Makefile wiring, placeholders, GitHub) and print fixes
+	@bash scripts/doctor.sh
 
 validate-template: ## Validate Claude config, hooks, evals, bands, and workflows
 	@bash scripts/validate-template.sh

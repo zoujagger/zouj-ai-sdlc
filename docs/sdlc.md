@@ -84,12 +84,29 @@ Prerequisites: the accepted `intent.md` template and a shared repo the product o
 ## Component map
 | Stage | Skills | Agents | Hooks / automation |
 |---|---|---|---|
-| Intent / Plan | `/intent`, `/sdlc` | product-analyst | `claude-issue-triage.yml` |
+| Intent / Plan | `/intent`, `/sdlc`, `/onboard`, `/help-me` | product-analyst | `claude-issue-triage.yml` |
 | Design | `/spec`, `/adr`, policy-* | product-analyst, architect | — |
 | Build | `/plan`, `/implement`, `/parallel` | planner, implementer, test-engineer | guard-files, post-edit-format, session-start |
 | Test | `/verify`, `/fix`, `/learn` | verifier | guard-tests, stop-verify, `claude-evals.yml` |
 | Deploy | `/review`, `/security-check`, `/pr`, `/release`, `/deploy` | code-reviewer, security-reviewer, release-manager, docs-writer | guard-bash, guard-deploy, `ci.yml`, `claude-pr-review.yml`, `claude.yml`, `deploy.yml` |
 | Maintain | `/triage`, `/incident`, `/postmortem`, `/retro` | diagnostician, incident-responder | `claude-maintain.yml`, `claude-scheduled-scan.yml` |
+
+## Which agent does what
+Skills call these for you; invoke one directly only when you want that job alone (e.g. "use the security-reviewer on src/auth").
+| Agent | Use it to… | Called by |
+|---|---|---|
+| `product-analyst` | Turn a need into `intent.md`, then the requirements half of `spec.md` | `/intent`, `/spec` |
+| `architect` | Write the design half of `spec.md` and draft ADRs | `/spec` |
+| `planner` | Turn an accepted spec into `plan.md` | `/plan` |
+| `implementer` | Code one plan task with TDD, keeping `plan.md` in sync | `/implement` |
+| `test-engineer` | Find AC coverage gaps, write or harden tests | on demand |
+| `verifier` | Independent fresh-context check against `spec.md` and `plan.md` | `/verify`, `/pr` |
+| `code-reviewer` | 3-pass review per `REVIEW.md` (comments only) | `/review` |
+| `security-reviewer` | Exploit-focused security pass | `/security-check`, `/review`, `claude-pr-review.yml`, `claude-scheduled-scan.yml` |
+| `docs-writer` | Bring README, docs and CHANGELOG in line with the code | on demand |
+| `release-manager` | SemVer bump, CHANGELOG, release notes | `/release`, `claude-release-notes.yml` |
+| `diagnostician` | Read-only diagnosis of an alert or ticket → draft `intent.md` | `/triage`, `claude-maintain.yml` |
+| `incident-responder` | Live incident help and blameless postmortems | `/incident`, `/postmortem` |
 
 ## Skill vs hook
 A skill is advisory and makes violations rare. A hook is deterministic and makes them close to impossible.
