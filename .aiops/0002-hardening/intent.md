@@ -1,11 +1,15 @@
 ---
 id: 0002
 title: Harden gates and guards (review 0001 findings)
-status: Draft
+status: Approved
 owner: zoujagger
 initiator: zoujagger
 source: .aiops/0001-zouj-ai-sdlc-plugin/review.md (CHANGES_REQUESTED, 66/100)
 created: 2026-10-30
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-10-30T15:10:30Z
+approved-via: cli
+approved-sha256: 03d83a2b97377da7b1a5e79bb57cac26a37055adb576d0fba0f61c2229f04bc6
 ---
 
 # Intent: Harden gates and guards (review 0001 findings)
