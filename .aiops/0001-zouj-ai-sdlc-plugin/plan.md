@@ -1,9 +1,13 @@
 ---
 id: 0001
 title: zouj-ai-sdlc plugin
-status: Draft
+status: Approved
 spec: ./spec.md
 created: 2026-10-30
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-10-30T14:53:44Z
+approved-via: cli
+approved-sha256: c0252e785633b2de6a1e236cc742debaa3c14bd56bc4d8f2e696d8569a53deb8
 ---
 
 # Plan: zouj-ai-sdlc plugin
