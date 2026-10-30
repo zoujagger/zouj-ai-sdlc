@@ -1,22 +1,22 @@
-# Contributing
+# Contributing to zouj-ai-sdlc
 
-Every change follows the AI-native SDLC in [docs/sdlc.md](docs/sdlc.md):
+This repo dogfoods the plugin. Load it with `make dev` (`claude --plugin-dir .`) and follow the five states:
 
-1. **Intent.** Open an *Intent* issue, or run `/intent "<need>"`. The product owner validates `docs/intents/NNNN-slug/intent.md`.
-2. **Design.** `/spec NNNN` produces `spec.md` (requirements + design, flags, policy conflicts). A human accepts it.
-3. **Build.** `/plan NNNN` in Plan mode → stress-test → `plan.md`. Then `/implement`.
-   When code diverges from the plan, update `plan.md` in the same commit.
-4. **Test.** `make check` must pass (the Stop hook enforces it). `/verify` for an independent check. Bugs go through `/fix`.
-5. **Deploy.** `/review` → `/pr`. Claude reviews per [REVIEW.md](REVIEW.md), and a CODEOWNER approves. `/deploy` goes to staging, and production needs a named approver.
-6. **Maintain.** Alerts and tickets become new intents (`/triage`).
+1. **Intent.** `/zouj-ai-sdlc:intent "<need>"` → `.aiops/NNNN-slug/intent.md`. A maintainer types `Intent Approved NNNN`.
+2. **Spec.** `/zouj-ai-sdlc:spec`: requirements, ACs, contracts (CLI flags, hook JSON, schemas) and security flags → `Spec Approved NNNN`.
+3. **Plan.** `/zouj-ai-sdlc:plan`, read-only → `Plan Approved NNNN`.
+4. **Execute.** `/zouj-ai-sdlc:implement`. Guard and engine changes are test-first in `tests/`. `make check` must be green.
+5. **Review.** `/zouj-ai-sdlc:review` → `review.md` + `pr.md`, then `/zouj-ai-sdlc:pr`. A CODEOWNER merges.
 
-Exempt from intent/spec/plan: typos, docs-only changes, dependency bumps.
+Exempt from the flow: typos and docs-only changes (`*.md`, `docs/`).
+
+## Checks
+- `make check`: bash syntax, shellcheck and ruff (if installed), JSON validity, byte-compile, and the unit and hook tests.
+- `make validate`: `claude plugin validate .`.
+- `make evals`: behavioural evals (`claude plugin eval`). Run them when you change skills, agents, hooks or schemas.
 
 ## Using AI responsibly
-- You're accountable for every line you merge. Disclose AI assistance in the PR template.
-- Never bypass hooks. If one blocks you, it says why and what to do.
-- Changing `CLAUDE.md`, skills, hooks, or `REVIEW.md`? The eval suite runs on your PR.
-- See [docs/ai-usage-policy.md](docs/ai-usage-policy.md) and [docs/governance.md](docs/governance.md).
+You're accountable for every line you merge. Never bypass a hook: it says why it blocked you and what to do.
 
 ## Commit style
-[Conventional Commits](https://www.conventionalcommits.org/), with footer `Refs: docs/intents/NNNN-slug`.
+[Conventional Commits](https://www.conventionalcommits.org/), with footer `Refs: .aiops/NNNN-slug`.

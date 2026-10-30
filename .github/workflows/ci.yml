@@ -1,41 +1,42 @@
+# Plugin CI: deterministic checks on every PR. Behavioural evals run on demand (make evals) because they need a model.
 name: ci
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Add your toolchain setup here (actions/setup-node, setup-python, setup-go, ...)
-      - name: Lint
-        run: make lint
-      - name: Typecheck
-        run: make typecheck
-      - name: Test
-        run: make test
-      - name: Build
-        run: make build
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install linters and Claude Code
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          pip install -q ruff
+          npm install -g @anthropic-ai/claude-code
+      - name: make check
+        run: make check
+      - name: Validate plugin manifest
+        run: claude plugin validate .
 
-  validate-template:
+  aiops-gates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install validators
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck jq
-          pip install -q pyyaml
-          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
-          sudo mv actionlint /usr/local/bin/
-      - name: Validate Claude config, hooks, workflows
-        run: make validate-template
+        with:
+          fetch-depth: 0
+      - name: Audit this repo's own gates
+        run: python3 bin/sdlc validate --all --ci

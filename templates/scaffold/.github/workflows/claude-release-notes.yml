@@ -1,0 +1,47 @@
+# Draft release notes. A human reviews and publishes (Gate 4).
+name: claude-release-notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to draft notes for (e.g. v1.2.0)"
+        required: true
+  push:
+    tags: ["v*"]
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve version
+        id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "version=${INPUT_VERSION:-$REF_NAME}" >> "$GITHUB_OUTPUT"
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Load zouj-ai-sdlc (agents, skills, guards) in CI. Check the input names against the claude-code-action docs.
+          plugin_marketplaces: https://github.com/zoujagger/zouj-ai-sdlc.git
+          plugins: zouj-ai-sdlc@zouj
+          prompt: |
+            REPO: ${{ github.repository }}
+            VERSION: ${{ steps.v.outputs.version }}
+
+            Follow the zouj-ai-sdlc release-manager agent. Collect the commits since the previous tag and fill in
+            the zouj-ai-sdlc release-notes template, linking intents in .aiops/ where relevant.
+            Then create a DRAFT GitHub release:
+            `gh release create <VERSION> --draft --title <VERSION> --notes-file release-notes.md`
+            (if the tag doesn't exist yet, add `--target ${{ github.sha }}`). Never publish a non-draft release.
+          claude_args: |
+            --allowedTools "Bash(git log*),Bash(git describe*),Bash(git tag --list*),Bash(gh release create:*),Bash(gh release view:*),Read,Write,Grep,Glob"
+        env:
+          GH_TOKEN: ${{ github.token }}

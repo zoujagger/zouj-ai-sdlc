@@ -2,28 +2,37 @@
 
 All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/).
-This file is maintained with `/release` (release-manager agent).
 
 ## [Unreleased]
 
 ### Added
-- `make doctor` (`scripts/doctor.sh`): setup health check that prints the fix for every problem, including unwired Makefile targets.
-- `/help-me "<goal>"` skill: maps a free-text goal to the right command. `/onboard` is now an interactive, role-based tour that starts from `make doctor`.
-- README "Start here" task table and a "Which agent does what" table in `docs/sdlc.md`.
-- `docs/examples/`: a complete worked intent → spec → plan (`0001-csv-export`) and sample `CLAUDE.md` project notes per stack.
-- `SDLC_HOOK_PROFILE=strict|standard|spike` for the inner-loop hooks (format/lint, definition of done). Safety guards ignore it,
-  enforced by `validate-template` and the `spike-profile-keeps-prod-gate` eval. The session-start hook flags an unwired Makefile.
-- Stack presets (`templates/stacks/*.recipes`) for Python, Node and Go, applied with `scripts/bootstrap.sh <name> [org] --stack <stack>`.
-- Initial AI-native SDLC template.
-- Intent-driven workflow aligned with Anthropic's AI-Native SDLC Playbook: `intent.md` → `spec.md` → `plan.md` in `docs/intents/`.
-- Skills `/intent`, `/plan`, `/parallel`, `/fix`, `/verify`, `/deploy`, `/triage`, `/learn`, plus advisory policy skills (security, compliance, UX, brand).
-- Agents `verifier` (fresh-context verification) and `diagnostician` (Maintain-stage diagnosis).
-- Hooks `guard-tests` (test lock during bug fixes) and `guard-deploy` (production gate). Format and lint after every edit.
-- `REVIEW.md` (3-pass PR review), continuous evals (`evals/`, `claude-evals.yml`), control bands (`ops/bands.yaml`, `claude-maintain.yml`),
-  `deploy.yml` with gated production and single-command rollback, `docs/governance.md`, managed-settings example.
+- **zouj-ai-sdlc Claude Code plugin** (`.claude-plugin/plugin.json`, a self-hosted `zouj` marketplace). Install with
+  `/plugin marketplace add zoujagger/zouj-ai-sdlc` and `/plugin install zouj-ai-sdlc@zouj`, then `/zouj-ai-sdlc:init` per repo.
+- 5-state machine over `.aiops/NNNN-slug/` artifacts: BRAINSTORMING (`intent.md`) → SPECIFICATION (`spec.md`, with DB
+  schema, API contracts, data-leak flags) → PLAN, read-only (`plan.md`) → EXECUTION, autonomous TDD → PRE-REVIEW
+  (`review.md` scoring report + `pr.md`).
+- State engine `bin/sdlc` (stdlib Python): `status next new draft use validate approve close lock unlock init doctor`.
+  The state is derived from the artifacts and git. Schemas live in `schemas/*.json`.
+- Human-only gates: the exact prompt `Intent|Spec|Plan Approved NNNN` (UserPromptSubmit hook) stamps
+  `approved-by/at/via/sha256` and commits the artifact alone with an `AIOps-Approval:` trailer. Editing an approved
+  body re-closes the gate.
+- Guards: `sdlc hook pre-edit` (gate fields, creation order, read-only lock), `sdlc hook pre-bash` (shell writes, installs,
+  git staging while locked; forged approvals; merging on main), post-edit schema validation, a session-start state
+  card + bootstrap skill (`using-zouj-ai-sdlc`).
+- `aiops-gates.yml` CI audit (`sdlc validate --all --ci`).
+- Skills `init`, `status`, `review` (writes review.md/pr.md), and `sdlc-worktree`. Evals rewritten in the
+  `claude plugin eval` format. 58 deterministic engine and hook tests (`make test`).
+- Docs: `docs/state-machine.md`, `docs/architecture.md` (with a threat model), and the playbook mapping in `docs/sdlc.md`.
 
-### Fixed
-- `scripts/bootstrap.sh` no longer requires `jq` (optional, hooks fall back to python3), works with BSD/macOS `sed`, and suggests the native Claude Code installer.
+### Changed
+- Template → plugin. Skills, agents and hooks moved from `.claude/` to the plugin root and are namespaced as
+  `/zouj-ai-sdlc:<skill>`. Consumer files (Makefile contract, CLAUDE.md, REVIEW.md, CI workflows, bands) moved to
+  `templates/scaffold/`, copied by `sdlc init` without overwriting anything.
+- Artifacts moved from `docs/intents/` to `.aiops/`. Statuses are `Draft → Approved` (previously Validated / Accepted).
+  The test lock and guard lists live under `.aiops/state/` and `.aiops/config/`.
+- All hooks are dormant in repos without `.aiops/`.
+- `/verify` merged into `/zouj-ai-sdlc:review`; `/sdlc` renamed to `/zouj-ai-sdlc:status`.
 
 ### Removed
-- `/prd`, `/design`, `/plan-tasks`, `/tdd`, `/test` and the PRD/design/tasks templates, replaced by the intent/spec/plan flow.
+- `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
+  `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.

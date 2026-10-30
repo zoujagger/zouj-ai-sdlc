@@ -1,0 +1,10 @@
+{
+  "name": "zouj-ai-sdlc",
+  "version": "0.1.0",
+  "description": "Agentic SDLC orchestration modeled on Anthropic's AI-Native SDLC Playbook: a 5-state machine (intent → spec → read-only plan → autonomous TDD → review) over Git-versioned Markdown artifacts, with human-only gates enforced by hooks.",
+  "author": { "name": "zoujagger" },
+  "homepage": "https://github.com/zoujagger/zouj-ai-sdlc",
+  "repository": "https://github.com/zoujagger/zouj-ai-sdlc",
+  "license": "MIT",
+  "keywords": ["sdlc", "workflow", "tdd", "spec-driven", "human-in-the-loop", "governance", "hooks"]
+}

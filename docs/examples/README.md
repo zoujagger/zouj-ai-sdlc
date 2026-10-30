@@ -1,10 +1,10 @@
 # Examples
 
-Reference material for new users. Nothing here is live: `/sdlc`, the session-start hook and `scripts/new-intent.sh` only read `docs/intents/`.
+Reference material. Nothing here is live: the engine only reads `.aiops/` in a repo.
 
 | Path | Shows |
 |---|---|
-| [`0001-csv-export/`](0001-csv-export/) | A complete change: validated `intent.md` → accepted `spec.md` (ACs, flags, a resolved policy conflict) → finished `plan.md` (stress test, tasks, a logged deviation) |
-| [`CLAUDE.python.md`](CLAUDE.python.md), [`CLAUDE.node.md`](CLAUDE.node.md), [`CLAUDE.go.md`](CLAUDE.go.md) | What to put in `CLAUDE.md` → "Project notes" for each stack preset (`scripts/bootstrap.sh --stack`) |
+| [`0001-csv-export/`](0001-csv-export/) | A complete change through all five states: approved `intent.md` → approved `spec.md` (ACs, DB schema, API contracts, data-leak flags) → approved `plan.md` (file-by-file test-first steps, a logged deviation) → `review.md` (PASS 88/100) |
+| [`CLAUDE.python.md`](CLAUDE.python.md), [`CLAUDE.node.md`](CLAUDE.node.md), [`CLAUDE.go.md`](CLAUDE.go.md) | What to put in `CLAUDE.md` → "Project notes" for each stack preset (`sdlc init --stack`) |
 
-Keep Project notes short: `CLAUDE.md` should stay about one page. Put detail in `docs/` and link to it.
+Keep `CLAUDE.md` to about one page. Put detail in `docs/` and link to it.

@@ -1,0 +1,55 @@
+# Deploy stage. Staging is automatic on main. Production needs a named human approval via the
+# `production` GitHub Environment (Settings → Environments → required reviewers).
+# Rollback is a single, pre-approved command (the band-3 runbook in ops/bands.yaml).
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy or rollback"
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    if: github.event_name == 'push' || inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: ${{ inputs.action || 'deploy' }} staging
+        env:
+          ACTION: ${{ inputs.action || 'deploy' }}
+        run: make "$ACTION" ENV=staging
+
+  production:
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    environment: production        # ← human gate: required reviewers approve here
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record approver
+        env:
+          ACTOR: ${{ github.actor }}
+          ACTION: ${{ inputs.action }}
+        run: echo "::notice::$ACTION to production triggered by $ACTOR (approved via environment protection)"
+      - name: ${{ inputs.action }} production
+        env:
+          ACTION: ${{ inputs.action }}
+        run: make "$ACTION" ENV=prod

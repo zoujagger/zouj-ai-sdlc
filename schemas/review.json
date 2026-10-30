@@ -1,0 +1,11 @@
+{
+  "kind": "review",
+  "description": "State 5 PRE-REVIEW output: scoring report from fresh-context reviewers. Never a gate the agent can pass; the human merges.",
+  "front": ["id", "verdict", "commit", "score"],
+  "verdicts": ["PASS", "CHANGES_REQUESTED"],
+  "statuses": [],
+  "gate": null,
+  "requires": "plan",
+  "sections": ["Summary", "Spec conformance", "Security", "Plan conformance", "Test-first evidence", "Score"],
+  "checks": ["valid_verdict", "covers_spec_acs"]
+}

@@ -1,0 +1,31 @@
+name: Intent
+description: Describe a need. Triage turns it into .aiops/NNNN-*/intent.md, the start of the SDLC.
+labels: ["type:intent", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's wrong or missing today? Who's affected? What evidence do we have?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What will be true when this is done? How would we observe it?
+    validations:
+      required: true
+  - type: textarea
+    id: affected
+    attributes:
+      label: Users & systems affected
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Deadlines, compliance, compatibility, performance
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open questions

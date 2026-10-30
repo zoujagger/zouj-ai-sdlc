@@ -1,0 +1,46 @@
+# Recurring scans (Maintain): weekly security scan + repo health report.
+# Narrow fixes → PR (normal review). Broad fixes → a new intent.md so they re-enter the SDLC.
+name: claude-scheduled-scan
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"   # Mondays 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Load zouj-ai-sdlc (agents, skills, guards) in CI. Check the input names against the claude-code-action docs.
+          plugin_marketplaces: https://github.com/zoujagger/zouj-ai-sdlc.git
+          plugins: zouj-ai-sdlc@zouj
+          prompt: |
+            REPO: ${{ github.repository }}
+
+            Weekly scan. Part A: security (follow the zouj-ai-sdlc security-reviewer agent and the policy-security skill):
+            - Scan the codebase and CI workflows for vulnerabilities with a plausible exploit path, plus committed secrets and risky dependencies.
+            - For each NARROW fix (one file or module, low risk): branch `scan/<slug>`, fix it, and open a PR (REVIEW.md applies).
+            - For each BROAD fix: write .aiops/NNNN-<slug>/intent.md (source: scan) and include it in a PR `scan/intents-<date>`.
+
+            Part B: repo health. Comment on the open issue "Weekly repo health report", or create it:
+            - Intents: status of .aiops/*. Flag ones approved with no spec after 14 days, approved plans with no commits after 14 days,
+              and plan.md files whose code diverged without a Deviation log entry.
+            - Docs drift (commands and paths in README.md, CLAUDE.md, docs/ that no longer exist), and whether CLAUDE.md is over ~1 page.
+            - ADRs stuck in Proposed for more than 14 days. TODO/FIXME comments older than 30 days.
+            - Leading metrics from docs/governance.md you can compute from git: intent→spec time, % PRs with a linked intent.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git log*),Bash(git blame*),Bash(git diff*),Bash(git checkout -b *),Bash(git add *),Bash(git commit *),Bash(git push -u origin scan/*),Bash(gh pr create:*),Bash(gh pr list:*),Bash(gh issue list:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(make check)"

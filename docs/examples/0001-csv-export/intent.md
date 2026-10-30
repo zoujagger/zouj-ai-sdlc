@@ -1,7 +1,11 @@
 ---
 id: 0001
 title: CSV export of account data
-status: Validated      # Draft | Validated | Specified | Closed
+status: Approved
+approved-by: Product Lead <po@example.com>
+approved-at: 2026-03-03T10:12:00Z
+approved-via: prompt
+approved-sha256: <stamped by the engine>
 initiator: "Support ticket #412 (and 37 similar since March)"
 owner: "@product-lead"
 source: "#412"
@@ -10,7 +14,7 @@ created: 2026-03-02
 
 # Intent: CSV export of account data
 
-<!-- WORKED EXAMPLE. A filled-in intent for a fictional invoicing app. Real intents live in docs/intents/. -->
+<!-- WORKED EXAMPLE. A filled-in intent for a fictional invoicing app. Real intents live in .aiops/NNNN-slug/. -->
 
 ## Problem
 Customers can't get their data out without asking support. Since March we have had 38 tickets (#412 and linked)
@@ -39,4 +43,4 @@ Two enterprise prospects listed data portability as a procurement requirement.
 - [x] Who may export: any user or admins only? → **Admins only** (product lead, 2026-03-03)
 - [x] How long do we keep generated files? → **24 hours** (compliance owner, 2026-03-04)
 
-<!-- Gate: the product owner validated this intent (status: Validated). Next: /spec 0001 -->
+<!-- Gate: the product owner typed `Intent Approved 0001`. Next: /zouj-ai-sdlc:spec 0001 -->

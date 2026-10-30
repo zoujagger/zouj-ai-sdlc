@@ -1,127 +1,80 @@
-# AI-Native SDLC Template
+# zouj-ai-sdlc
 
-A **stack-agnostic** boilerplate that implements Anthropic's *AI-Native SDLC Playbook* with
-[Claude Code](https://docs.claude.com/en/docs/claude-code). Work **starts from an intent**, every stage commits an artifact the next stage reads,
-hooks enforce the absolute rules, and humans decide at every gate.
+A [Claude Code](https://code.claude.com) plugin that runs your software lifecycle as a **state machine over Markdown
+artifacts versioned in Git**. It's inspired by [Superpowers](https://github.com/obra/superpowers) (a bootstrap skill,
+trigger-style skills, red-flag tables, subagent-driven execution) and strictly modeled on Anthropic's *AI-Native SDLC
+Playbook*: work starts from an intent, every state commits an artifact the next one reads, and **humans decide at every
+gate**. Here those gates are enforced by hooks instead of being left to the model's good behaviour.
 
 ```
-Trigger: INTENT → 1 PLAN → 2 DESIGN → 3 BUILD → 4 TEST → 5 DEPLOY → 6 MAINTAIN ─┐
-  /intent          (validate)  /spec      /plan      /verify   /review   /triage   │
-  intent.md                    spec.md    /implement /fix      /pr       bands.yaml │
-     ▲                                    plan.md    evals     /deploy             │
-     └──────────────────────── diagnosis becomes a new intent.md ──────────────────┘
+ 1 BRAINSTORMING ──▶ 2 SPECIFICATION ──▶ 3 PLAN (read-only) ──▶ 4 EXECUTION (autonomous) ──▶ 5 PRE-REVIEW
+   intent.md          spec.md             plan.md                code + green tests            review.md + pr.md
+ ✋ "Intent Approved"  ✋ "Spec Approved"   ✋ "Plan Approved"       (make check green)             ✋ the human merges
 ```
 
-## What's inside
-| Component | Location | Purpose |
+## Install
+```bash
+/plugin marketplace add zoujagger/zouj-ai-sdlc
+/plugin install zouj-ai-sdlc@zouj
+```
+Or in one step (Claude Code 2.1.275+): `/plugin install zouj-ai-sdlc --marketplace zoujagger/zouj-ai-sdlc`.
+Then, in each repo that should follow the workflow: `/zouj-ai-sdlc:init` (or `sdlc init --stack python|node|go`).
+
+The plugin is **dormant in repos without `.aiops/`**: no hook blocks anything until you run init.
+Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only). `gh` and `jq` are optional.
+
+## How it works
+| State | You run | The agent produces | Leaves the state when |
+|---|---|---|---|
+| 1 BRAINSTORMING | `/zouj-ai-sdlc:intent "<need>"` | a targeted clarification interview → `.aiops/NNNN-slug/intent.md` | you type **`Intent Approved NNNN`** |
+| 2 SPECIFICATION | `/zouj-ai-sdlc:spec` | `spec.md`: requirements, ACs, **DB schema, API contracts, security and data-leak flags** | you type **`Spec Approved NNNN`** |
+| 3 PLAN | `/zouj-ai-sdlc:plan` | `plan.md`: chronological file-by-file steps, risks, test definitions. **Code is read-only** | you type **`Plan Approved NNNN`** |
+| 4 EXECUTION | `/zouj-ai-sdlc:implement` | per step: proof test → see it fail → code → green, on `feat/NNNN-slug`, no questions asked | every step ticked, `make check` green |
+| 5 PRE-REVIEW | `/zouj-ai-sdlc:review` | fresh-context verifier, code-reviewer and security-reviewer → `review.md` (score /100) + `pr.md` | **you** merge (the agent can't) |
+
+`sdlc status` (or `/zouj-ai-sdlc:status`) always shows the state, who it's waiting on, and the exact next step.
+The state is **derived** from the artifacts and git, never stored.
+
+## What is enforced (and how)
+| Rule | Mechanism |
+|---|---|
+| Only a human opens a gate | A `UserPromptSubmit` hook accepts the phrase only as the *whole* prompt. It stamps `approved-by/at/via/sha256` and commits the file alone with an `AIOps-Approval:` trailer. Edits to `status`/`approved-*`, `sdlc approve`, and forged trailers are blocked |
+| States 1-3 are read-only | `sdlc hook pre-edit` and `pre-bash` block writes outside `.aiops/` and docs: Edit/Write, redirects, `sed -i`, `cp/mv/rm`, package installs, formatters, `git add/commit/apply/stash` of code |
+| Artifacts in order | `spec.md` needs an approved intent, `plan.md` an approved spec, `review.md` an approved plan. New artifacts start as Draft |
+| Approvals can't silently drift | Editing an approved body re-closes its gate. Plans keep their approval when steps are ticked and the Deviation log grows |
+| Schema-valid artifacts | `schemas/*.json`: required front matter and sections, AC ids, every AC covered by the plan and the review. Checked after each edit and before each approval |
+| Definition of done | The Stop hook requires `make check` green. A PASS review goes stale if code changes after it |
+| Human-only final gate | Merging on main, `gh pr merge`/approve, pushing to main, and production deploys are blocked |
+| CI audit | `aiops-gates.yml` runs `sdlc validate --all --ci`: every open gate must trace to a non-agent approval commit |
+| Existing safety guards | secrets, `.env`, force-push, history rewrites, protected paths, the `/fix` test lock |
+
+Local hooks are a strong deterrent, not a sandbox. The CI audit plus CODEOWNERS on `.aiops/` are the backstop
+([docs/architecture.md](docs/architecture.md#threat-model)).
+
+## Components
+| Kind | Location | Contents |
 |---|---|---|
-| Project memory | `CLAUDE.md` | The loop, rules, definition of done, Lessons (about one page) |
-| Workflow | `docs/sdlc.md` | Stage-by-stage guide (roles, artifacts, gates) |
-| Review rules | `REVIEW.md` | 3-pass PR review: bugs, security, conformance to spec and plan |
-| Governance | `docs/governance.md`, `governance/` | Sources of truth, audit trail, metrics, anti-patterns, managed settings |
-| Change artifacts | `docs/intents/NNNN-slug/` | `intent.md` → `spec.md` → `plan.md` |
-| Examples | `docs/examples/` | A complete worked intent → spec → plan, and sample `CLAUDE.md` project notes per stack |
-| **Skills** | `.claude/skills/` | Workflow: `/intent` `/spec` `/plan` `/implement` `/parallel` `/verify` `/fix` `/review` `/security-check` `/pr` `/release` `/deploy` `/triage` `/incident` `/postmortem` `/retro` `/learn` `/adr` `/sdlc` `/onboard` `/help-me` · Policy (auto-applied): security, compliance, UX, brand |
-| **Subagents** | `.claude/agents/` | product-analyst, architect, planner, implementer, test-engineer, **verifier**, code-reviewer, security-reviewer, docs-writer, release-manager, **diagnostician**, incident-responder |
-| **Hooks** | `.claude/hooks/` | guard-bash, guard-files, **guard-tests** (test lock), **guard-deploy** (prod gate), post-edit format+lint, stop-verify (definition of done), session-start |
-| **Evals** | `evals/`, `scripts/run-evals.py` | Continuous evaluation of the agent setup; incidents become regression evals |
-| **Control bands** | `ops/bands.yaml`, `scripts/check-bands.py` | Deterministic 1σ/2σ/3σ detection → log / diagnose / PR or runbook |
-| **GitHub automation** | `.github/workflows/` | `ci`, `claude` (@claude), `claude-pr-review`, `claude-issue-triage`, `claude-evals`, `deploy` (staging auto, prod gated, 1-command rollback), `claude-maintain`, `claude-scheduled-scan`, `claude-release-notes` |
-| Build contract | `Makefile`, `templates/stacks/` | `format lint typecheck test build check deploy rollback evals doctor`; presets for Python, Node, Go |
+| Skills | `skills/` | `using-zouj-ai-sdlc` (bootstrap, injected at session start) · core states `intent` `spec` `plan` `implement` `review` `pr` `status` · `init` `fix` `parallel` · Maintain `deploy` `triage` `incident` `postmortem` `retro` `release` `learn` `adr` `security-check` · `help-me` `onboard` · policies (security, compliance, UX, brand) |
+| Agents | `agents/` | product-analyst, architect, planner, implementer, verifier, code-reviewer, security-reviewer, test-engineer, docs-writer, release-manager, diagnostician, incident-responder |
+| Hooks | `hooks/hooks.json` | SessionStart, UserPromptSubmit (approvals), PreToolUse (gate, lock, bash, files, tests, deploy guards), PostToolUse (validate + format/lint), Stop (`make check`) |
+| Engine | `bin/sdlc`, `lib/sdlc_engine/`, `schemas/` | `status next new draft use validate approve close lock unlock init doctor` |
+| Templates | `templates/artifacts/`, `templates/scaffold/` | artifact templates · what `init` copies into a repo (Makefile contract, CLAUDE.md, REVIEW.md, CI, bands) |
+| Tests / evals | `tests/`, `evals/` | deterministic guard tests (`make test`) · behavioural evals (`make evals`, the `claude plugin eval` format) |
 
-## Quickstart
+## Configuration (per repo, human-owned)
+- `.aiops/config.json`: `lock_when_idle` (code is read-only with no active intent, default true), `commit_approvals`, `main_branch`.
+- `.aiops/config/{readonly-exempt,protected-paths,test-paths}` extend the plugin's `defaults/`.
+- `SDLC_HOOK_PROFILE=spike` lifts the read-only lock and `make check` for throwaway exploration. The approval and merge gates still hold.
+- The active intent comes from the branch (`feat/NNNN-*`), else `sdlc use NNNN`, else `$AIOPS_INTENT`.
+- Unattended state 4: plugins can't grant permissions, so add the allow-rules from `.aiops/README.md` to `.claude/settings.json`.
 
-### 1. Install prerequisites
-| Tool | Needed? | Used for |
-|---|---|---|
-| `git`, `make`, `python3` + `pyyaml` | **Required** | Repo, contract commands, hooks, evals and control bands |
-| [Claude Code](https://docs.claude.com/en/docs/claude-code) | **Required** | The AI collaborator in every stage |
-| `gh` (GitHub CLI) | Optional | Opening PRs and reading issues from the terminal (`/pr`, `/intent #12`) |
-| `jq` | Optional | Faster hook JSON parsing (hooks fall back to python3) |
-
-**Ubuntu / Debian / WSL**
+## Develop
 ```bash
-sudo apt-get update && sudo apt-get install -y git make python3 python3-yaml jq
-sudo apt-get install -y gh            # optional
+make check        # lint + compile + 58 unit/hook tests
+make validate     # claude plugin validate .
+make dev          # claude --plugin-dir .
+make evals        # behavioural evals against a live model
 ```
-
-**macOS** (with [Homebrew](https://brew.sh))
-```bash
-brew install git make python pyyaml jq
-brew install gh                       # optional
-```
-
-**Windows**: use WSL. In an **admin PowerShell**, run `wsl --install`, reboot, open *Ubuntu*, and follow the Ubuntu steps above.
-
-**Claude Code** (any OS)
-```bash
-curl -fsSL https://claude.ai/install.sh | bash     # native installer, no Node.js needed
-# or: npm install -g @anthropic-ai/claude-code
-claude                                             # first run: log in
-```
-
-**GitHub CLI login** (optional): `gh auth login`
-
-**Check everything is ready:**
-```bash
-git --version && make --version | head -1 && python3 -c "import yaml; print('pyyaml ok')" && claude --version
-```
-
-### 2. Set up the project
-Create your repo with **"Use this template"** on GitHub (no `gh` needed), then clone it. Or use the CLI: `gh repo create my-project --private --template <owner>/ai-native-sdlc-template --clone`.
-```bash
-cd my-project
-scripts/bootstrap.sh my-project my-github-org --stack python   # or node | go | none
-make doctor                                     # what's still missing, and the command that fixes it
-make check
-```
-Repo admins (once): add the `ANTHROPIC_API_KEY` secret (Settings → Secrets and variables → Actions, or `gh secret set ANTHROPIC_API_KEY`, or `/install-github-app` in Claude Code), then apply [branch protection and environments](docs/branch-protection.md).
-
-### 3. Start working
-```bash
-claude
-> /onboard
-> /intent "Users can export their account data as CSV"
-```
-
-### Start here: "I want to…"
-| I want to… | Run | You get |
-|---|---|---|
-| Understand this repo | `/onboard` | A tour tailored to your role and your setup state |
-| Not sure which command | `/help-me "<what you want>"` | The right command, and why |
-| Build a feature or change | `/intent "<need>"` | `intent.md`, then `/spec` → `/plan` → `/implement` |
-| See what's in flight / what's next | `/sdlc [id]` | Stage, who's blocking, the exact next command |
-| Fix a bug | `/fix "<bug>"` | Failing test → your approval → locked tests → fix |
-| Check my work before a PR | `/verify` → `/review` → `/pr` | Fresh-context verification, 3-pass review, linked PR |
-| Ship to staging | `/deploy` | Staging deploy + production handoff for a human |
-| Handle a production problem | `/incident`, then `/postmortem` | Triage + timeline, then a postmortem and a regression eval |
-| React to an alert or ticket | `/triage <alert>` | Read-only diagnosis as a draft `intent.md` |
-| Record a big technical decision | `/adr "<decision>"` | `docs/adr/NNNN-*.md` |
-| Stop Claude repeating a mistake | `/learn` | A `CLAUDE.md` lesson + a regression eval |
-| Check my setup | `make doctor` | What's missing, and the command that fixes it |
-
-## One change, end to end
-```text
-/intent "CSV export"   → docs/intents/0001-csv-export/intent.md      ✋ product owner validates
-/spec 0001             → spec.md (requirements + design, flags,       ✋ accepted (+ tech lead if high risk)
-                          policy conflicts)
-/plan 0001             → Plan mode → stress test → plan.md            ✋ engineer accepts
-/implement             → TDD per task; plan.md updated with any deviation in the same commit
-/verify                → fresh-context verifier: VERIFIED?
-/review → /pr          → Claude reviews per REVIEW.md (comments only)  ✋ CODEOWNER approves
-/deploy                → staging + prod handoff                       ✋ named human approves production
-/triage alert:api_error_rate → diagnosis → new intent.md              ✋ service owner: fix / schedule / close
-```
-Bug? `/fix "<bug>"`: failing test → you approve it → tests locked → fix.
-Repeated mistake? `/learn`: a lesson in CLAUDE.md plus a regression eval.
-
-## Guardrails
-- **Hooks (deterministic):** force-push, push to main, destructive deletes, `curl | sh`, reading `.env`, `--no-verify`, merging PRs,
-  writing credentials, editing protected paths (`.claude/protected-paths`), editing tests under the test lock, **any production deploy**.
-- **Ask first:** `git push`, `gh pr create`, `gh issue create`, tags, releases.
-- **Definition of done:** Claude can't end a turn with changes while `make check` fails.
-- **Hook profiles:** `SDLC_HOOK_PROFILE=strict|standard|spike` tunes only the format/lint and done checks. The safety guards never relax ([governance](docs/governance.md#hook-profiles-sdlc_hook_profile)).
-- **Org level:** `governance/managed-settings.example.json`.
-
-## Requirements
-See [Quickstart → Install prerequisites](#1-install-prerequisites). Maintainers who also want full template validation locally can install `shellcheck` and `actionlint` (CI installs them automatically).
+Docs: [state machine](docs/state-machine.md) · [architecture](docs/architecture.md) · [playbook mapping](docs/sdlc.md) ·
+[governance](docs/governance.md) · [worked example](docs/examples/0001-csv-export/). This repo dogfoods itself:
+see [`.aiops/0001-zouj-ai-sdlc-plugin/`](.aiops/0001-zouj-ai-sdlc-plugin/).

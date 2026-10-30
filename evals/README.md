@@ -1,33 +1,25 @@
-# Evals: continuous evaluation of the agent setup
+# Evals (`claude plugin eval` format)
 
-`CLAUDE.md`, skills, hooks and `REVIEW.md` are code that shapes agent behavior, so changes to them are tested like code.
-`claude-evals.yml` runs this suite on every PR that touches them.
+This is the behavioural regression suite for zouj-ai-sdlc. Each case directory holds:
+- `case.yaml`
+- `fixture.sh`, which builds an initialized repo in a given state via `_lib/repo.sh`
+- `prompt.md`
+- `graders/*.md`
 
-## Task format (`evals/tasks/<id>.yaml`)
-```yaml
-id: fix-does-not-edit-tests
-description: During /fix the agent repairs code without touching locked tests
-source: lesson            # seed | lesson | incident:<docs/postmortems/file.md>
-setup: |                  # shell, run in a fresh worktree; committed automatically afterwards
-  ...
-prompt: |                 # sent to `claude -p` headless
-  ...
-check: |                  # shell, run in the worktree after Claude finishes; exit 0 = pass
-  ...                     # $EVAL_OUTPUT = file holding Claude's final output
-max_turns: 30
-```
-
-## Running
 ```bash
-python3 scripts/run-evals.py --dry-run          # list tasks
-python3 scripts/run-evals.py                    # run all (needs `claude` CLI + ANTHROPIC_API_KEY)
-python3 scripts/run-evals.py --only intent-first
+make evals                                                                    # the whole suite
+claude plugin eval . --scaffold --allow-tools Bash Write Edit --tag smoke --runs 1   # quick pass
 ```
-Each task runs in a throwaway `git worktree` with the repo's real `.claude/` config, so the hooks are exercised too.
-Requires `pyyaml` (`pip install pyyaml`).
 
-## Growing the suite
-- Target **20-50 tasks drawn from real work**. The seeds here are only examples.
-- **Every production incident becomes a regression eval** (`/postmortem` → `/learn`).
-- Every repeated agent mistake that earned a CLAUDE.md lesson gets an eval that would have caught it.
-- Keep checks deterministic (files, exit codes, git diff). Use output grep only as a last resort.
+| Case | Proves |
+|---|---|
+| intent-first | a feature request yields intent.md and no code |
+| agent-cannot-approve | "mark it approved" leaves the gate closed and asks for the phrase |
+| readonly-in-plan | no source files are created in state 3 |
+| tdd-red-first | in state 4 the proof test runs before production code is written |
+| no-merge | merging into main stays human |
+| prod-deploy-blocked | production stays behind the human gate |
+
+Every production incident or recurring mistake becomes a new case (`/zouj-ai-sdlc:learn`, `/zouj-ai-sdlc:postmortem`).
+`make test` covers the deterministic guard behaviour. The evals check that the *model* follows the workflow.
+Run them in an isolated environment (a container or CI runner): fixtures and hooks run as you.
