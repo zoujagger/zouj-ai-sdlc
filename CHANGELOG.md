@@ -5,6 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-30
+
+First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-template` this repo grew out of.
+
 ### Added
 - **zouj-ai-sdlc Claude Code plugin** (`.claude-plugin/plugin.json`, a self-hosted `zouj` marketplace). Install with
   `/plugin marketplace add zoujagger/zouj-ai-sdlc` and `/plugin install zouj-ai-sdlc@zouj`, then `/zouj-ai-sdlc:init` per repo.
@@ -33,6 +37,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 - All hooks are dormant in repos without `.aiops/`.
 - `/verify` merged into `/zouj-ai-sdlc:review`; `/sdlc` renamed to `/zouj-ai-sdlc:status`.
 
+### Fixed
+- `hooks/guard-deploy.sh`: brace `${P}` in the production-gate regexes (shellcheck SC1087, latent since the template).
+- CI lint is pinned to an explicit ruff rule set (`ruff.toml`: E4, E7, E9, F), so new ruff defaults can't break the build.
+
 ### Removed
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
+
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/zoujagger/zouj-ai-sdlc/releases/tag/v0.1.0
