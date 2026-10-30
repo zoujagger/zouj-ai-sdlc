@@ -1,0 +1,7 @@
+# Lint scope for the stdlib engine, bin/sdlc and tests: pycodestyle errors + pyflakes.
+# Selected explicitly so a new ruff release's default rule set can't change what `make lint` means in CI.
+line-length = 120
+target-version = "py39"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
