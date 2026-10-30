@@ -1,11 +1,15 @@
 ---
 id: 0001
 title: zouj-ai-sdlc plugin
-status: Draft
+status: Approved
 owner: zoujagger
 initiator: zoujagger
 source: free text (Claude Code session, 2026-10-30)
 created: 2026-10-30
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-10-30T14:52:51Z
+approved-via: cli
+approved-sha256: 71da39c7c4441ee644368bbca5696c4d9f7a9afbf20548da6699e4a92a02852b
 ---
 
 # Intent: zouj-ai-sdlc plugin
@@ -36,4 +40,4 @@ human-readable, machine-actionable Markdown artifacts versioned in Git:
 
 ## Open questions
 - [ ] Should `risk: high` specs require a second (tech-lead) approval? (zoujagger)
-- [ ] Rename the GitHub repo from ai-native-sdlc-template to zouj-ai-sdlc? (zoujagger)
+- [x] Rename the GitHub repo from ai-native-sdlc-template to zouj-ai-sdlc? → **Yes**: github.com/zoujagger/zouj-ai-sdlc, local dir renamed (zoujagger, 2026-10-30)
