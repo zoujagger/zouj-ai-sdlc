@@ -1,0 +1,12 @@
+{
+  "name": "zouj",
+  "owner": { "name": "zoujagger" },
+  "metadata": { "description": "zoujagger's Claude Code plugins" },
+  "plugins": [
+    {
+      "name": "zouj-ai-sdlc",
+      "source": "./",
+      "description": "AI-native SDLC state machine with human-only gates (intent → spec → plan → implement → review)."
+    }
+  ]
+}

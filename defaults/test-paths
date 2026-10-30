@@ -1,0 +1,12 @@
+# Globs (bash pattern syntax, relative to the repo root) of test files that the /fix test lock protects.
+# While .aiops/state/test-lock exists, guard-tests.sh blocks edits to any matching path. Extend in .aiops/config/test-paths.
+tests/*
+test/*
+spec/*
+__tests__/*
+*_test.*
+*.test.*
+*.spec.*
+test_*.py
+*_test.go
+evals/*

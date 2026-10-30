@@ -1,0 +1,22 @@
+# Paths agents may not edit, in every state (bash glob syntax, relative to the repo root).
+# Format: <glob> <reason...>. Extend per repo in .aiops/config/protected-paths. Read by hooks/guard-files.sh.
+.env* secrets/env files
+*/.env* secrets/env files
+secrets/* secret material
+*.pem secret material
+*.key secret material
+*id_rsa* secret material
+.git/* git internals
+package-lock.json lockfiles are changed by the package manager, not by hand
+yarn.lock lockfiles are changed by the package manager, not by hand
+pnpm-lock.yaml lockfiles are changed by the package manager, not by hand
+poetry.lock lockfiles are changed by the package manager, not by hand
+uv.lock lockfiles are changed by the package manager, not by hand
+Cargo.lock lockfiles are changed by the package manager, not by hand
+go.sum lockfiles are changed by the package manager, not by hand
+.aiops/config* guardrails are human-owned; propose the change in chat
+.aiops/state/* engine state; changed only through the sdlc CLI and hooks
+.claude/settings.json guardrails are human-owned; propose the change in chat
+governance/* org policy is human-owned
+.github/workflows/deploy.yml production gate is human-owned
+.github/workflows/aiops-gates.yml gate audit is human-owned

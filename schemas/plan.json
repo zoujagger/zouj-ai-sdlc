@@ -1,0 +1,11 @@
+{
+  "kind": "plan",
+  "description": "State 3 PLAN output (read-only state): chronological file-by-file steps, risks, test definitions.",
+  "front": ["id", "title", "status"],
+  "statuses": ["Draft", "Approved"],
+  "gate": "Approved",
+  "approval_phrase": "Plan Approved",
+  "requires": "spec",
+  "sections": ["Approach", "Steps", "Risks", "Test definitions", "Deviation log"],
+  "checks": ["has_steps", "covers_spec_acs"]
+}

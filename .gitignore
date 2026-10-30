@@ -6,14 +6,15 @@
 *.key
 secrets/
 
+# zouj-ai-sdlc engine state and eval results
+.aiops/state/
+evals/results/
+
 # Claude Code local state
 .claude/settings.local.json
 .claude/logs/
 .claude/state/
 .mcp.json
-
-# Control-band baselines (persist via CI cache or your monitoring system)
-ops/.history/
 
 # OS / editor
 .DS_Store

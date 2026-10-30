@@ -1,5 +1,5 @@
 name: Intent
-description: Describe a need. Triage turns it into docs/intents/NNNN-*/intent.md, the start of the SDLC.
+description: Describe a need. Triage turns it into .aiops/NNNN-*/intent.md, the start of the SDLC.
 labels: ["type:intent", "needs-triage"]
 body:
   - type: textarea

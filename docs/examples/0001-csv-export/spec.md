@@ -1,85 +1,75 @@
 ---
 id: 0001
 title: CSV export of account data
-status: Accepted       # Draft | In Review | Accepted | Implemented | Superseded
-owner: "@product-lead"
-accepted_by: "@product-lead, @compliance-owner"
-risk: low              # low | high → high adds the tech lead to the gate
+status: Approved
+risk: low
 intent: ./intent.md
 created: 2026-03-04
+approved-by: Product Lead <po@example.com>
+approved-at: 2026-03-04T16:40:00Z
+approved-via: prompt
+approved-sha256: <stamped by the engine>
 ---
 
 # Spec: CSV export of account data
 
-<!-- WORKED EXAMPLE. Requirements and design produced in one session from intent.md, with the policy skills applied. -->
+<!-- WORKED EXAMPLE (state 2 output). Business goals from intent.md, translated into requirements, schema, contracts and flags. -->
 
 ## Summary
 Account admins can request a CSV export of their invoices and payments from the dashboard. The file is generated in the
 background and offered as a download link that expires after 24 hours. This removes the manual support export (intent: desired outcome).
 
 ## Requirements
-### User stories
-- **US-1**: As an account admin, I want to download my invoices and payments as CSV so that I can analyse them in a spreadsheet.
-- **US-2**: As a support agent, I want customers to self-serve exports so that I stop running manual SQL queries.
+- **R-1** (US-1): an account admin downloads their invoices and payments as CSV to analyse them in a spreadsheet.
+- **R-2** (US-2): support stops running manual SQL exports.
+- Edge cases: zero invoices → header row only; a second request while one is running returns the running job; a failed job shows "Export failed, try again" and logs the job id.
+- Non-functional: 200k invoices in under 2 minutes with flat memory (streamed); `export_job_failure_rate` added to `ops/bands.yaml`; button and status are keyboard-reachable and announced to screen readers.
 
-### Acceptance criteria
-- **AC-1** (US-1): Given an admin on Settings → Data, when they click "Export CSV", then an export job is queued and the page shows "Preparing your export".
-- **AC-2** (US-1): Given a finished export, when the admin opens the link, then they get a UTF-8 CSV with a header row and one row per invoice (id, date, customer, amount, currency, status, paid_at).
-- **AC-3** (US-1): Given a non-admin user, when they call the export endpoint, then they get 403 and no job is queued.
-- **AC-4** (US-2): Given an export older than 24 hours, when anyone opens its link, then they get 410 Gone and the file has been deleted.
-- **AC-5** (US-1): Given a cell value starting with `=`, `+`, `-` or `@`, when it is written to the CSV, then it is prefixed with `'` (no formula injection).
+## Acceptance criteria
+- **AC-1**: Given an admin on Settings → Data, when they click "Export CSV", then an export job is queued and the page shows "Preparing your export".
+- **AC-2**: Given a finished export, when the admin opens the link, then they get a UTF-8 CSV with a header row and one row per invoice (id, date, customer, amount, currency, status, paid_at).
+- **AC-3**: Given a non-admin user, or an admin of another account, when they call the export endpoints, then they get 403 and no job is queued.
+- **AC-4**: Given an export older than 24 hours, when anyone opens its link, then they get 410 Gone and the file has been deleted.
+- **AC-5**: Given a cell value starting with `=`, `+`, `-` or `@`, when it is written to the CSV, then it is prefixed with `'` (no formula injection).
 
-### Edge cases & errors
-- Account with zero invoices → CSV with the header row only.
-- Second export requested while one is running → return the running job; don't queue a duplicate.
-- Job fails → the page shows "Export failed, try again" and the failure is logged with the job id.
+## Data model
+New table, additive and reversible (`migrations/0042_exports.py`):
 
-### Non-functional requirements
-- Performance: 200k invoices exported in under 2 minutes, streamed (memory stays flat).
-- Observability: add `export_job_failure_rate` to `ops/bands.yaml`.
-- Accessibility: the button and status message are keyboard-reachable and announced to screen readers.
+| Column | Type | Constraints | Classification |
+|---|---|---|---|
+| id | uuid | PK | internal |
+| account_id | uuid | FK accounts, indexed | internal |
+| requested_by | uuid | FK users | personal (pseudonymous) |
+| status | enum(queued, running, ready, failed, expired) | not null | internal |
+| storage_key | text | random 128-bit, unique, nullable | secret |
+| row_count | int | nullable | internal |
+| created_at, expires_at | timestamptz | not null; expires_at = created_at + 24h | internal |
 
-## Design
-### Approach
-`POST /api/exports` (admin only) enqueues an `ExportInvoicesJob`. The job streams rows from `billing` in pages of 5k,
-writes the CSV to object storage under a random key, and stores the export record. `GET /api/exports/:id` returns
-status and a signed URL valid until `expires_at`. A daily sweeper deletes expired files.
+## API contracts
+| Method & path | Auth | Request | Responses |
+|---|---|---|---|
+| `POST /api/exports` | session, role `admin` of the account | none | `202 {id, status}` · `200 {id, status}` if one is already running · `403` |
+| `GET /api/exports/:id` | session, admin of `exports.account_id` | none | `200 {status, url?, expires_at}` (url = signed, valid until expires_at) · `403` · `404` · `410` once expired |
 
-### Interfaces & data
-- `POST /api/exports` → `202 {id, status}` · `GET /api/exports/:id` → `{status, url?, expires_at}`
-- New table `exports(id, account_id, requested_by, status, storage_key, created_at, expires_at)`. Additive migration, reversible.
+Errors use the standard `{error: {code, message}}` envelope. Never echo internal ids of other accounts.
 
-### Alternatives considered
-| Option | Why not |
-|---|---|
-| Generate synchronously in the request | 200k rows times out and blocks a web worker |
-| Email the file | Puts personal data in mailboxes we don't control (policy-compliance) |
+## Security & data-leak flags
+- ⚠️ **Cross-account access (IDOR)** on `GET /api/exports/:id`: authorise by `account_id` + admin role, not by id alone → AC-3 test with two accounts. (backend lead)
+- ⚠️ **Guessable download links**: random `storage_key` plus a signed URL expiring at `expires_at`. Never log the URL. (backend lead)
+- ⚠️ **Formula injection** when the file is opened in Excel → AC-5. (backend lead)
+- ⚠️ **PII leaving the system** (customer names and emails): admin-only, 24h retention, audit log entry (who, when, row count). The policy-compliance conflict was resolved by the compliance owner on 2026-03-04.
+- ⚠️ The bucket needs a 24h lifecycle rule as a second line of defence behind the sweeper. (SRE)
 
-### Security (policy-security)
-Data classification: confidential (customer PII). Threats: cross-account access (authz check on account_id + admin role,
-AC-3), guessable links (random key + signed URL), formula injection when opened in Excel (AC-5).
+## Architecture
+`POST /api/exports` enqueues an `ExportInvoicesJob`. The job streams rows from `billing` in pages, writes the CSV to object
+storage under the random key, and updates the export record. A daily sweeper deletes expired files.
+Alternatives: synchronous generation (times out at 200k rows and blocks a web worker); emailing the file (puts PII in mailboxes we don't control).
+UX states: idle → preparing (spinner + text) → ready (download link + expiry time) → failed (retry). No ADR (nothing hard to reverse).
 
-### Compliance (policy-compliance)
-Personal data leaves the system at the admin's request, which is the purpose of the feature. Files are deleted after 24h (AC-4).
-Each export is recorded in the audit log (who, when, row count).
-
-### UX & brand (policy-ux, policy-brand)
-States: idle → preparing (spinner + text) → ready (download link + expiry time) → failed (retry). Copy: "Export CSV", "Preparing your export".
-
-### Rollout & rollback
-Behind the `csv_export` flag, enabled for internal accounts first, then everyone. Rollback: turn off the flag; the migration is additive.
+## Rollout & rollback
+Behind the `csv_export` flag, internal accounts first, then everyone. Rollback: turn the flag off (the migration is additive).
 Watch `export_job_failure_rate` and dashboard p95 latency.
 
-## Flags (points of attention)
-- ⚠️ Storage bucket must have a 24h lifecycle rule as a second line of defence behind the sweeper (SRE)
-
-## Policy conflicts
-| Requirement | Policy | Conflict | Resolution |
-|---|---|---|---|
-| Export contains customer emails | policy-compliance: minimise PII leaving the system | Export is the requested feature | Admin-only, 24h retention, audit log (compliance owner, 2026-03-04) |
-
-## Out of scope
-- Scheduled exports, non-CSV formats, imports.
-
-## ADRs
-- None (no hard-to-reverse decision)
+## Open questions
+- [x] Who may export? → admins only (product lead, 2026-03-03)
+- [x] Retention? → 24 hours (compliance owner, 2026-03-04)

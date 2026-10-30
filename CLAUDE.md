@@ -1,41 +1,26 @@
 # CLAUDE.md
 
-This repo follows Anthropic's **AI-native SDLC**. Work starts from an **intent**, every stage commits an artifact the next stage reads,
-and humans decide at every gate. Workflow: @docs/sdlc.md · Review rules: @REVIEW.md · Governance: @docs/governance.md
+This repo is the **zouj-ai-sdlc** Claude Code plugin, and it dogfoods itself: changes go through
+`.aiops/NNNN-slug/{intent,spec,plan,review}.md` (`bin/sdlc status`). Docs: @docs/state-machine.md · @docs/architecture.md
 
-## The loop
-**Intent → Plan → Design → Build → Test → Deploy → Maintain → (new intent)**
-`/intent` → `/spec` → `/plan` (Plan mode) → `/implement` → `/verify` → `/review` → `/pr` → `/deploy` → `/triage`
-Lost? `/sdlc <id>`. Artifacts live in `docs/intents/NNNN-slug/`: `intent.md` → `spec.md` → `plan.md`.
+## Layout
+`.claude-plugin/` manifests · `skills/` · `agents/` · `hooks/` (hooks.json + bash guards) · `bin/sdlc` → `lib/sdlc_engine/`
+(stdlib-only state engine) · `schemas/` · `defaults/` · `templates/{artifacts,scaffold,docs,stacks}` · `tests/` · `evals/`
 
 ## Rules
-1. **Intent first.** No spec without a validated `intent.md`. No code without an accepted `spec.md` and `plan.md`.
-   Exempt: typos, docs-only, dependency bumps.
-2. **Plan mode before building.** The engineer challenges and accepts the plan, and it's committed as `plan.md`.
-3. **When code diverges from `plan.md`, update `plan.md` (tasks + Deviation log) in the same commit.**
-4. **Bug fixes:** failing test first, human approves it, tests get locked (`/fix`), then fix the code. Never edit locked tests.
-5. **Stop at the production gate.** Deploy to staging, then hand off. Never deploy to prod, merge PRs, or approve your own work.
-6. **Never bypass guardrails.** If a hook blocks you, explain the reason and the procedure, and ask the human.
-7. Don't invent requirements. Unknowns go in "Open questions".
+1. Follow the 5 states for anything beyond docs and typos. Never write gate statuses or `approved-*` fields yourself.
+2. **Engine and guards are test-first**: add the failing case in `tests/` before changing `lib/` or `hooks/`. Every block
+   message states the reason **and** the procedure.
+3. Engine code is stdlib only (Python ≥ 3.9). Bash hooks must stay dormant without `.aiops/` (`aiops_enabled`) and keep
+   regexes in variables, never inline in `[[ =~ ]]`.
+4. Skills call `sdlc …` (it's on PATH while the plugin is enabled). Reference plugin files as `${CLAUDE_PLUGIN_ROOT}/…`.
+5. Consumer-facing files live in `templates/scaffold/`, and `sdlc init` must never overwrite an existing file.
+6. When code diverges from `plan.md`, log it in the Deviation log in the same commit.
 
-## Definition of done
-- `make check` is green (the Stop hook enforces this) and every AC in `spec.md` has a test that would fail without the change.
-- `plan.md` tasks are ticked, and any deviations are logged.
-- `/verify` (fresh-context verifier) says VERIFIED. UI changes include a screenshot.
-- Docs and `CHANGELOG.md` `[Unreleased]` are updated.
-
-## Commands (configure in `Makefile`)
-`make format` · `make lint` · `make typecheck` · `make test` · `make build` · `make check` (= lint+typecheck+test)
-`make deploy ENV=staging` · `make rollback ENV=staging` · `make evals` · `make validate-template` · `make doctor`
-
-## Working style
-- **Auto mode** is fine for routine, well-tested tasks. Review the artifacts at the end of the session.
-- **Parallelism:** at most 2-3 sessions, each in its own worktree (`/parallel`). Delegate repetitive work to subagents.
-- Commits: Conventional Commits + `Refs: docs/intents/NNNN-slug`. Branches: `feat/NNNN-slug`, `fix/...`.
-- Cite code as `path:line`.
+## Commands
+`make check` (lint + compile + tests) · `make validate` (`claude plugin validate .`) · `make dev` (`claude --plugin-dir .`) ·
+`make evals` · `bin/sdlc status`
 
 ## Lessons
-<!-- When Claude makes the same mistake twice, add a one-line rule here (use /learn) and add an eval. Keep this file about one page. -->
-
-## Project notes
-<!-- Stack, architecture overview, key modules, gotchas. -->
+- The repo's own guards match command *text*: put fixture content that mentions prod deploys, merges or lock paths in files
+  written with the Write tool, not in heredocs on the command line.

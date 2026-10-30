@@ -1,0 +1,32 @@
+name: Bug report
+description: Something is broken
+labels: ["type:bug", "needs-triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: ["SEV1 - outage", "SEV2 - major degradation", "SEV3 - minor", "SEV4 - cosmetic"]

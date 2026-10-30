@@ -3,6 +3,10 @@
   "permissions": {
     "allow": [
       "Bash(make *)",
+      "Bash(bin/sdlc *)",
+      "Bash(sdlc *)",
+      "Bash(python3 -m unittest*)",
+      "Bash(claude plugin validate*)",
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
@@ -18,11 +22,7 @@
       "Bash(gh pr view *)",
       "Bash(gh pr list*)",
       "Bash(gh pr diff *)",
-      "Bash(gh pr checks *)",
-      "Bash(scripts/new-intent.sh *)",
-      "Bash(python3 scripts/check-bands.py*)",
-      "Bash(python3 scripts/run-evals.py --dry-run*)",
-      "Bash(bash scripts/validate-template.sh)"
+      "Bash(gh pr checks *)"
     ],
     "ask": [
       "Bash(git push *)",
@@ -30,9 +30,8 @@
       "Bash(gh issue create *)",
       "Bash(gh release *)",
       "Bash(git tag *)",
-      "Bash(scripts/worktree.sh *)",
-      "Bash(make deploy*)",
-      "Bash(make rollback*)"
+      "Bash(sdlc-worktree *)",
+      "Bash(claude plugin eval*)"
     ],
     "deny": [
       "Read(./.env)",
@@ -47,55 +46,7 @@
       "Bash(git reset --hard*)",
       "Bash(rm -rf *)",
       "Bash(sudo *)",
-      "Bash(make deploy ENV=prod*)",
-      "Bash(make rollback ENV=prod*)",
       "Bash(gh pr merge*)"
-    ]
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh" }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-bash.sh" },
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-deploy.sh" }
-        ]
-      },
-      {
-        "matcher": "mcp__.*deploy.*",
-        "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-deploy.sh" }
-        ]
-      },
-      {
-        "matcher": "Edit|MultiEdit|Write",
-        "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-files.sh" },
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-tests.sh" }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|MultiEdit|Write",
-        "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-format.sh" }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-verify.sh", "timeout": 600 }
-        ]
-      }
     ]
   }
 }

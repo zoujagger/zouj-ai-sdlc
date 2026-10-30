@@ -1,0 +1,6 @@
+{
+  "lock_when_idle": true,
+  "commit_approvals": true,
+  "main_branch": "main",
+  "require_signed_approvals": false
+}

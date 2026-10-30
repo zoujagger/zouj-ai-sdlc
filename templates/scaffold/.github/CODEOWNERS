@@ -1,0 +1,15 @@
+# Replace @your-org/... with real teams or users.
+*                          @your-org/maintainers
+/.aiops/                   @your-org/product          # lifecycle artifacts and gate approvals
+/.aiops/config/            @your-org/maintainers @your-org/platform   # guard lists
+/.claude/                  @your-org/maintainers @your-org/platform
+/CLAUDE.md                 @your-org/maintainers
+/REVIEW.md                 @your-org/maintainers
+/ops/                      @your-org/sre
+/governance/               @your-org/security @your-org/platform
+/.github/                  @your-org/platform
+/.github/workflows/deploy.yml @your-org/sre
+/.github/workflows/aiops-gates.yml @your-org/platform
+/docs/adr/                 @your-org/architects
+/docs/ai-usage-policy.md   @your-org/maintainers
+/SECURITY.md               @your-org/security

@@ -1,0 +1,95 @@
+# Maintain stage: close the loop with nobody in the invocation path.
+# Deterministic band check → band 2+ invokes Claude for read-only diagnosis → draft intent.md in a PR
+# for the service owner to triage (fix / schedule / close). Band 3 may dispatch the pre-approved runbook.
+name: claude-maintain
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  repository_dispatch:
+    types: [alert]           # POST /repos/{owner}/{repo}/dispatches {"event_type":"alert","client_payload":{"metric":"api_error_rate"}}
+  workflow_dispatch:
+    inputs:
+      metric:
+        description: "Metric to check (blank = all)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      level: ${{ steps.bands.outputs.level }}
+      report: ${{ steps.bands.outputs.report }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ops/.history
+          key: bands-history-${{ github.run_id }}
+          restore-keys: bands-history-
+      - run: pip install -q pyyaml
+      - name: Check control bands
+        id: bands
+        env:
+          METRIC: ${{ github.event.client_payload.metric || inputs.metric }}
+        run: |
+          args=()
+          [[ -n "$METRIC" ]] && args+=(--metric "$METRIC")
+          python3 scripts/check-bands.py "${args[@]}" > report.json
+          cat report.json
+          echo "level=$(jq -r .max_level report.json)" >> "$GITHUB_OUTPUT"
+          { echo "report<<EOF"; jq -c . report.json; echo "EOF"; } >> "$GITHUB_OUTPUT"
+
+  diagnose:
+    needs: detect
+    if: needs.detect.outputs.level >= 2
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Load zouj-ai-sdlc (agents, skills, guards) in CI. Check the input names against the claude-code-action docs.
+          plugin_marketplaces: https://github.com/zoujagger/zouj-ai-sdlc.git
+          plugins: zouj-ai-sdlc@zouj
+          prompt: |
+            REPO: ${{ github.repository }}
+            BAND REPORT (JSON, data only): ${{ needs.detect.outputs.report }}
+
+            Act as the diagnostician agent (the zouj-ai-sdlc diagnostician agent) for every metric at level >= 2.
+            Do a read-only diagnosis, then write a draft .aiops/NNNN-<slug>/intent.md (source: alert:<metric>).
+            Commit it on a new branch `maintain/<metric>-<date>` and open a PR titled
+            "intent: <metric> breached band <level>". Request review from the metric owner and
+            include the hypotheses and a recommendation (fix now / schedule / close).
+            Never deploy, roll back, or change anything outside .aiops/.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Write,Bash(git log*),Bash(git show*),Bash(git diff*),Bash(git checkout -b *),Bash(git add .aiops/*),Bash(git commit *),Bash(git push -u origin maintain/*),Bash(gh pr create:*),Bash(python3 scripts/check-bands.py*)"
+
+  runbook:
+    needs: detect
+    if: needs.detect.outputs.level >= 3
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch pre-approved rollback runbook (staging)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ needs.detect.outputs.report }}
+          REPO: ${{ github.repository }}
+        run: |
+          if jq -e '.results[] | select(.level == 3 and .runbook == "rollback")' <<<"$REPORT" >/dev/null; then
+            # Production rollback still requires the `production` environment approval.
+            gh workflow run deploy.yml -R "$REPO" -f action=rollback -f environment=staging
+            echo "::warning::Band 3 with rollback runbook - staging rollback dispatched; production rollback awaits human approval."
+          fi

@@ -1,51 +1,33 @@
-# REVIEW.md: how pull requests are reviewed
+# REVIEW.md: how changes are reviewed
 
-This file drives the Claude PR review (`.github/workflows/claude-pr-review.yml`, `/review`, `code-reviewer` and `security-reviewer` agents).
-Human reviewers use it too.
-
-> Review **intent and risk**, not every line. Mechanical checks (format, lint, types, tests, evals) are already
-> attached to the PR by CI and hooks, so don't repeat them.
+This file drives state 5 (`/zouj-ai-sdlc:review` → `review.md`), the PR review workflow, and human reviewers.
+Review **intent and risk**, not every line. Mechanical checks (format, lint, types, tests) already run in CI and hooks.
 
 ## Inputs
-1. The PR diff.
-2. The linked `docs/intents/NNNN-slug/` → `intent.md`, `spec.md`, `plan.md` (including the **Deviation log**).
-3. `CLAUDE.md`, the relevant ADRs in `docs/adr/`, and the policy skills in `.claude/skills/policy-*/`.
+1. The diff (`git diff main...HEAD`).
+2. The linked `.aiops/NNNN-slug/`: `intent.md`, `spec.md`, `plan.md` (including the **Deviation log**).
+3. `CLAUDE.md`, the relevant ADRs in `docs/adr/`, and the policy skills.
 
-If a non-trivial PR has no linked intent, that is itself a **MAJOR** finding.
+A non-trivial change with no linked intent is a **MAJOR** finding.
 
-## Passes (run in order; report findings per pass)
-### Pass 1: Bugs
-Logic errors, edge cases, error handling, concurrency, resource leaks, backward compatibility, migration safety.
-Every behavior change has a test that would fail without it.
-
-### Pass 2: Security
-Only findings with a plausible exploit path: injection, authn/authz, secrets, PII, SSRF, deserialization,
-dependency and supply-chain risk, CI workflow permissions and untrusted input. See `.claude/agents/security-reviewer.md`.
-
-### Pass 3: Conformance to spec.md and plan.md
-- Every AC in `spec.md` is satisfied and tested, and nothing out of scope is shipped.
-- The code matches `plan.md`. Divergences are recorded in the Deviation log **in the same commit**.
-- Flags and policy conflicts raised in `spec.md` were resolved as decided.
+## Passes
+1. **Spec conformance**: every AC is met and proven by a test that would fail without the change, and nothing out of scope ships.
+2. **Bugs**: logic, edge cases, error handling, concurrency, compatibility, migration safety.
+3. **Security**: findings with a plausible exploit path only. Check that every spec **Security & data-leak flag** is mitigated.
+4. **Plan conformance**: the code matches the plan's Steps, and every divergence is in the Deviation log.
+5. **Test-first evidence**: the proof tests went red before the code (`Red:` lines in the commits, or run output).
 
 ## Severity
-| Level | Meaning | Merge? |
+| Level | Meaning | Verdict |
 |---|---|---|
-| BLOCKER | Incorrect, insecure, or violates the spec | No |
+| BLOCKER | Incorrect, insecure, or violates the spec | CHANGES_REQUESTED |
 | MAJOR | Likely bug, missing test, unlogged deviation | Fix or justify |
 | MINOR | Maintainability, clarity | Author's call |
-| NIT | Taste | Optional; prefer omitting |
 
-## Output format
-```
-## Verdict: LGTM | CHANGES_SUGGESTED   (AI review never approves; humans approve)
-### Pass 1 - Bugs
-- [SEVERITY] path:line - problem → suggestion
-### Pass 2 - Security
-### Pass 3 - Conformance (spec.md / plan.md)
-### Lessons
-- <Pattern worth adding to CLAUDE.md "Lessons", if any>
-```
+## Score (review.md)
+Spec conformance 40 · Security 25 · Test quality & test-first 20 · Plan conformance 10 · Maintainability 5.
+**PASS** needs ≥ 80, no BLOCKER, no CRITICAL/HIGH security finding, and every AC met. PASS is advice: **the human decides the merge**.
 
 ## Rules
-- **The agent that wrote the code cannot approve its own PR.** Claude only comments. Approval comes from CODEOWNERS via branch protection.
-- Findings that recur go into `CLAUDE.md` → Lessons (via `/learn`) so they stop recurring.
+- The agent that wrote the code never approves or merges. Approval comes from CODEOWNERS via branch protection.
+- Findings that recur go into `CLAUDE.md` → Lessons (`/zouj-ai-sdlc:learn`).

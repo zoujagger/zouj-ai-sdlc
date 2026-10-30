@@ -1,0 +1,5 @@
+# Paths writable in the read-only states (1 BRAINSTORMING, 2 SPECIFICATION, 3 PLAN) and with no active intent.
+# Bash glob syntax (`*` crosses `/`), relative to the repo root. Extend per repo in .aiops/config/readonly-exempt.
+# .aiops/ is always governed by the artifact rules instead.
+*.md docs and notes (not application code)
+docs/* documentation

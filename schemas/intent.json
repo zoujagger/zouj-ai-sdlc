@@ -1,0 +1,11 @@
+{
+  "kind": "intent",
+  "description": "State 1 BRAINSTORMING output: the need, framed by a clarification interview.",
+  "front": ["id", "title", "status"],
+  "statuses": ["Draft", "Approved", "Closed"],
+  "gate": "Approved",
+  "approval_phrase": "Intent Approved",
+  "requires": null,
+  "sections": ["Problem", "Desired outcome", "Users & systems affected", "Constraints", "Out of scope", "Open questions"],
+  "checks": []
+}

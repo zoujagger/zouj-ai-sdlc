@@ -1,0 +1,11 @@
+{
+  "kind": "spec",
+  "description": "State 2 SPECIFICATION output: engineering requirements, DB schema, API contracts, security and data-leak flags.",
+  "front": ["id", "title", "status", "risk"],
+  "statuses": ["Draft", "Approved"],
+  "gate": "Approved",
+  "approval_phrase": "Spec Approved",
+  "requires": "intent",
+  "sections": ["Summary", "Requirements", "Acceptance criteria", "Data model", "API contracts", "Security & data-leak flags", "Architecture", "Rollout & rollback", "Open questions"],
+  "checks": ["has_acceptance_criteria"]
+}

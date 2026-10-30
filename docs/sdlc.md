@@ -1,113 +1,37 @@
-# The AI-Native SDLC
-
-This template implements the workflow from Anthropic's *AI-Native SDLC Playbook*.
-Work starts from an **intent**. Each stage **commits an artifact the next stage can read**, and every gate is a human decision.
+# Mapping to Anthropic's AI-Native SDLC Playbook
 
 > "The loop keeps running. Human judgement stays above it."
 
-```
-            ┌──────────────────────────────────────────────────────────────────────┐
-            ▼                                                                      │
- Trigger: INTENT ─▶ 1 PLAN ─▶ 2 DESIGN ─▶ 3 BUILD ─▶ 4 TEST ─▶ 5 DEPLOY ─▶ 6 MAINTAIN
-  /intent            (validate)  /spec       /plan      /verify    /review    /triage
-  intent.md                      spec.md     /implement /fix       /pr        bands.yaml
-                                             plan.md    evals      /deploy    → new intent.md
-     ✋ PO validates   ✋ spec accepted  ✋ plan accepted   ✋ PR approved  ✋ prod approval  ✋ owner triages
-```
-Artifacts for each change: `docs/intents/NNNN-slug/{intent.md, spec.md, plan.md}`. Check status with `/sdlc <id>`.
+The playbook's loop, **Intent → Plan → Design → Build → Test → Deploy → Maintain → (new intent)**, maps onto the
+plugin's five enforced states plus optional Deploy and Maintain skills that feed new intents back in.
 
----
+| Playbook stage | zouj-ai-sdlc | Artifact | Human gate | Enforced by |
+|---|---|---|---|---|
+| Trigger: Intent | 1 BRAINSTORMING · `/zouj-ai-sdlc:intent` (also issues → `claude-issue-triage.yml`, alerts → `claude-maintain.yml`) | `intent.md` | `Intent Approved NNNN` (product owner) | prompt hook, pre-edit guard |
+| 1 Plan (formalise and share) | `.aiops/` in the repo, CODEOWNERS on `.aiops/`, skills encode the process | — | — | `aiops-gates.yml` |
+| 2 Design | 2 SPECIFICATION · `/zouj-ai-sdlc:spec`, policy skills, `/zouj-ai-sdlc:adr` | `spec.md` (+ ADRs) | `Spec Approved NNNN` (+ tech lead if `risk: high`) | prompt hook, creation order |
+| 3 Build: Plan mode | 3 PLAN · `/zouj-ai-sdlc:plan` (read-only lock) | `plan.md` | `Plan Approved NNNN` (engineer) | read-only lock |
+| 3 Build: implementation | 4 EXECUTION · `/zouj-ai-sdlc:implement`, `/zouj-ai-sdlc:parallel` | code, commits, Deviation log | none: autonomous | Stop hook (`make check`) |
+| 4 Test | TDD inside state 4; `/zouj-ai-sdlc:fix` (test lock); `make evals` | tests, `Red:` evidence | the human confirms the failing test in `/fix` | guard-tests, stale review |
+| 5 Deploy: AI review | 5 PRE-REVIEW · `/zouj-ai-sdlc:review` (verifier, code-reviewer, security-reviewer), `/zouj-ai-sdlc:pr` | `review.md`, `pr.md` | **the merge** (CODEOWNER) | merge and push-to-main guards, CI audit |
+| 5 Deploy: release | `/zouj-ai-sdlc:deploy` (staging), `/zouj-ai-sdlc:release` | handoff note, CHANGELOG | the production approver | guard-deploy, GitHub Environment |
+| 6 Maintain | `/zouj-ai-sdlc:triage`, `:incident`, `:postmortem`, `:retro`, `ops/bands.yaml` | diagnosis → a **new intent.md** | the service owner triages | read-only diagnosis |
 
-## Trigger: Intent
-| | |
-|---|---|
-| **What happens** | A person, ticket, or alert expresses a need. Claude asks framing questions and drafts `intent.md`, a proto-spec in Markdown |
-| **Artifact** | `intent.md`: problem, desired outcome, users and systems affected, constraints, open questions |
-| **Human** | The initiator states the need and corrects the draft. The product owner reviews and validates |
-| **AI** | `/intent` → `product-analyst` |
-| **Gate** | Validated in the shared intents repo (`status: Validated`, or the intent PR merged) |
-| **Entry points** | `/intent` in Claude Code · the GitHub "Intent" issue form (→ `claude-issue-triage.yml`) · alerts (→ `claude-maintain.yml`) · postmortem actions |
+## Principles kept from the playbook
+- Every stage commits an artifact the next stage reads, so git holds the full chain:
+  **intent → spec → plan → diff → tests → review → approval commits → merge**.
+- "The agent does everything up to the production gate and nothing past it." Here that gate also covers merging.
+- Skills make violations rare. Hooks make the absolute rules close to impossible.
+- Every production incident becomes a regression eval (`evals/`).
+- Parallelism: at most 2-3 sessions in separate worktrees (`sdlc-worktree`).
 
-## 1. Plan
-The intent is formalised and shared. Recurring processes are encoded as **skills** in `.claude/skills/`, so every intent is handled the same way.
-Prerequisites: the accepted `intent.md` template and a shared repo the product owner watches (`docs/intents/` + CODEOWNERS).
-
-## 2. Design
-| | |
-|---|---|
-| **What happens** | Requirements and design are produced **in one session**. Claude reads `intent.md`, applies the policy skills (`policy-security`, `policy-compliance`, `policy-ux`, `policy-brand`), and writes `spec.md`. It flags points of attention and surfaces policy conflicts |
-| **Artifact** | `spec.md`, committed next to `intent.md` |
-| **Human** | The product owner reviews and resolves the flags with the compliance owner. The tech lead joins for high-risk changes |
-| **AI** | `/spec` → `product-analyst` (requirements) + `architect` (design, ADRs) |
-| **Gate** | Human acceptance (`status: Accepted`), which triggers Plan mode in Build |
-| **Front end** | Generate a mock-up from `intent.md` (e.g. Claude Design) before acceptance |
-
-## 3. Build
-| | |
-|---|---|
-| **What happens** | The engineer starts in **Plan mode** with `intent.md` + `spec.md`, has Claude build a plan, stress-tests it, and accepts it. It's committed as `plan.md`. Then implementation follows. **If code diverges from the plan, `plan.md` is updated in the same commit** |
-| **Auto mode** | The default for routine, well-tested tasks. Review then focuses on the artifacts at the end of the session |
-| **Parallelism** | 2-3 sessions, each in its own git worktree (`/parallel`, `scripts/worktree.sh`). Repetitive tasks become subagents in `.claude/agents/` |
-| **Institutional memory** | `CLAUDE.md` (about one page: conventions, commands, architecture, Lessons; a repeated mistake → `/learn`) · skills (`.claude/skills/<name>/SKILL.md`) |
-| **Hooks** | Block protected paths, format and lint after every edit, block secrets. Keep them fast |
-| **Artifacts** | `plan.md`, code, commits |
-| **AI** | `/plan` → `planner` · `/implement` → `implementer` |
-
-## 4. Test
-- **Feedback loop.** Claude checks its own work (tests, build, screenshots) and iterates before a human sees it. The definition of done lives in `CLAUDE.md`, and the Stop hook enforces `make check`.
-- **Bug fixes.** Write a failing test first, a human approves it, then fix. The `guard-tests.sh` hook blocks test edits while `.claude/state/test-lock` exists (`/fix`).
-- **Verification subagent.** A final check in a **fresh context window** that doesn't inherit the session's assumptions (`/verify` → `verifier`).
-- **Continuous evals.** A suite of 20-50 real tasks in `evals/` runs in CI whenever `CLAUDE.md`, skills, hooks or `REVIEW.md` change (`claude-evals.yml`). **Every production incident becomes a new regression eval.**
-
-## 5. Deploy
-- **AI PR review.** Claude reviews every PR against [`REVIEW.md`](../REVIEW.md) in three passes (bugs, security, conformance to `spec.md` and `plan.md`) and responds to `@claude` comments. Recurring findings feed `CLAUDE.md` Lessons.
-- **Human approval** comes from branch protection and CODEOWNERS. **The agent that wrote the code can't approve its own PR.** The AI review only comments.
-- **Hooks as checkpoints.** `guard-deploy.sh` blocks production deploys. Every block states the reason and the procedure.
-- **Managed settings.** The platform enforces permissions, sandbox, managed hooks, approved marketplaces and minimum version (`governance/managed-settings.example.json`).
-- **CI/CD.** Start with read-only analysis (`claude -p`), then add writes behind PRs. Deploys are exposed per environment (`deploy.yml`, optionally MCP for staging). **Rollback is a single command** (`make rollback ENV=…`), tested in staging.
-- **Principle:** *"The agent does everything up to the production gate and nothing past it."*
-
-## 6. Maintain
-- **Closing the loop.** A trigger (threshold breach, ticket, channel message, schedule) invokes Claude with nobody in the invocation path (`claude-maintain.yml`).
-- **Control bands** (`ops/bands.yaml`). Detection is deterministic, from a rolling baseline (`scripts/check-bands.py`):
-  | Band | Action |
-  |---|---|
-  | 1σ | Log the event |
-  | 2σ | Read-only diagnosis (`diagnostician`) |
-  | 3σ | Propose a PR, or trigger a pre-approved runbook (e.g. rollback) |
-- **Back into the loop.** The diagnosis is written as `intent.md` and starts again at stage 1. The service owner triages: fix, schedule, or close (`/triage`).
-- **Recurring scans.** A weekly security and health scan (`claude-scheduled-scan.yml`). Narrow fixes go through PR review. Broad ones become a new `intent.md`.
-- **In channels.** Claude in Slack/Teams and tickets (Claude Tag) can run triage and produce versioned postmortems (`/postmortem` → `docs/postmortems/`).
-
----
-
-## Component map
-| Stage | Skills | Agents | Hooks / automation |
-|---|---|---|---|
-| Intent / Plan | `/intent`, `/sdlc`, `/onboard`, `/help-me` | product-analyst | `claude-issue-triage.yml` |
-| Design | `/spec`, `/adr`, policy-* | product-analyst, architect | — |
-| Build | `/plan`, `/implement`, `/parallel` | planner, implementer, test-engineer | guard-files, post-edit-format, session-start |
-| Test | `/verify`, `/fix`, `/learn` | verifier | guard-tests, stop-verify, `claude-evals.yml` |
-| Deploy | `/review`, `/security-check`, `/pr`, `/release`, `/deploy` | code-reviewer, security-reviewer, release-manager, docs-writer | guard-bash, guard-deploy, `ci.yml`, `claude-pr-review.yml`, `claude.yml`, `deploy.yml` |
-| Maintain | `/triage`, `/incident`, `/postmortem`, `/retro` | diagnostician, incident-responder | `claude-maintain.yml`, `claude-scheduled-scan.yml` |
-
-## Which agent does what
-Skills call these for you; invoke one directly only when you want that job alone (e.g. "use the security-reviewer on src/auth").
-| Agent | Use it to… | Called by |
+## Who does what
+| Agent | State | Job |
 |---|---|---|
-| `product-analyst` | Turn a need into `intent.md`, then the requirements half of `spec.md` | `/intent`, `/spec` |
-| `architect` | Write the design half of `spec.md` and draft ADRs | `/spec` |
-| `planner` | Turn an accepted spec into `plan.md` | `/plan` |
-| `implementer` | Code one plan task with TDD, keeping `plan.md` in sync | `/implement` |
-| `test-engineer` | Find AC coverage gaps, write or harden tests | on demand |
-| `verifier` | Independent fresh-context check against `spec.md` and `plan.md` | `/verify`, `/pr` |
-| `code-reviewer` | 3-pass review per `REVIEW.md` (comments only) | `/review` |
-| `security-reviewer` | Exploit-focused security pass | `/security-check`, `/review`, `claude-pr-review.yml`, `claude-scheduled-scan.yml` |
-| `docs-writer` | Bring README, docs and CHANGELOG in line with the code | on demand |
-| `release-manager` | SemVer bump, CHANGELOG, release notes | `/release`, `claude-release-notes.yml` |
-| `diagnostician` | Read-only diagnosis of an alert or ticket → draft `intent.md` | `/triage`, `claude-maintain.yml` |
-| `incident-responder` | Live incident help and blameless postmortems | `/incident`, `/postmortem` |
-
-## Skill vs hook
-A skill is advisory and makes violations rare. A hook is deterministic and makes them close to impossible.
-See [governance.md](governance.md) for sources of truth, the audit trail, metrics and anti-patterns.
+| product-analyst | 1-2 | interview → intent.md, requirements and ACs |
+| architect | 2 | DB schema, API contracts, data-leak flags, ADRs |
+| planner | 3 | read-only file-by-file plan |
+| implementer | 4 | one step per fresh subagent, strict TDD |
+| verifier · code-reviewer · security-reviewer | 5 | independent, fresh-context scoring |
+| diagnostician · incident-responder | Maintain | diagnosis → new intent, postmortems |
+| test-engineer · docs-writer · release-manager | any | coverage gaps, docs, releases |

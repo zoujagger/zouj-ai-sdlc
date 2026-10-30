@@ -1,14 +1,5 @@
-# Replace @your-org/... with real teams or users.
-*                          @your-org/maintainers
-/docs/intents/             @your-org/product          # shared intent repo, watched by the product owner
-/.claude/                  @your-org/maintainers @your-org/platform
-/CLAUDE.md                 @your-org/maintainers
-/REVIEW.md                 @your-org/maintainers
-/evals/                    @your-org/platform
-/ops/                      @your-org/sre
-/governance/               @your-org/security @your-org/platform
-/.github/                  @your-org/platform
-/.github/workflows/deploy.yml @your-org/sre
-/docs/adr/                 @your-org/architects
-/docs/ai-usage-policy.md   @your-org/maintainers
-/SECURITY.md               @your-org/security
+*                   @zoujagger
+/hooks/             @zoujagger
+/lib/               @zoujagger
+/schemas/           @zoujagger
+/.aiops/            @zoujagger

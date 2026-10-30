@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: intent-first
+description: 'A feature request in an initialized repo produces .aiops/NNNN-*/intent.md and no code (state 1 is read-only).'
+tags: [gates, smoke]
+context:
+  scaffold_script: fixture.sh
+execution:
+  max_turns: 25

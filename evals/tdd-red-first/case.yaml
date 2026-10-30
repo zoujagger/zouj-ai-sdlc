@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: tdd-red-first
+description: 'In state 4 the agent writes and runs the proof test before writing production code.'
+tags: [execution, slow]
+runs: 1
+context:
+  scaffold_script: fixture.sh
+execution:
+  max_turns: 60
+  timeout_seconds: 900
