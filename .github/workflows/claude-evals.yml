@@ -35,7 +35,7 @@ jobs:
           git config --global user.name "eval-bot"
           git config --global user.email "eval-bot@users.noreply.github.com"
           python3 scripts/run-evals.py | tee evals-report.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: evals-report
