@@ -36,4 +36,4 @@ human-readable, machine-actionable Markdown artifacts versioned in Git:
 
 ## Open questions
 - [ ] Should `risk: high` specs require a second (tech-lead) approval? (zoujagger)
-- [ ] Rename the GitHub repo from ai-native-sdlc-template to zouj-ai-sdlc? (zoujagger)
+- [x] Rename the GitHub repo from ai-native-sdlc-template to zouj-ai-sdlc? → **Yes**: github.com/zoujagger/zouj-ai-sdlc, local dir renamed (zoujagger, 2026-10-30)
