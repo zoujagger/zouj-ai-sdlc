@@ -23,10 +23,10 @@ P='(prod|production|prd|live)([^a-z]|$)'
 
 if [[ "$tool" == "Bash" ]]; then
   c=$(json_get tool_input.command <<<"$input" | tr -s '[:space:]' ' ')
-  re_make="make [^;&|]*(deploy|rollback|release|promote)[^;&|]*ENV=$P"
-  re_wf="gh workflow run [^;&|]*deploy[^;&|]*(environment|env)=$P"
-  re_tools="(kubectl|helm|terraform|pulumi|serverless|vercel|flyctl|fly|gcloud|aws|az|eb|cdk)[^;&|]*(apply|deploy|up|upgrade|install|--prod)[^;&|]*$P"
-  re_tools2="(kubectl|helm|terraform|pulumi|vercel|flyctl|fly)[^;&|]*$P[^;&|]*(apply|deploy|up|upgrade|install)"
+  re_make="make [^;&|]*(deploy|rollback|release|promote)[^;&|]*ENV=${P}"
+  re_wf="gh workflow run [^;&|]*deploy[^;&|]*(environment|env)=${P}"
+  re_tools="(kubectl|helm|terraform|pulumi|serverless|vercel|flyctl|fly|gcloud|aws|az|eb|cdk)[^;&|]*(apply|deploy|up|upgrade|install|--prod)[^;&|]*${P}"
+  re_tools2="(kubectl|helm|terraform|pulumi|vercel|flyctl|fly)[^;&|]*${P}[^;&|]*(apply|deploy|up|upgrade|install)"
   re_vercel="vercel[^;&|]*--prod"
   for re in "$re_make" "$re_wf" "$re_tools" "$re_tools2" "$re_vercel"; do
     [[ "$c" =~ $re ]] && block "'$c'"
