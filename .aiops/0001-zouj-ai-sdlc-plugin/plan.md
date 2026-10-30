@@ -22,7 +22,7 @@ cutover that the human applies.
 - [x] **S4**: skills and agents rewritten for the state machine; bootstrap skill; `/init` (AC-9)
 - [x] **S5**: consumer scaffold `templates/scaffold/` incl. `aiops-gates.yml` (AC-9, AC-10)
 - [x] **S6**: evals in `claude plugin eval` format; docs, README, CHANGELOG; dev Makefile
-- [ ] **S7**: cutover script `.update/apply.sh` (the human runs it) (AC-1)
+- [x] **S7**: cutover script `.update/apply.sh` (the human runs it) (AC-1)
 
 ## Risks
 | Risk | Likelihood | Impact | Mitigation |
