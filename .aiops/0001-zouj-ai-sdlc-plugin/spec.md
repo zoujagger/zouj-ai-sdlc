@@ -1,10 +1,14 @@
 ---
 id: 0001
 title: zouj-ai-sdlc plugin
-status: Draft
+status: Approved
 risk: high
 intent: ./intent.md
 created: 2026-10-30
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-10-30T14:53:27Z
+approved-via: cli
+approved-sha256: c1714059f50d3fde412c41d72ef1c2a9546ff9c0eca56c6dc7ba6fdb7d265678
 ---
 
 # Spec: zouj-ai-sdlc plugin
