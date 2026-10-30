@@ -25,7 +25,7 @@ jobs:
       report: ${{ steps.bands.outputs.report }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ops/.history
           key: bands-history-${{ github.run_id }}
