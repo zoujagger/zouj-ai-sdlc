@@ -122,7 +122,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Files: `lib/sdlc_engine/machine.py` (modify: `_review_state` `:219` drops `current_branch(root) == main`)
   - Test first: `tests/test_engine.py::States::test_done_reported_on_feature_branch_after_merge`
   - Covers: AC-13
-- [ ] **S12**: Narrow the read-only exemption
+- [x] **S12**: Narrow the read-only exemption
   - Files: `defaults/readonly-exempt` (modify: `docs/*`, `README.md`, `*/README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`)
   - Test first: `tests/test_guards.py::EditGuard::test_policy_files_not_exempt` → `CLAUDE.md` is writable in state 1 today
   - Covers: AC-14

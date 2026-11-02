@@ -31,8 +31,15 @@ class EditGuard(RepoCase):
         self.assertEqual(self.edit("src/app.py", "x = 2\n").returncode, 0)
 
     def test_docs_and_outside_paths_stay_writable(self):
-        self.assertEqual(self.edit("NOTES.md", "n").returncode, 0)
+        self.assertEqual(self.edit("docs/notes.md", "n").returncode, 0)
         self.assertEqual(self.hook("pre-edit", self.hook_input("Write", file_path="/tmp/x.py", content="")).returncode, 0)
+
+    def test_policy_files_not_exempt(self):
+        self.write("intent", INTENT)                                   # state 1: read-only
+        for rel in ("CLAUDE.md", "REVIEW.md", "skills/x/SKILL.md", "agents/x.md", "NOTES.md"):
+            self.assertBlocked(self.edit(rel, "x"), "read-only lock")
+        for rel in ("README.md", "sub/README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "docs/x.md"):
+            self.assertEqual(self.edit(rel, "x").returncode, 0, rel)
 
     def test_agent_cannot_approve_by_editing(self):
         self.write("intent", INTENT)
@@ -102,7 +109,7 @@ class BashGuard(RepoCase):
 
     def test_read_only_state_allows_reading_and_running(self):
         for cmd in ("ls -la > /dev/null 2>&1", "grep -rn x src | head", "make test", "git status", "git log -3",
-                    "cat > /tmp/scratch.txt <<'EOF'\nx > src/app.py\nEOF", "echo hi >> NOTES.md",
+                    "cat > /tmp/scratch.txt <<'EOF'\nx > src/app.py\nEOF", "echo hi >> docs/notes.md",
                     "git switch -c feat/0001-csv-export", "sdlc status", "python3 -c 'print(1)'"):
             self.assertFalse(self.blocked(cmd), cmd)
 
