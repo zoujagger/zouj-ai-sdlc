@@ -118,7 +118,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `lib/sdlc_engine/cli.py` (modify: `cmd_init` `:245` replaces `__ZOUJ_SDLC_REF__` with `v<plugin.json version>`)
   - Test first: `tests/test_cli.py::Init::test_scaffold_pins_and_protects`
   - Covers: AC-12
-- [ ] **S11**: State 6 on any branch
+- [x] **S11**: State 6 on any branch
   - Files: `lib/sdlc_engine/machine.py` (modify: `_review_state` `:219` drops `current_branch(root) == main`)
   - Test first: `tests/test_engine.py::States::test_done_reported_on_feature_branch_after_merge`
   - Covers: AC-13

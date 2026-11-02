@@ -84,6 +84,20 @@ class States(RepoCase):
         git(self.root, "merge", "-q", "--no-ff", "-m", "merge", "feat/0001-csv-export")
         self.assertEqual(self.state().state, 6)
 
+    def test_done_reported_on_feature_branch_after_merge(self):
+        self.to_execution()
+        self.write("plan", (self.d / "plan.md").read_text().replace("- [ ]", "- [x]"))
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "work")
+        self.write("review", REVIEW.format(id="0001", verdict="PASS", commit=git(self.root, "rev-parse", "HEAD")))
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "review")
+        self.assertEqual(self.state().state, 5)                 # before the merge: still waiting on the human
+        git(self.root, "switch", "-q", "main")
+        git(self.root, "merge", "-q", "--no-ff", "-m", "merge", "feat/0001-csv-export")
+        git(self.root, "switch", "-q", "feat/0001-csv-export")
+        self.assertEqual(self.state().state, 6)
+
     def test_editing_an_approved_spec_reopens_the_gate(self):
         self.write("intent", INTENT)
         self.approve("intent")

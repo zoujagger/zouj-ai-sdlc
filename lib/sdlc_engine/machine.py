@@ -219,7 +219,7 @@ def _review_state(root, d, ident):
     main = config(root)["main_branch"]
     rel = f".aiops/{d.name}/review.md"
     on_main = git(root, "show", f"{main}:{rel}")
-    if on_main and A.parse(on_main).get("verdict") == "PASS" and current_branch(root) == main:
+    if on_main and A.parse(on_main).get("verdict") == "PASS":   # merged: DONE whichever branch you're on
         return Status(ident, d, 6, f"merged into {main}", "none (Maintain: /zouj-ai-sdlc:triage on alerts)")
     if a.get("verdict") != "PASS":
         return Status(ident, d, 5, f"review verdict {a.get('verdict') or 'unset'}: fix the findings",
