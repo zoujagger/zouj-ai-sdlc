@@ -19,7 +19,10 @@ We aim to acknowledge reports within 3 business days.
 - **Gate approvals:**
   - Each approval is a single-file commit signed by a key in `.aiops/config/allowed-signers`.
   - `sdlc validate --ci --base <target>` verifies the signature against the *target branch's* signer list, so a change can't vouch for itself.
-  - Use a passphrase-protected key (or `ssh-add -c`), so nothing can sign silently as you.
+  - **A human for each signature** (`approval_key_policy: "human"`, the default): `sdlc approve` and `sdlc doctor`
+    accept only an `sk-` key (touch) or a passphrase-protected key that isn't loaded in ssh-agent. An agent running
+    as you can't sign without you, whatever the shell guards miss.
+  - CI can't see how a key is protected. Keep the key protected, and keep `.aiops/config/` under CODEOWNERS.
 - **Consumer scaffolding:**
   - `templates/scaffold/.claude/settings.json` ships Read/Edit deny rules for `.env*`, `secrets/`, `*.pem` and `*.key`.
   - The scaffold's CI loads this plugin from a pinned ref.

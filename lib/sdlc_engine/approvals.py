@@ -34,7 +34,7 @@ SIGNING_HELP = (
     "  git config user.signingkey ~/.ssh/id_ed25519.pub\n"
     "and make sure your key is in .aiops/config/allowed-signers (human-owned), e.g.\n"
     "  echo \"$(git config user.email) namespaces=\\\"git\\\" $(cat ~/.ssh/id_ed25519.pub)\" >> .aiops/config/allowed-signers\n"
-    "Prefer a passphrase-protected key (or ssh-add -c) so nothing can sign silently as you.")
+    "Use a passphrase-protected key that is not loaded in ssh-agent (or an sk- key): `sdlc doctor` checks it.")
 
 
 KEY_HELP = (
@@ -113,7 +113,9 @@ def approve(root, d, kind, via, who=None):
         return True, f"{kind}.md for {ident} was already approved and is unchanged."
     problem = signing_problem(root)
     if problem:
-        return False, f"{kind}.md for {ident} was NOT approved: {problem}.\n{SIGNING_HELP}"
+        setup = "" if KEY_HELP in problem else f"\n{SIGNING_HELP}"
+        return False, (f"{kind}.md for {ident} was NOT approved: {problem.rstrip('.')}.{setup}\n"
+                       f"Approve in your own terminal: `bin/sdlc approve {ident} {kind}`.")
     signed = bool(config(root).get("require_signed_approvals"))
     who = who or approver(root)
     digest = A.approval_hash(kind, text)

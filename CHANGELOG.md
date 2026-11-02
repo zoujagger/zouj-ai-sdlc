@@ -34,6 +34,17 @@ delivered as intent `.aiops/0002-hardening/`.
   `ZOUJ_SDLC_REF` (set by `sdlc init`) and load it with `--plugin-dir`. This repo's CI audits with the base branch's
   engine, and pins `ruff` and `@anthropic-ai/claude-code`.
 
+- **A human for each signature** (`approval_key_policy`, default `"human"`): approvals and `sdlc doctor` accept
+  only an `sk-` key or a passphrase-protected key that isn't loaded in ssh-agent. Approvals that need a passphrase
+  are made with `bin/sdlc approve` in a terminal, and the prompt phrase tells Claude the exact command.
+- The audit **fails closed** on an unresolvable or empty `--base`, and the scaffold's `aiops-gates` verifies `BASE_SHA`.
+- Legacy approvals must be full shas. `legacy-approvals --write` records only commits that pass every other audit check.
+- Heredoc markers count only outside quotes and comments.
+- `.aiops/` protection also covers globs, `$PWD`/`$(pwd)`, `find` predicates, `tar -C` and `git apply/am`.
+- Secret reads: quoting, glob words, symlinks and `~/.ssh` / `~/.aws` / `.netrc` / `.npmrc` are covered. The
+  `.env.example` exemption is per word.
+- Force-push through a `+refspec`, `git --work-tree`, and `curl -o` / `wget -O` are caught.
+
 ### Added
 - `sdlc legacy-approvals [--write]` (human-only): records pre-signing approval commits as an explicit legacy list.
 - `sdlc validate --base REF`, and `sdlc doctor` signing checks (configured key, key in `allowed-signers`, passphrase warning).

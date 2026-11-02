@@ -64,6 +64,16 @@ class Init(RepoCase):
 
 
 class Lifecycle(RepoCase):
+    def test_prompt_approval_explains_terminal_fallback(self):
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        self.write("intent", INTENT)
+        payload = json.dumps({"prompt": "Intent Approved 0001", "cwd": str(self.root),
+                              "hook_event_name": "UserPromptSubmit"})
+        r = self.run_sdlc("hook", "prompt", stdin=payload, env={"CLAUDECODE": "1"})
+        ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("NOT opened", ctx)
+        self.assertIn("`bin/sdlc approve 0001 intent`", ctx)      # the exact command for the human's terminal
+
     def test_validate_rejects_empty_base(self):
         self.write("intent", INTENT)
         for args in (["--base", ""], ["--base"]):

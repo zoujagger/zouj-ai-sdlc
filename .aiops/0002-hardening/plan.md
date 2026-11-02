@@ -205,7 +205,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `CHANGELOG.md` (env-marker wording)
   - Test first: `tests/test_guards.py::BashGuard::test_minor_write_forms` and `tests/test_shell_hooks.py::ShellHooks::test_guard_bash` (adding `+main`) → allowed today
   - Covers: AC-22
-- [ ] **S24**: Docs for the key policy and residuals
+- [x] **S24**: Docs for the key policy and residuals
   - Files: `SECURITY.md`, `docs/architecture.md` (threat model: key policy, regex residuals), `README.md` (approver setup: passphrase, terminal approvals), `templates/scaffold/.aiops/README.md`, `skills/intent|spec|plan/SKILL.md` (the approval phrase falls back to the terminal command), `CHANGELOG.md` `[0.2.0]`
   - Test first: `tests/test_cli.py::Lifecycle::test_prompt_approval_explains_terminal_fallback` → the prompt hook doesn't mention the terminal fallback today
   - Covers: AC-16
