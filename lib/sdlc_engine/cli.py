@@ -206,7 +206,8 @@ def cmd_legacy_approvals(root, args):
     _need_init(root)
     found = approvals.unsigned_approvals(root)
     for sha, what in found:
-        out(f"{sha}  {what}")
+        who = git(root, "log", "-1", "--format=%an <%ae> %ad", "--date=short", sha)
+        out(f"{sha}  {what}  ({who})")
     if not found:
         out("No unsigned approvals of open gates.")
     if "--write" in args and found:

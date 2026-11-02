@@ -212,38 +212,49 @@ def approval_commit(root, d, kind, digest):
     return sha, msg
 
 
-def audit(root, d, kind, base=None, warnings=None):
-    """CI check: an open gate must come from a single-file approval commit signed by an allow-listed key
-    (or listed in legacy-approvals), never from an agent-authored commit."""
+FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
+
+
+def commit_problems(root, d, kind):
+    """(approval sha or None, [problems]) for an open gate: every audit check except the signature."""
     text = read(d, kind)
     a = A.parse(text or "")
     if a.get("status") != SCHEMAS[kind]["gate"]:
-        return []
+        return None, []
     ok, why = gate(d, kind)
     if not ok:
-        return [f"{kind}.md is marked {a.get('status')} but {why}"]
+        return None, [f"{kind}.md is marked {a.get('status')} but {why}"]
     if not a.get("approved-by"):
-        return [f"{kind}.md is approved without approved-by"]
+        return None, [f"{kind}.md is approved without approved-by"]
     rel = str((d / f"{kind}.md").relative_to(root))
     found = approval_commit(root, d, kind, a.get("approved-sha256"))
     if not found:
-        return [f"{kind}.md approval is not committed (expected a commit with an `{TRAILER}:` trailer)"]
+        return None, [f"{kind}.md approval is not committed (expected a commit with an `{TRAILER}:` trailer)"]
     sha, msg = found
     if f"{TRAILER}: {kind} {d.name[:4]}" not in msg:
-        return [f"{kind}.md approval was introduced by {sha[:10]}, which is not an approval commit"]
+        return sha, [f"{kind}.md approval was introduced by {sha[:10]}, which is not an approval commit"]
     if CLAUDE_TRAILER_RE.search(msg):
-        return [f"{kind}.md approval commit {sha[:10]} is co-authored by Claude: agents cannot approve gates"]
+        return sha, [f"{kind}.md approval commit {sha[:10]} is co-authored by Claude: agents cannot approve gates"]
     if f"sha256={a.get('approved-sha256')}" not in msg:
-        return [f"{kind}.md approval commit {sha[:10]} has a trailer whose sha256 doesn't match the stamp"]
+        return sha, [f"{kind}.md approval commit {sha[:10]} has a trailer whose sha256 doesn't match the stamp"]
     touched = (git(root, "show", "--name-only", "--format=", sha) or "").split()
     if touched != [rel]:
-        return [f"{kind}.md approval commit {sha[:10]} must change only {rel} (it also touches "
-                f"{', '.join(t for t in touched if t != rel)[:120]})"]
+        return sha, [f"{kind}.md approval commit {sha[:10]} must change only {rel} (it also touches "
+                     f"{', '.join(t for t in touched if t != rel)[:120]})"]
+    return sha, []
+
+
+def audit(root, d, kind, base=None, warnings=None):
+    """CI check: an open gate must come from a single-file approval commit signed by an allow-listed key
+    (or listed, by full sha, in legacy-approvals), never from an agent-authored commit."""
+    sha, problems = commit_problems(root, d, kind)
+    if problems or sha is None:
+        return problems
     try:
         cfg, signers, legacy = trust(root, base, warnings)
     except BaseRefError as exc:
         return [str(exc)]
-    if cfg.get("require_signed_approvals") and not any(len(x) >= 7 and sha.startswith(x) for x in legacy):
+    if cfg.get("require_signed_approvals") and sha not in {x for x in legacy if FULL_SHA_RE.match(x)}:
         verdict = signature(root, sha, signers)
         if verdict != "G":
             return [f"{kind}.md approval commit {sha[:10]} is not signed by an allow-listed signer "
@@ -252,14 +263,13 @@ def audit(root, d, kind, base=None, warnings=None):
 
 
 def unsigned_approvals(root):
-    """Approval commits of open gates that don't verify against the working-tree signer list."""
+    """Approval commits of open gates that don't verify against the working-tree signer list but pass every other
+    audit check: only those may become legacy (a forged approval must never be grandfathered)."""
     _, signers, _ = trust(root)
     out = []
     for d in intent_dirs(root):
         for kind in ("intent", "spec", "plan"):
-            a = A.parse(read(d, kind) or "")
-            if a.get("status") == SCHEMAS[kind]["gate"] and a.get("approved-sha256"):
-                found = approval_commit(root, d, kind, a.get("approved-sha256"))
-                if found and signature(root, found[0], signers) != "G":
-                    out.append((found[0], f"{d.name}/{kind}.md"))
+            sha, problems = commit_problems(root, d, kind)
+            if sha and not problems and signature(root, sha, signers) != "G":
+                out.append((sha, f"{d.name}/{kind}.md"))
     return out

@@ -321,6 +321,32 @@ class Approvals(RepoCase):
         self.assertEqual(approvals.audit(self.root, self.d, "spec"), [])
         self.assertTrue(approvals.audit(self.root, self.d, "spec", base="base"))   # not in the base's legacy list
 
+    def test_legacy_needs_full_sha_and_clean_commit(self):
+        cfg = self.root / ".aiops" / "config.json"
+        legacy = self.root / ".aiops" / "config" / "legacy-approvals"
+        cfg.write_text('{"require_signed_approvals": false}')
+        self.write("intent", INTENT)
+        self.approve("intent")                                   # clean, unsigned
+        sha = git(self.root, "log", "-1", "--format=%H")
+        # a forged spec approval: right fields, but co-authored by Claude
+        self.write("spec", SPEC)
+        text = (self.d / "spec.md").read_text()
+        digest = A.approval_hash("spec", text)
+        (self.d / "spec.md").write_text(A.set_fields(text, {"status": "Approved", "approved-by": "bot",
+                                                             "approved-sha256": digest}))
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "spec", "-m", f"AIOps-Approval: spec 0001 sha256={digest}",
+            "-m", "Co-Authored-By: Claude <noreply@anthropic.com>")
+        forged = git(self.root, "log", "-1", "--format=%H")
+        cfg.write_text('{"require_signed_approvals": true}')
+        legacy.write_text(f"{sha[:7]}\n")                        # a short sha no longer counts
+        self.assertTrue(approvals.audit(self.root, self.d, "intent"))
+        legacy.write_text(f"{sha}\n")
+        self.assertEqual(approvals.audit(self.root, self.d, "intent"), [])
+        found = [s for s, _ in approvals.unsigned_approvals(self.root)]
+        self.assertIn(sha, found)
+        self.assertNotIn(forged, found)                          # --write never legitimises a forged approval
+
     def test_audit_fails_closed_on_unresolvable_base(self):
         self.write("intent", INTENT)
         self.approve("intent")

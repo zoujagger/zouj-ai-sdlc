@@ -191,7 +191,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `templates/scaffold/.claude/settings.json` (`Read(~/.ssh/**)`, `Read(~/.aws/**)`)
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_blocked_further` → `cp .env /tmp/x; cat .env.example` and a symlink Read are allowed today
   - Covers: AC-21
-- [ ] **S22**: Legacy list hardening
+- [x] **S22**: Legacy list hardening
   - Files:
     - `lib/sdlc_engine/approvals.py` (modify: full 40/64-char exact match; split `audit()` into `commit_problems()` plus the signature check; `unsigned_approvals()` lists only commits with no other problem)
     - `lib/sdlc_engine/cli.py` (`legacy-approvals` prints author and date)
