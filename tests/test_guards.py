@@ -120,6 +120,18 @@ class BashGuard(RepoCase):
                     "echo 0001 > .aiops/state/active"):
             self.assertTrue(self.blocked(cmd), cmd)
 
+    def test_heredoc_redirect_after_marker(self):
+        for cmd in ("cat <<EOF > src/app.py\nx = 2\nEOF", "cat <<'EOF' >> src/app.py\nx\nEOF",
+                    "cat <<-EOF > src/x.py\n\tx\n\tEOF", "tee src/a.py <<EOF\nx\nEOF"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("cat <<'EOF' > /tmp/scratch.txt\nx > src/app.py\nEOF", "grep -c x <<< 'a > src/b.py'"):
+            self.assertFalse(self.blocked(cmd), cmd)
+        self.to_execution()
+        for cmd in ("cat <<'EOF' > .aiops/0001-csv-export/intent.md\nstatus: Approved\nEOF",
+                    "cat <<EOF > .aiops/state/active\n0001\nEOF", "cat <<EOF > .aiops/config.json\n{}\nEOF"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        self.assertFalse(self.blocked("cat <<EOF > src/app.py\nx = 2\nEOF"))
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",

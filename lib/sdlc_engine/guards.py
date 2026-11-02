@@ -120,7 +120,7 @@ def check_artifact(d, kind, new_text):
 
 # ---------------------------------------------------------------- Bash
 
-HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?^\s*\2\s*$", re.M | re.S)
+HEREDOC_MARK_RE = re.compile(r"(?<!<)<<(-?)(?!<)\s*(['\"]?)(\w+)\2")
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", ";;", "{", "}", "!", "\n"}
 PREFIXES = {"sudo", "command", "env", "nohup", "time", "exec", "builtin", "xargs", "then", "do", "else", "if",
             "while", "until"}
@@ -145,8 +145,22 @@ MAKE_WRITERS = {"format", "fmt", "fix", "generate", "gen", "migrate", "codegen"}
 ENGINE_RE = re.compile(r"(^|[\s;&|(/])(sdlc\s+(approve|close|unlock|hook)\b|-m\s+sdlc_engine|sdlc_engine\.)")
 
 
+def strip_heredocs(cmd):
+    """Drop heredoc bodies but keep the rest of each marker line, so `cat <<EOF > file` still shows its redirect."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        marks = HEREDOC_MARK_RE.findall(lines[i])
+        out.append(HEREDOC_MARK_RE.sub(" ", lines[i]))
+        i += 1
+        for _dash, _quote, delim in marks:
+            while i < len(lines) and lines[i].strip() != delim:
+                i += 1
+            i += 1   # the delimiter line itself
+    return "\n".join(out)
+
+
 def tokenize(cmd):
-    cmd = HEREDOC_RE.sub("", cmd)
+    cmd = strip_heredocs(cmd)
     lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     lex.commenters = ""
