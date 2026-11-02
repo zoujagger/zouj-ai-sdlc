@@ -1,13 +1,13 @@
 ---
 id: 0002
 title: Harden gates and guards (review 0001 findings)
-status: Draft
+status: Approved
 spec: ./spec.md
 created: 2026-10-30
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-02T09:07:57Z
+approved-at: 2026-11-02T14:58:15Z
 approved-via: cli
-approved-sha256: 7f9279f1447f166093db23cc0640f5977838ed7a61b2aed73f0f6a98a7f65f92
+approved-sha256: 5f0e7c846b0dbed954ae2f20e61e1de704cc3f863cff03e00cc8711aa4beb769
 ---
 
 # Plan: Harden gates and guards (review 0001 findings)
