@@ -7,8 +7,10 @@ Rules (only in repos initialized with `.aiops/`):
     may be written, by Edit/Write or by shell commands.
   * Always: no shell writes to artifacts or `.aiops/config|state`, no forged approvals, no merging into main.
 """
+import glob
 import re
 import shlex
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from . import artifacts as A
@@ -396,8 +398,63 @@ def check_bash(data):
     return _check_command(cmd, Path(cwd), root, locked, reason, st, on_main, depth=0)
 
 
+PWD_RE = re.compile(r"\$\{PWD\}|\$PWD\b|\$\(\s*pwd\s*\)|`\s*pwd\s*`|(?<![\w/])~\+")
+GLOB_CHARS = re.compile(r"[*?\[]")
+
+
+def _expand(target, cwd):
+    """A write target as the shell would see it: $PWD / $(pwd) / ~+ resolved, globs expanded against the tree."""
+    t = PWD_RE.sub(lambda _m: str(cwd), target)
+    if not GLOB_CHARS.search(t):
+        return [t]
+    pattern = t if Path(t).is_absolute() else str(Path(cwd) / t)
+    return glob.glob(pattern) or [t]
+
+
+def _find_hits_aiops(args, cwd, root):
+    """True if a destructive `find` could reach `.aiops`: a start path inside it, or an ancestor of it whose
+    name/path filters (or lack of filters) match something in the `.aiops` tree."""
+    if not any(a in FIND_ACTIONS for a in args):
+        return False
+    starts = args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))] or ["."]
+    names = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-name", "-iname")]
+    paths = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-path", "-ipath", "-wholename")]
+    aiops = root / ".aiops"
+    for start in starts:
+        rel = _rel(root, start, cwd)
+        if rel is None:
+            continue
+        if _aiops_protected(rel):
+            return True
+        base = (root / rel).resolve() if rel != "." else root
+        if not (aiops == base or base in aiops.parents):
+            continue
+        if not names and not paths:
+            return True                                 # everything below the start, .aiops included
+        entries = [aiops] + list(aiops.rglob("*"))
+        for e in entries:
+            shown = f"{start.rstrip('/')}/{e.relative_to(base).as_posix()}"
+            if any(fnmatchcase(e.name, n) for n in names) or any(fnmatchcase(shown, q) for q in paths):
+                return True
+    return False
+
+
+PATCH_PATH_RE = re.compile(r"^(?:diff --git a/(\S+) b/(\S+)|--- a/(\S+)|\+\+\+ b/(\S+)|rename (?:from|to) (\S+))$", re.M)
+
+
+def _patch_touches_aiops(args, cwd, root):
+    for a in args:
+        f = Path(cwd) / a
+        if not a.startswith("-") and f.is_file():
+            text = f.read_text(errors="replace")
+            for m in PATCH_PATH_RE.finditer(text):
+                if any(g and _aiops_protected(g) for g in m.groups()):
+                    return True
+    return False
+
+
 def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
-    for words, redirs in segments(tokenize(cmd)):
+    for words, redirs in segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
         words = _strip_prefix(words)
         if words and words[0] == "cd":
             dest = next((a for a in words[1:] if not a.startswith("-")), "~")
@@ -411,7 +468,13 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             if msg:
                 return msg
             continue
-        targets = redirs + write_targets(words, cwd)
+        targets = [e for t in redirs + write_targets(words, cwd) for e in _expand(t, cwd)]
+        if words and Path(words[0]).name == "find" and _find_hits_aiops(words[1:], cwd, root):
+            return _block("artifacts", "this `find` would delete or rewrite part of the .aiops tree.",
+                          "narrow it (e.g. `-not -path './.aiops/*'`), or ask the human to remove artifacts.")
+        if words and Path(words[0]).name == "tar" and words[1:2] and "x" in words[1].lstrip("-"):
+            tdir = next((words[i + 1] for i, a in enumerate(words[:-1]) if a in ("-C", "--directory")), None)
+            targets += [tdir] if tdir else []
         for t in targets:
             if t.startswith("/dev/"):
                 continue
@@ -432,6 +495,9 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                           "leave the PR for a CODEOWNER to review and merge.")
         if name == "git":
             sub, rest, gcwd = _git_sub(args, cwd)
+            if sub in ("apply", "am") and _patch_touches_aiops(rest, gcwd, root):
+                return _block("artifacts", f"`git {sub}` with a patch touching .aiops/ bypasses the gate guard.",
+                              "edit artifacts with the Edit/Write tools.")
             if sub in GIT_TREE_WRITERS:
                 hit = next((r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-"))
                             if r and _aiops_protected(r)), None)

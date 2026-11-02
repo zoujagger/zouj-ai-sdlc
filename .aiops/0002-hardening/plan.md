@@ -174,7 +174,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `templates/scaffold/.github/workflows/aiops-gates.yml` (verify `BASE_SHA` like `ci.yml`, fail if absent)
   - Test first: `tests/test_engine.py::Approvals::test_audit_fails_closed_on_unresolvable_base` and `::test_audit_accepts_allow_listed_signer_against_base`, plus `tests/test_cli.py::Lifecycle::test_validate_rejects_empty_base`
   - Covers: AC-19
-- [ ] **S20**: `.aiops` integrity, the remaining forms
+- [x] **S20**: `.aiops` integrity, the remaining forms
   - Files: `lib/sdlc_engine/guards.py` (modify):
     - expand `$PWD`, `${PWD}`, `$(pwd)` and `~+` in targets
     - glob targets are expanded against the tree

@@ -174,6 +174,22 @@ class BashGuard(RepoCase):
         for cmd in ("cat .aiops/0001-csv-export/plan.md", "ls .aiops", "git add .aiops/0001-csv-export/plan.md"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_aiops_tree_is_protected_from_globs_and_find(self):
+        self.to_execution()
+        (self.root / ".aiops" / "state" / "test-lock").write_text("x")
+        (self.root / "evil.patch").write_text("diff --git a/.aiops/0001-csv-export/plan.md b/.aiops/0001-csv-export/plan.md\n"
+                                              "--- a/.aiops/0001-csv-export/plan.md\n+++ b/.aiops/0001-csv-export/plan.md\n")
+        (self.root / "ok.patch").write_text("diff --git a/src/app.py b/src/app.py\n--- a/src/app.py\n+++ b/src/app.py\n")
+        (self.root / "build").mkdir()
+        for cmd in ("rm -rf .ai*", "rm -rf $PWD/.aiops", 'rm -rf "$(pwd)/.aiops"', "rm -rf ${PWD}/.aiops/state",
+                    "cd .aiops && rm -rf *", "find . -name test-lock -delete", "find .aiops -delete",
+                    "find . -path '*/.aiops/*' -exec rm {} +", "find . -delete", "tar -xf x.tar -C .aiops",
+                    "git apply evil.patch", "git am evil.patch"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("find . -name '*.pyc' -delete", "rm -rf build/*", "tar -xf x.tar -C build", "git apply ok.patch",
+                    "ls .ai*", "find .aiops -name '*.md'"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_engine_cannot_be_disguised(self):
         self.to_execution()
         for cmd in ("env -u CLAUDECODE sdlc approve 0001 plan", "unset CLAUDECODE", "unset FOO CLAUDE_CODE_CHILD_SESSION",
