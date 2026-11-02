@@ -66,7 +66,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `tests/test_engine.py::States::test_copied_folder_does_not_open_gates`
     - `tests/test_guards.py::EditGuard::test_id_is_immutable`
   - Covers: AC-6
-- [ ] **S5**: Engine invocation can't be disguised
+- [x] **S5**: Engine invocation can't be disguised
   - Files: `lib/sdlc_engine/guards.py` (modify):
     - replace the `ENGINE_RE` text match `:145` with token checks after unquoting
     - dynamic command words

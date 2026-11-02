@@ -159,6 +159,18 @@ class BashGuard(RepoCase):
         for cmd in ("cat .aiops/0001-csv-export/plan.md", "ls .aiops", "git add .aiops/0001-csv-export/plan.md"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_engine_cannot_be_disguised(self):
+        self.to_execution()
+        for cmd in ("env -u CLAUDECODE sdlc approve 0001 plan", "unset CLAUDECODE", "unset FOO CLAUDE_CODE_CHILD_SESSION",
+                    "CLAUDECODE= bin/sdlc approve 0001 plan", "export CLAUDE_CODE_CHILD_SESSION=0",
+                    "env -i PATH=/usr/bin make test", "sdl\\c approve 0001 plan", "\"sdlc\" approve 0001 plan",
+                    "s=sdlc; $s approve 0001 plan", "$(which sdlc) hook prompt < f", "`which sdlc` close 0001",
+                    "sdlc legacy-approvals --write", "python3 -c 'import sdlc_engine'"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("sdlc status", "sdlc validate --all", "git log --grep approve", "cat lib/sdlc_engine/guards.py",
+                    "echo $HOME", "make test"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",

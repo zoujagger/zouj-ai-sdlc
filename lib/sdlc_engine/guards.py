@@ -153,7 +153,19 @@ GIT_LOCKED = {"apply", "am", "cherry-pick", "merge", "rebase", "revert", "pull",
 GIT_MAIN_FORBIDDEN = {"merge", "rebase", "cherry-pick", "am"}
 GIT_TREE_WRITERS = {"rm", "mv", "checkout", "restore", "reset", "clean", "stash"}
 MAKE_WRITERS = {"format", "fmt", "fix", "generate", "gen", "migrate", "codegen"}
-ENGINE_RE = re.compile(r"(^|[\s;&|(/])(sdlc\s+(approve|close|unlock|hook)\b|-m\s+sdlc_engine|sdlc_engine\.)")
+HUMAN_SUBS = r"(approve|close|unlock|hook|legacy-approvals)"
+ENGINE_RES = (   # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
+    re.compile(rf"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*{HUMAN_SUBS}\b"),
+    re.compile(rf"(\$\w+|\$\{{[^}}]*\}}|\$\([^)]*\)|`[^`]*`)\s+{HUMAN_SUBS}\b"),   # dynamic command word
+    re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
+)
+MARKERS = r"(CLAUDECODE|CLAUDE_CODE_CHILD_SESSION)"
+ENV_RES = (
+    re.compile(rf"\b{MARKERS}\s*="),
+    re.compile(rf"\bunset\b[^;&|\n]*\b{MARKERS}\b"),
+    re.compile(rf"(\s-u\s*|--unset[=\s]+){MARKERS}\b"),
+    re.compile(r"\benv\s+(-\S+\s+)*(-i|--ignore-environment)\b"),
+)
 
 
 def strip_heredocs(cmd):
@@ -332,8 +344,13 @@ def check_bash(data):
     if "AIOps-Approval" in cmd:
         return _block("human gate", "approval commits are created only by a human approval.",
                       "ask the human to type the approval phrase (e.g. `Plan Approved 0001`).")
-    if ENGINE_RE.search(cmd):
-        return _block("human gate", "`sdlc approve|close|unlock|hook` are human-only (or hook-only) commands.",
+    plain = re.sub(r"[\\'\"]", "", cmd)
+    if any(r.search(plain) for r in ENV_RES):
+        return _block("human gate", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
+                      "would let human-only commands run as the agent.",
+                      "leave the environment alone; human-only steps are run by the human.")
+    if any(r.search(plain) for r in ENGINE_RES):
+        return _block("human gate", "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
                       "stop and ask the human: they type `Intent|Spec|Plan Approved NNNN` in the prompt, "
                       "or run the command in their own terminal.")
     locked, reason, st = lock(root)
