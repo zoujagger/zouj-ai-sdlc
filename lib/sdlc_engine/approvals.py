@@ -6,7 +6,9 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import tempfile
+from pathlib import Path
 
 from . import artifacts as A
 from .machine import DEFAULT_CONFIG, SCHEMAS, config, evaluate, gate, git, intent_dirs, read
@@ -35,6 +37,44 @@ SIGNING_HELP = (
     "Prefer a passphrase-protected key (or ssh-add -c) so nothing can sign silently as you.")
 
 
+KEY_HELP = (
+    "Approvals need a human for each signature: use a passphrase-protected key that is NOT loaded in ssh-agent\n"
+    "(add one with `ssh-keygen -p -f ~/.ssh/id_ed25519`; unload with `ssh-add -d ~/.ssh/id_ed25519`), or a FIDO\n"
+    "`sk-` key that needs a touch. Then approve in your own terminal: `bin/sdlc approve NNNN intent|spec|plan`\n"
+    "(it asks for the passphrase). Escape hatch (human-owned): \"approval_key_policy\": \"any\" in .aiops/config.json.")
+
+
+def _signing_key_files(root):
+    """(public key text, private key path or None) for git's user.signingkey."""
+    key = git(root, "config", "user.signingkey") or ""
+    if key.startswith("key::"):
+        return key[5:], None
+    path = Path(key).expanduser()
+    if path.suffix == ".pub":
+        return (path.read_text() if path.is_file() else ""), path.with_suffix("")
+    pub = Path(f"{path}.pub")
+    return (pub.read_text() if pub.is_file() else ""), path
+
+
+def key_protection(root):
+    """Why the signing key could sign without the human, or None: an `sk-` key (a touch per signature) or a
+    passphrase-protected key that isn't cached in the reachable ssh-agent."""
+    pubtext, private = _signing_key_files(root)
+    parts = pubtext.split()
+    if parts and parts[0].startswith("sk-"):
+        return None
+    if private is None or not private.is_file():
+        return "the signing key's private file can't be found, so its protection can't be checked"
+    unlocked = subprocess.run(["ssh-keygen", "-y", "-P", "", "-f", str(private)], capture_output=True)
+    if unlocked.returncode == 0:
+        return "the signing key has no passphrase, so anything running as you could sign approvals"
+    if os.environ.get("SSH_AUTH_SOCK") and len(parts) >= 2:
+        loaded = subprocess.run(["ssh-add", "-L"], capture_output=True, text=True)
+        if loaded.returncode == 0 and parts[1] in loaded.stdout:
+            return "the signing key is loaded in ssh-agent, so it would sign without asking you"
+    return None
+
+
 def signing_problem(root):
     """Why a signed approval commit can't be made here, or None."""
     cfg = config(root)
@@ -46,6 +86,10 @@ def signing_problem(root):
         return "git has no signing key configured (user.signingkey)"
     if (git(root, "config", "gpg.format") or "openpgp") != "ssh":
         return "git signing is not set to SSH (gpg.format ssh)"
+    if cfg.get("approval_key_policy", "human") == "human":
+        weak = key_protection(root)
+        if weak:
+            return f"{weak}.\n{KEY_HELP}"
     return None
 
 
@@ -90,8 +134,9 @@ def approve(root, d, kind, via, who=None):
             if signed:   # an unsigned stamp would never pass the audit: roll it back
                 path.write_text(text)
                 git(root, "reset", "-q", "--", rel)
-                return False, (f"{kind}.md for {ident} was NOT approved: the signed commit failed (is your key "
-                               f"unlocked / in ssh-agent?).\n{SIGNING_HELP}")
+                return False, (f"{kind}.md for {ident} was NOT approved: signing needs you (passphrase or touch), "
+                               f"and there is no terminal here. Approve in your own terminal: "
+                               f"`bin/sdlc approve {ident} {kind}`.")
             note = "\n(The approval is in the working tree, but committing it failed. Commit it yourself.)"
         else:
             note = f"\nCommitted as `{title}`."

@@ -151,6 +151,48 @@ class States(RepoCase):
 
 
 class Approvals(RepoCase):
+    def test_key_policy_requires_a_human_per_signature(self):
+        import os
+        import subprocess
+        from helpers import signing_key
+        from sdlc_engine import approvals as ap
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text('{"approval_key_policy": "human"}')
+        # 1. an unprotected key: refused before stamping
+        self.write("intent", INTENT)
+        ok, msg = approvals.approve(self.root, self.d, "intent", via="test")
+        self.assertFalse(ok)
+        self.assertIn("passphrase", msg)
+        self.assertEqual(A.parse((self.d / "intent.md").read_text()).get("status"), "Draft")
+        # 2. a passphrase key that is NOT in ssh-agent: passes the precheck (git will ask the human)
+        protected = signing_key("protected", passphrase="s3cret-pass")
+        git(self.root, "config", "user.signingkey", f"{protected}.pub")
+        self.assertIsNone(ap.signing_problem(self.root))
+        # 3. the same key loaded in ssh-agent: refused (it would sign without asking)
+        agent = subprocess.run(["ssh-agent", "-s"], capture_output=True, text=True, check=True).stdout
+        env = dict(line.split(";")[0].split("=", 1) for line in agent.splitlines() if "=" in line.split(";")[0])
+        askpass = self.root / "askpass.sh"
+        askpass.write_text("#!/bin/sh\necho s3cret-pass\n")
+        askpass.chmod(0o700)
+        try:
+            os.environ.update(env)
+            subprocess.run(["ssh-add", "-q", str(protected)], check=True, capture_output=True,
+                           env={**os.environ, "SSH_ASKPASS": str(askpass), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"})
+            problem = ap.signing_problem(self.root)
+            self.assertTrue(problem and "ssh-agent" in problem, problem)
+        finally:
+            subprocess.run(["ssh-agent", "-k"], capture_output=True, env={**os.environ})
+            for k in env:
+                os.environ.pop(k, None)
+        # 4. a FIDO sk- key: a touch per signature, accepted
+        sk = self.root / "sk.pub"
+        sk.write_text("sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t owner\n")
+        git(self.root, "config", "user.signingkey", str(sk))
+        self.assertIsNone(ap.signing_problem(self.root))
+        # 5. the human-owned escape hatch restores the old behaviour for an unprotected key
+        git(self.root, "config", "user.signingkey", f"{signing_key()}.pub")
+        cfg.write_text('{"approval_key_policy": "any"}')
+        self.assertIsNone(ap.signing_problem(self.root))
     def test_refuses_without_signing_key_before_stamping(self):
         git(self.root, "config", "--unset", "user.signingkey")
         self.write("intent", INTENT)

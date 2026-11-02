@@ -15,6 +15,9 @@ init_repo() {
   mkdir -p .aiops/config
   echo "eval@example.com namespaces=\"git\" $(cat .eval-signing-key.pub)" > .aiops/config/allowed-signers
   printf '.eval-signing-key*\n' >> .gitignore
+  # Throwaway fixture keys can't prompt for a passphrase: opt the fixture out of the human-per-signature policy.
+  python3 -c 'import json; p=".aiops/config.json"; c=json.load(open(p)); c["approval_key_policy"]="any"; json.dump(c, open(p, "w"), indent=2)'
+
   cat > Makefile <<'MK'
 .PHONY: format lint typecheck test build check
 format:

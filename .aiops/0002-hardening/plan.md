@@ -152,7 +152,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Files: `lib/sdlc_engine/guards.py` (modify: `strip_heredocs()` finds markers with a quote- and comment-aware scan of each line)
   - Test first: `tests/test_guards.py::BashGuard::test_heredoc_marker_in_quotes_or_comment` → `echo '<<EOF'` / `# <<EOF`, then `echo 1 > src/app.py`, is allowed today
   - Covers: AC-17
-- [ ] **S17**: A human for each signature (key policy)
+- [x] **S17**: A human for each signature (key policy)
   - Files:
     - `lib/sdlc_engine/approvals.py` (modify: `key_protection(root)` checks for an `sk-` key, an encrypted private key (`ssh-keygen -y -P ""` fails), and that the key isn't in `ssh-add -l`; `signing_problem()` applies it under `approval_key_policy: "human"`)
     - `lib/sdlc_engine/machine.py` (`DEFAULT_CONFIG` `approval_key_policy: "human"`)

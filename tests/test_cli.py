@@ -83,7 +83,11 @@ class Lifecycle(RepoCase):
         out = self.run_sdlc("doctor").stdout
         self.assertIn("✓ approval signing configured (ssh)", out)
         self.assertIn("✓ signing key is in .aiops/config/allowed-signers", out)
-        self.assertIn("! signing key has no passphrase", out)        # fixture keys are unprotected: warn, don't fail
+        self.assertIn("! signing key has no passphrase", out)        # policy "any" (fixtures): warn, don't fail
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        r = self.run_sdlc("doctor")                                   # the default policy: the same key fails
+        self.assertIn("✗ approval signing: the signing key has no passphrase", r.stdout)
+        self.assertEqual(r.returncode, 1)
         git(self.root, "config", "--unset", "user.signingkey")
         r = self.run_sdlc("doctor")
         self.assertIn("✗ approval signing", r.stdout)

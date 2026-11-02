@@ -143,11 +143,11 @@ def git(root, *args):
 _KEYS = tempfile.TemporaryDirectory()   # throwaway SSH signing keys, generated once per test run
 
 
-def signing_key(name="owner"):
+def signing_key(name="owner", passphrase=""):
     """Path of an ed25519 private key (its .pub sits next to it), created on first use."""
     key = Path(_KEYS.name) / name
     if not key.exists():
-        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", name, "-f", str(key)], check=True)
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", passphrase, "-C", name, "-f", str(key)], check=True)
     return key
 
 
@@ -163,7 +163,7 @@ class RepoCase(unittest.TestCase):
         self.root = Path(self._tmp.name).resolve()
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "AIOPS_INTENT", "SDLC_HOOK_PROFILE",
-                                 "CLAUDE_PROJECT_DIR")}
+                                 "CLAUDE_PROJECT_DIR", "SSH_AUTH_SOCK", "SSH_AGENT_PID")}
         self._saved_env = dict(os.environ)
         os.environ.clear()
         os.environ.update(self.env)
@@ -182,6 +182,9 @@ class RepoCase(unittest.TestCase):
         (self.root / ".aiops" / "config").mkdir()
         self.signers = self.root / ".aiops" / "config" / "allowed-signers"
         self.signers.write_text(allowed_signer_line("owner@example.com", signing_key()))
+        # Test keys have no passphrase (nothing could type one), so fixtures opt out of the human-per-signature
+        # policy explicitly; test_key_policy_* covers the default.
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
         self.d = self.root / ".aiops" / "0001-csv-export"
         self.d.mkdir()
         git(self.root, "switch", "-qc", "feat/0001-csv-export")

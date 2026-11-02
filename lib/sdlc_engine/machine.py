@@ -26,7 +26,8 @@ LOCKED_STATES = (1, 2, 3)
 DIR_RE = re.compile(r"^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*$")
 BRANCH_RE = re.compile(r"(?:^|/)(\d{4})-")
 DEFAULT_CONFIG = {"lock_when_idle": True, "commit_approvals": True, "main_branch": "main",
-                  "require_signed_approvals": True}
+                  "require_signed_approvals": True,
+                  "approval_key_policy": "human"}
 
 
 def git(root, *args):
