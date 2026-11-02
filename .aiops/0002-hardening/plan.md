@@ -42,7 +42,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Files: `lib/sdlc_engine/guards.py` (modify: replace `HEREDOC_RE` at `:123` and its use at `:149` with a line-based `strip_heredocs()`)
   - Test first: `tests/test_guards.py::BashGuard::test_heredoc_redirect_after_marker` → `cat <<EOF > src/app.py` is allowed today
   - Covers: AC-1, AC-2
-- [ ] **S2**: More shell write forms
+- [x] **S2**: More shell write forms
   - Files: `lib/sdlc_engine/guards.py` (modify):
     - `write_targets` `:206`: `cp/mv -t`, `--target-directory`, `find -delete/-exec/-execdir/-ok`, `awk -i inplace`
     - `_git_sub` `:227` returns `-C` dir

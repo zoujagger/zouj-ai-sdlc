@@ -223,31 +223,81 @@ def write_targets(words, cwd):
         return []
     name, args = Path(words[0]).name, words[1:]
     nonopt = [a for a in args if not a.startswith("-")]
+    target_dir = _target_directory(args)
     if name in ALL_TARGETS:
         return nonopt
     if name in ("chmod", "chown", "chgrp"):
         return nonopt[1:]
     if name == "mv":
-        return nonopt
+        return nonopt + target_dir
     if name in DEST_TARGET:
-        return nonopt[-1:]
+        return target_dir or nonopt[-1:]
     if name == "dd":
         return [a[3:] for a in args if a.startswith("of=")]
-    if name in INPLACE and any(re.match(r"^-[a-zA-Z]*i", a) or a.startswith("--in-place") for a in args):
+    if name == "find" and any(a in FIND_ACTIONS for a in args):
+        return args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))]
+    inplace = (name in INPLACE and any(re.match(r"^-[a-zA-Z]*i", a) or a.startswith("--in-place") for a in args)) \
+        or (name in ("awk", "gawk") and _awk_inplace(args))
+    if inplace:
         return [a for a in nonopt if (Path(cwd) / a).is_file()]
     return []
 
 
-def _git_sub(args):
+FIND_ACTIONS = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
+
+
+def _target_directory(args):
+    """The DIR of `-t DIR`, `-tDIR`, `--target-directory DIR` or `--target-directory=DIR`."""
+    for i, a in enumerate(args):
+        if a in ("-t", "--target-directory") and i + 1 < len(args):
+            return [args[i + 1]]
+        if a.startswith("--target-directory="):
+            return [a.split("=", 1)[1]]
+        if re.match(r"^-t.+", a):
+            return [a[2:]]
+    return []
+
+
+def _awk_inplace(args):
+    return any((a == "-i" and i + 1 < len(args) and args[i + 1] == "inplace") or a in ("-iinplace", "--include=inplace")
+               for i, a in enumerate(args))
+
+
+GIT_COMMIT_VALUE_OPTS = {"-m", "--message", "-F", "--file", "-C", "--reuse-message", "-c", "--reedit-message",
+                         "--author", "--date", "--fixup", "--squash", "-t", "--template", "--trailer", "--cleanup"}
+
+
+def _git_commit_pathspecs(rest):
+    """Paths named on a `git commit` command line (they get committed even if not staged)."""
+    paths, i = [], 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            return paths + rest[i + 1:]
+        if a in GIT_COMMIT_VALUE_OPTS or (re.match(r"^-[a-zA-Z]+$", a) and a[-1] in "mFCct"):
+            i += 2
+            continue
+        if not a.startswith("-"):
+            paths.append(a)
+        i += 1
+    return paths
+
+
+def _git_sub(args, cwd):
+    """(subcommand, its args, the directory git runs in after any `-C DIR`)."""
     i = 0
     while i < len(args):
-        if args[i] in ("-C", "-c", "--git-dir", "--work-tree"):
+        if args[i] == "-C" and i + 1 < len(args):
+            d = Path(args[i + 1]).expanduser()
+            cwd = d if d.is_absolute() else cwd / d
+            i += 2
+        elif args[i] in ("-c", "--git-dir", "--work-tree"):
             i += 2
         elif args[i].startswith("-"):
             i += 1
         else:
-            return args[i], args[i + 1:]
-    return "", []
+            return args[i], args[i + 1:], cwd
+    return "", [], cwd
 
 
 def _code_paths(root, rels):
@@ -315,9 +365,9 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             return _block("final gate", "merging through the GitHub API is the human's decision.",
                           "leave the PR for a CODEOWNER to review and merge.")
         if name == "git":
-            sub, rest = _git_sub(args)
+            sub, rest, gcwd = _git_sub(args, cwd)
             if sub in GIT_TREE_WRITERS:
-                hit = next((r for r in (_rel(root, a, cwd) for a in rest if not a.startswith("-"))
+                hit = next((r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-"))
                             if r and (ARTIFACT_RE.match(r) or GUARDED_RE.match(r))), None)
                 if hit:
                     return _block("artifacts", f"`git {sub}` on '{hit}' would delete or rewrite an artifact outside the "
@@ -329,14 +379,14 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                 for i, a in enumerate(rest):
                     f = rest[i + 1] if a in ("-F", "--file") and i + 1 < len(rest) else \
                         a.split("=", 1)[1] if a.startswith("--file=") else None
-                    path = (cwd / f) if f and f != "-" else None
+                    path = (gcwd / f) if f and f != "-" else None
                     if path and path.is_file() and "AIOps-Approval" in path.read_text(errors="replace"):
                         return _block("human gate", "approval commits are created only by a human approval.",
                                       "ask the human to type the approval phrase (e.g. `Plan Approved 0001`).")
             if not locked:
                 continue
             checkout_paths = sub == "checkout" and _code_paths(root, [
-                r for r in (_rel(root, a, cwd) for a in rest if not a.startswith("-") and (cwd / a).is_file()) if r])
+                r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-") and (gcwd / a).is_file()) if r])
             if sub in GIT_LOCKED or (sub == "checkout" and "--" in rest) or checkout_paths:
                 return _block("read-only lock", f"`git {sub}` changes the working tree: {reason}.", lock_procedure(st))
             if sub == "add":
@@ -344,13 +394,14 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                 if not paths or any(a in ("-A", "--all", "-u", "--update") for a in rest) or "." in paths:
                     rels = _git_changed(root, staged_only=False)
                 else:
-                    rels = [_rel(root, p, cwd) for p in paths]
+                    rels = [_rel(root, p, gcwd) for p in paths]
                 if bad := _code_paths(root, rels):
                     return _block("read-only lock", f"`git add` would stage code ({', '.join(bad[:3])}): {reason}.",
                                   lock_procedure(st))
             if sub == "commit":
                 all_flag = any(re.match(r"^-[a-zA-Z]*a", a) or a == "--all" for a in rest)
-                rels = _git_changed(root, staged_only=not all_flag)
+                rels = _git_changed(root, staged_only=not all_flag) + \
+                    [_rel(root, p, gcwd) for p in _git_commit_pathspecs(rest)]
                 if bad := _code_paths(root, rels):
                     return _block("read-only lock", f"`git commit` would commit code ({', '.join(bad[:3])}): {reason}.",
                                   lock_procedure(st))

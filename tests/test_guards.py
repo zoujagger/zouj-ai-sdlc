@@ -132,6 +132,15 @@ class BashGuard(RepoCase):
             self.assertTrue(self.blocked(cmd), cmd)
         self.assertFalse(self.blocked("cat <<EOF > src/app.py\nx = 2\nEOF"))
 
+    def test_more_write_forms_while_locked(self):
+        for cmd in ("git commit src/app.py -m x", "git commit -m x -- src/app.py", "git -C src checkout app.py",
+                    "cp -t src README.md", "cp --target-directory=src README.md", "find src -delete",
+                    "find src -name x -exec rm {} +", "awk -i inplace '{print}' src/app.py"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("find src -name '*.py'", "git -C src status", "awk '{print}' src/app.py",
+                    "git commit -m 'msg with src/app.py in it'"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",
