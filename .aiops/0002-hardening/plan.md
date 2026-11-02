@@ -219,7 +219,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `lib/sdlc_engine/cli.py`: doctor flags repo-local overrides, warns when the signing key is also an SSH identity, and its passphrase hint no longer suggests `ssh-add -c`.
   - Test first: `tests/test_engine.py::Approvals::test_signing_toolchain_is_pinned` (a repo-local `gpg.ssh.program` is refused, and a 15 s signer still succeeds) and `tests/test_guards.py::BashGuard::test_signing_toolchain_is_guarded` → allowed today
   - Covers: AC-23
-- [ ] **S26**: Shell secret reads beyond `.env`
+- [x] **S26**: Shell secret reads beyond `.env`
   - Files:
     - `hooks/guard-bash.sh`: every unquoted, tilde-expanded word is checked against `secret-paths` (templates and `.pub` excepted).
     - `hooks/guard-read.sh`: a Grep/Glob `path` that is a secret directory (`<path>/x` matches `secret-paths`) is blocked.

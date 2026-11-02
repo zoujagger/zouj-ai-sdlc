@@ -24,7 +24,11 @@ for field in $fields; do
   v=${v/#\~/$HOME}
   # Check the path as given AND its symlink-resolved target (a docs/x.md -> ../.env link is still .env).
   real=$( (cd "$root" 2>/dev/null && realpath -m -- "$v") 2>/dev/null || printf '%s' "$v")
-  for candidate in "$v" "$real"; do
+  # A Grep/Glob path that is a secret directory (~/.ssh, ~/.aws, secrets/) would read everything inside it, so also
+  # probe "<path>/x" (not for templates or public keys, which are files).
+  candidates=("$v" "$real")
+  secret_template "$(rel_path "$v" "$root")" || candidates+=("${v%/}/x" "${real%/}/x")
+  for candidate in "${candidates[@]}"; do
     rel=$(rel_path "$candidate" "$root")
     rel=${rel#\*\*/}   # **/.env → .env
     secret_template "$rel" && continue

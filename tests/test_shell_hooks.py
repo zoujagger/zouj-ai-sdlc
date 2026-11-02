@@ -64,6 +64,24 @@ class ShellHooks(RepoCase):
         self.assertEqual(dep("Bash", {"command": "make deploy ENV=staging"}), 0)
         self.assertEqual(dep("Bash", {"command": "grep -r product src/"}), 0)
 
+    def test_secret_reads_beyond_env(self):
+        import shutil
+        grep = lambda **ti: self.run_hook("guard-read.sh", {"tool_name": "Grep", "tool_input": ti})  # noqa: E731
+        for repo_state in ("initialized", "plain"):
+            if repo_state == "plain":
+                shutil.rmtree(self.root / ".aiops")
+            for cmd in ("cat ~/.aws/credentials", "cat server.pem", "cat secrets/prod.json", "paste .env",
+                        "diff .env /dev/null", "grep -r . ~/.ssh", "cp ~/.ssh/id_ed25519 /tmp/k",
+                        "less ~/.config/gcloud/credentials.db", "cat ~/.kube/config", "cat ~/.docker/config.json",
+                        "jq . --arg x 1 ~/.aws/config", "head -c 99 deploy/tls.key"):
+                self.assertEqual(self.bash(cmd), 2, (repo_state, cmd))
+            for cmd in ("cat .env.example", "cat ~/.ssh/id_ed25519.pub", "ls ~/.ssh", "echo .env >> .gitignore",
+                        "echo '*.pem' >> .gitignore", "grep -r TODO src"):
+                self.assertEqual(self.bash(cmd), 0, (repo_state, cmd))
+            for path in ("~/.ssh", "/home/someone/.aws", "secrets", "sub/secrets"):
+                self.assertEqual(grep(pattern=".", path=path), 2, (repo_state, path))
+            self.assertEqual(grep(pattern=".", path="src"), 0)
+
     def test_secret_reads_blocked_further(self):
         import os
         read = lambda **ti: self.run_hook("guard-read.sh", {"tool_name": "Read", "tool_input": ti})  # noqa: E731

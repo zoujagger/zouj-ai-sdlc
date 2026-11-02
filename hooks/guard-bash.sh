@@ -60,6 +60,28 @@ if [[ "$u" =~ $re_reader ]]; then
     fi
   done
 fi
+# Any argument naming secret material (defaults/secret-paths + .aiops/config/secret-paths, also a secret directory),
+# whatever the command: `cat ~/.aws/credentials`, `paste .env`, `grep -r . ~/.ssh`, `cp ~/.ssh/id_ed25519 x`.
+# Words that are themselves glob patterns (`'*.pem'` into .gitignore) and harmless commands (echo, ls, …) are skipped.
+secret_word() {   # secret_word <word>: true if the word names secret material
+  local w=$1 rel
+  w=${w#[<>]}; [[ "$w" == --*=* ]] && w=${w#*=}
+  w=${w/#\~/$HOME}
+  [[ -z "$w" || "$w" == *[\*\?\[]* ]] && return 1
+  rel=$(rel_path "$w" "$root")
+  secret_template "$rel" && return 1
+  config_match "$rel" "$root" secret-paths >/dev/null || config_match "$rel/x" "$root" secret-paths >/dev/null
+}
+while IFS= read -r seg; do
+  read -ra ws <<<"$seg"   # split without glob expansion
+  (( ${#ws[@]} )) || continue
+  case "${ws[0]##*/}" in echo|printf|ls|test|\[|mkdir|which|type|cd|true|false|:) continue ;; esac
+  for w in "${ws[@]:1}"; do
+    if secret_word "$w"; then
+      block "reading secret material ('$w')" "use .env.example / documentation for names; never read real secrets into the session."
+    fi
+  done
+done < <(printf '%s\n' "$u" | tr ';&|' '\n\n\n')
 [[ "$c" =~ $re_dump_env ]]   && block "dumping environment secrets"
 [[ "$c" =~ $re_system ]]     && block "privileged or dangerous system command"
 (( enabled )) && [[ "$c" =~ $re_gate ]] && block "merging/approving/deleting is a human gate" "a CODEOWNER approves and merges the PR (state 5 is the human's decision); the agent never approves its own work."
