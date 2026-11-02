@@ -226,7 +226,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `defaults/secret-paths`: adds `*/.aws/*`, `*/.config/gcloud/*`, `*/.docker/config.json`, `*/.kube/config`.
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_beyond_env` → `cat ~/.aws/credentials` and Grep `path: ~/.ssh` are allowed today
   - Covers: AC-24
-- [ ] **S27**: Protected paths apply to shell writes; workflow ownership
+- [x] **S27**: Protected paths apply to shell writes; workflow ownership
   - Files:
     - `lib/sdlc_engine/guards.py`: in initialized repos, shell write targets are checked against `protected-paths`.
     - `templates/scaffold/.github/CODEOWNERS`: adds `/.github/` and `/.claude/`.

@@ -51,7 +51,10 @@ class Init(RepoCase):
         self.assertIs(cfg["require_signed_approvals"], True)
         for name in ("allowed-signers", "legacy-approvals"):
             self.assertTrue((self.root / ".aiops" / "config" / name).is_file(), name)
-        self.assertRegex((self.root / ".github" / "CODEOWNERS").read_text(), r"/\.aiops/config\.json\s+@your-org/maintainers")
+        owners = (self.root / ".github" / "CODEOWNERS").read_text()
+        self.assertRegex(owners, r"/\.aiops/config\.json\s+@your-org/maintainers")
+        self.assertRegex(owners, r"(?m)^/\.github/\s+@")
+        self.assertRegex(owners, r"(?m)^/\.claude/\s+@")
 
     def test_unknown_stack_fails(self):
         self.assertEqual(self.run_sdlc("init", "--stack", "cobol").returncode, 1)

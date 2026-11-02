@@ -211,6 +211,17 @@ class BashGuard(RepoCase):
                     "echo $HOME", "make test"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_shell_writes_respect_protected_paths(self):
+        self.to_execution()
+        wf = self.root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "aiops-gates.yml").write_text("run: sdlc validate --all --ci\n")
+        for cmd in ("sed -i s/validate/status/ .github/workflows/aiops-gates.yml", "cp x .claude/settings.json",
+                    "echo {} > package-lock.json", "rm .github/workflows/deploy.yml", "echo X=1 > .env",
+                    "tee secrets/token < /dev/null"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        self.assertFalse(self.blocked("echo x > src/app.py"))
+
     def test_signing_toolchain_is_guarded(self):
         from helpers import ROOT
         self.to_execution()

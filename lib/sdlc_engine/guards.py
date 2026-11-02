@@ -494,6 +494,12 @@ def _git_config_writes_signing(rest):
     return len(words) >= 2                      # `git config key value`
 
 
+def _secret_template(rel):
+    """`.env.example|.sample|.template` and public keys are documentation, not secrets (mirrors hooks/lib.sh)."""
+    name = rel.rsplit("/", 1)[-1]
+    return name in (".env.example", ".env.sample", ".env.template") or name.endswith(".pub")
+
+
 def _in_plugin(target, cwd, root):
     """True for a write into the installed plugin (not when the project *is* the plugin checkout)."""
     if PLUGIN_ROOT.resolve() == root.resolve():
@@ -544,6 +550,11 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             if _aiops_protected(rel):
                 return _block("artifacts", f"shell writes to '{rel}' bypass the gate guard.",
                               "edit artifacts with the Edit/Write tools; engine state changes go through `sdlc`.")
+            hit = glob_hit(rel, globs(root, "protected-paths")) or \
+                (not _secret_template(rel) and glob_hit(rel, globs(root, "secret-paths")))
+            if hit:
+                return _block("protected", f"'{rel}' is protected ({hit[1] or hit[0]}); shell writes count too.",
+                              "propose the change in chat; a human edits protected files.")
             if locked and _code_paths(root, [rel]):
                 return _block("read-only lock", f"`{' '.join(words)[:80]}` writes '{rel}': {reason}.",
                               lock_procedure(st))
