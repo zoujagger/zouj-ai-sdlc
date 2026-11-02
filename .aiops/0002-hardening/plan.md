@@ -1,7 +1,7 @@
 ---
 id: 0002
 title: Harden gates and guards (review 0001 findings)
-status: Approved
+status: Draft
 spec: ./spec.md
 created: 2026-10-30
 approved-by: zoujagger <ulrichjagger@gmail.com>
@@ -146,6 +146,70 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_version_matches_changelog`
   - Covers: AC-15
 
+<!-- Amendment after review 0002 (CHANGES_REQUESTED 69/100): S16-S24, written in state 3 and needing `Plan Approved 0002` again.
+     Order: the BLOCKER first, then the HIGH (key policy, then shell hardening), the MAJORs, LOW, MINOR, and docs last. -->
+- [ ] **S16**: Heredoc markers only outside quotes and comments
+  - Files: `lib/sdlc_engine/guards.py` (modify: `strip_heredocs()` finds markers with a quote- and comment-aware scan of each line)
+  - Test first: `tests/test_guards.py::BashGuard::test_heredoc_marker_in_quotes_or_comment` → `echo '<<EOF'` / `# <<EOF`, then `echo 1 > src/app.py`, is allowed today
+  - Covers: AC-17
+- [ ] **S17**: A human for each signature (key policy)
+  - Files:
+    - `lib/sdlc_engine/approvals.py` (modify: `key_protection(root)` checks for an `sk-` key, an encrypted private key (`ssh-keygen -y -P ""` fails), and that the key isn't in `ssh-add -l`; `signing_problem()` applies it under `approval_key_policy: "human"`)
+    - `lib/sdlc_engine/machine.py` (`DEFAULT_CONFIG` `approval_key_policy: "human"`)
+    - `lib/sdlc_engine/cli.py` (doctor ✗; the prompt hook's message says "approve in your terminal")
+    - `tests/helpers.py` (fixtures opt into `"any"`, since unprotected test keys can't prompt)
+  - Test first: `tests/test_engine.py::Approvals::test_key_policy_requires_a_human_per_signature` → an unprotected key passes `signing_problem()` today
+  - Covers: AC-16
+- [ ] **S18**: Engine invocation, the remaining shell forms
+  - Files: `lib/sdlc_engine/guards.py` (modify):
+    - `ENV_RES`: `export -n`, `declare|typeset +x`, `env -`
+    - `ENGINE_RES`: a function or alias whose body calls `sdlc`, `sdlc` followed by a non-literal word, `xargs … sdlc`, copying `bin/sdlc` or `sdlc_engine`
+    - the trailer check on `plain` (also `AIOps-` with `Approval` assembled separately)
+  - Test first: `tests/test_guards.py::BashGuard::test_engine_cannot_be_disguised_further` → `export -n CLAUDECODE; f(){ sdlc "$@"; }; f approve …` is allowed today
+  - Covers: AC-18
+- [ ] **S19**: The audit fails closed on a bad base; positive test
+  - Files:
+    - `lib/sdlc_engine/approvals.py` (modify: `trust()` verifies `REF^{commit}`, raising `BaseRefError`; bootstrap only for a resolvable ref with no file)
+    - `lib/sdlc_engine/cli.py` (`cmd_validate`: an empty `--base`, or a `BaseRefError`, exits 1)
+    - `templates/scaffold/.github/workflows/aiops-gates.yml` (verify `BASE_SHA` like `ci.yml`, fail if absent)
+  - Test first: `tests/test_engine.py::Approvals::test_audit_fails_closed_on_unresolvable_base` and `::test_audit_accepts_allow_listed_signer_against_base`, plus `tests/test_cli.py::Lifecycle::test_validate_rejects_empty_base`
+  - Covers: AC-19
+- [ ] **S20**: `.aiops` integrity, the remaining forms
+  - Files: `lib/sdlc_engine/guards.py` (modify):
+    - expand `$PWD`, `${PWD}`, `$(pwd)` and `~+` in targets
+    - glob targets are expanded against the tree
+    - `find` start paths that are `.aiops` or an ancestor, with an action and a `-name`/`-path` that can match a `.aiops` entry (or no name filter)
+    - `tar -C <dir>` on extract
+    - `git apply/am` patches touching `.aiops/`
+  - Test first: `tests/test_guards.py::BashGuard::test_aiops_tree_is_protected_from_globs_and_find` → `rm -rf .ai*` etc. are allowed today
+  - Covers: AC-20
+- [ ] **S21**: Secret reads, the remaining forms
+  - Files:
+    - `hooks/guard-bash.sh` (modify: unquote before matching; drop `.env.(example|sample|template)` tokens instead of exempting the command; glob tokens that match `.env`)
+    - `hooks/guard-read.sh` (modify: match the given and the resolved (`realpath -m`) path)
+    - `defaults/secret-paths` (add `*id_ed25519*`, `*id_ecdsa*`, `*/.ssh/*`, `*/.aws/credentials`, `*/.netrc`, `*/.npmrc`, `*/secrets/*`)
+    - `templates/scaffold/.claude/settings.json` (`Read(~/.ssh/**)`, `Read(~/.aws/**)`)
+  - Test first: `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_blocked_further` → `cp .env /tmp/x; cat .env.example` and a symlink Read are allowed today
+  - Covers: AC-21
+- [ ] **S22**: Legacy list hardening
+  - Files:
+    - `lib/sdlc_engine/approvals.py` (modify: full 40/64-char exact match; split `audit()` into `commit_problems()` plus the signature check; `unsigned_approvals()` lists only commits with no other problem)
+    - `lib/sdlc_engine/cli.py` (`legacy-approvals` prints author and date)
+  - Test first: `tests/test_engine.py::Approvals::test_legacy_needs_full_sha_and_clean_commit` → a 7-char prefix passes today
+  - Covers: AC-22
+- [ ] **S23**: Minor bypasses and stale text
+  - Files:
+    - `hooks/guard-bash.sh` (`git push … +ref` force push)
+    - `lib/sdlc_engine/guards.py` (`git --work-tree=DIR` as a git cwd; `curl -o/--output`, `wget -O/--output-document` write targets)
+    - `hooks/hooks.json` (the description)
+    - `CHANGELOG.md` (env-marker wording)
+  - Test first: `tests/test_guards.py::BashGuard::test_minor_write_forms` and `tests/test_shell_hooks.py::ShellHooks::test_guard_bash` (adding `+main`) → allowed today
+  - Covers: AC-22
+- [ ] **S24**: Docs for the key policy and residuals
+  - Files: `SECURITY.md`, `docs/architecture.md` (threat model: key policy, regex residuals), `README.md` (approver setup: passphrase, terminal approvals), `templates/scaffold/.aiops/README.md`, `skills/intent|spec|plan/SKILL.md` (the approval phrase falls back to the terminal command), `CHANGELOG.md` `[0.2.0]`
+  - Test first: `tests/test_cli.py::Lifecycle::test_prompt_approval_explains_terminal_fallback` → the prompt hook doesn't mention the terminal fallback today
+  - Covers: AC-16
+
 ## Risks
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
@@ -155,6 +219,9 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | Bootstrap fallback misused to self-trust | low | high | only when the base has **no** signer file, with a loud warning; CODEOWNERS on `.aiops/config/` |
 | A mutable tag pin is retagged | low | high | the docs recommend a full sha; tags are never moved |
 | The parser gets more complex (`_check_command` is dense) | medium | low | small helpers per write form, each with a test |
+| The key policy locks the human out (passphrase key, no TTY in the prompt hook) | high | medium | the refusal says exactly what to do; `bin/sdlc approve` in a terminal prompts for the passphrase; `approval_key_policy: "any"` is the human-owned escape hatch |
+| Static shell parsing can never be complete | high | medium | R-10 makes forgery need the human's passphrase or touch, whatever the parser misses. Remaining regex limits are documented as residuals |
+| The `find`/glob expansion misjudges | medium | low | it only blocks when `.aiops` entries could match; negative tests for ordinary `find . -name '*.pyc' -delete` |
 
 ## Test definitions
 | AC | Test (file::name) | Type | Proves |
@@ -175,6 +242,14 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | AC-14 | `tests/test_guards.py::EditGuard::test_policy_files_not_exempt` | hook | CLAUDE.md, REVIEW.md, skills and agents locked; docs and README writable |
 | AC-15 | `tests/test_shell_hooks.py::ShellHooks::test_ci_pins_tools`, `::test_version_matches_changelog`, plus CI `sdlc validate --all --ci --base origin/main` | static, CI | this repo passes the strict audit at 0.2.0 |
 
+| AC-16 | `tests/test_engine.py::Approvals::test_key_policy_requires_a_human_per_signature`, `tests/test_cli.py::Lifecycle::test_doctor_checks_signing`, `::test_prompt_approval_explains_terminal_fallback` | unit, cli | unprotected or agent-loaded keys refused; an encrypted key not in the agent, or `sk-`, accepted |
+| AC-17 | `tests/test_guards.py::BashGuard::test_heredoc_marker_in_quotes_or_comment` | hook | markers inside quotes or comments don't hide later lines |
+| AC-18 | `tests/test_guards.py::BashGuard::test_engine_cannot_be_disguised_further` | hook | export -n, declare +x, env -, wrappers, dynamic args, xargs, copies, split trailer |
+| AC-19 | `tests/test_engine.py::Approvals::test_audit_fails_closed_on_unresolvable_base`, `::test_audit_accepts_allow_listed_signer_against_base`, `tests/test_cli.py::Lifecycle::test_validate_rejects_empty_base` | unit, cli | fail closed; positive base path |
+| AC-20 | `tests/test_guards.py::BashGuard::test_aiops_tree_is_protected_from_globs_and_find` | hook | globs, $PWD, find, tar -C, git apply |
+| AC-21 | `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_blocked_further` | hook | compound .env.example, quotes, globs, symlinks, ~/.ssh, nested secrets |
+| AC-22 | `tests/test_engine.py::Approvals::test_legacy_needs_full_sha_and_clean_commit`, `tests/test_guards.py::BashGuard::test_minor_write_forms`, `tests/test_shell_hooks.py::ShellHooks::test_guard_bash` | unit, hook | full-sha legacy, vetted --write, +refspec, --work-tree, curl -o |
+
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
@@ -182,3 +257,8 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | 2026-11-02 | S7 | A test that picked a base predating `allowed-signers` was corrected to use a base that has one | the bootstrap rule (by design) trusts the PR's list when the base has none | `6d77010` |
 | 2026-11-02 | S12 | Two tests that used a root `NOTES.md` as their docs example now use `docs/notes.md` | the narrowed exemption no longer covers arbitrary root `*.md` | `783a908` |
 | 2026-11-02 | S14 | `sdlc doctor` signing checks (in the spec's API contracts, not listed as a plan step) were added in S14. The isolated audit test pinned existing behaviour, so it had no red | complete the spec's contract; be honest about test-first evidence | `8524464` |
+| 2026-11-02 | S6 | Eval fixtures (`evals/_lib/repo.sh`) got throwaway signing keys too | the evals approve gates and signing became the default | `f3e558f` |
+| 2026-11-02 | S8 | `aiops_enabled` gained the git-tracked check in S8 (planned for S3 only in the engine). The planned `secret_match` became `config_match … secret-paths` + `secret_template` | reuse the existing helper | `940c7e1` |
+| 2026-11-02 | S10 | Also created `templates/scaffold/.aiops/config/secret-paths` (not in S10's file list) | consumers need the extension point for the new list | `5710883` |
+| 2026-11-02 | S9, S15 | `hooks/hooks.json` and `.claude-plugin/plugin.json` were rewritten by `json.dump` (reformatting churn; plugin.json now uses `\u2192` escapes) | edited programmatically; S23 restores readable formatting | `98e696c`, `f5ec258` |
+| 2026-11-02 | — | Review 0002 returned CHANGES_REQUESTED (69/100). The spec was amended (R-10, R-11, AC-16..AC-22) and re-approved; the plan was amended with S16-S24 | fix all findings, as the human asked | `fbd1da2`, `3210a8e` |
