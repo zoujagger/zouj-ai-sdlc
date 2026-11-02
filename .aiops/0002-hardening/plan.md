@@ -73,7 +73,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `CLAUDECODE` / `CLAUDE_CODE_CHILD_SESSION` unset or override
   - Test first: `tests/test_guards.py::BashGuard::test_engine_cannot_be_disguised` → `sdl\c approve`, `s=sdlc; $s approve` and `env -u CLAUDECODE …` are allowed today
   - Covers: AC-7
-- [ ] **S6**: Signed approvals at approval time
+- [x] **S6**: Signed approvals at approval time
   - Files:
     - `lib/sdlc_engine/machine.py` (modify: `DEFAULT_CONFIG` `:28` `require_signed_approvals: True`)
     - `lib/sdlc_engine/approvals.py` (modify: `approve()` `:27` signing precheck before stamping, then `git commit -S`)

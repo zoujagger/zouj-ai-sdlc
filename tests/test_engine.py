@@ -137,6 +137,20 @@ class States(RepoCase):
 
 
 class Approvals(RepoCase):
+    def test_refuses_without_signing_key_before_stamping(self):
+        git(self.root, "config", "--unset", "user.signingkey")
+        self.write("intent", INTENT)
+        ok, msg = approvals.approve(self.root, self.d, "intent", via="test")
+        self.assertFalse(ok)
+        self.assertIn("user.signingkey", msg)
+        self.assertEqual(A.parse((self.d / "intent.md").read_text()).get("status"), "Draft")
+
+    def test_approval_commit_is_signed(self):
+        self.write("intent", INTENT)
+        self.approve("intent")
+        sig = git(self.root, "-c", f"gpg.ssh.allowedSignersFile={self.signers}", "log", "-1", "--format=%G?")
+        self.assertEqual(sig, "G")
+
     def test_refuses_invalid_artifact(self):
         self.write("intent", INTENT.replace("## Out of scope", "## Nope"))
         ok, msg = approvals.approve(self.root, self.d, "intent", via="test")
@@ -200,9 +214,11 @@ class Approvals(RepoCase):
         self.assertTrue(any("only" in e or "sha256" in e for e in errors), errors)
 
     def test_ci_audit_can_require_signed_approval_commits(self):
-        (self.root / ".aiops" / "config.json").write_text('{"require_signed_approvals": true}')
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text('{"require_signed_approvals": false}')
         self.write("intent", INTENT)
-        self.approve("intent")                       # the test repo can't sign
+        self.approve("intent")                       # unsigned while signing was off
+        cfg.write_text('{"require_signed_approvals": true}')
         errors = approvals.audit(self.root, self.d, "intent")
         self.assertTrue(errors and "not signed" in errors[0], errors)
 

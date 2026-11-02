@@ -40,7 +40,7 @@ class ShellHooks(RepoCase):
         self.assertEqual(self.files(".env.example", "X="), 0)
         self.assertEqual(self.files("package-lock.json", "{}"), 2)
         self.assertEqual(self.files(".aiops/config/readonly-exempt", "src/*"), 2)
-        (self.root / ".aiops" / "config").mkdir()
+        (self.root / ".aiops" / "config").mkdir(exist_ok=True)
         (self.root / ".aiops" / "config" / "protected-paths").write_text("legacy/* frozen module\n")
         self.assertEqual(self.files("legacy/old.py", "x"), 2)
 

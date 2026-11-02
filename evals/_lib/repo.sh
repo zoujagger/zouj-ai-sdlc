@@ -8,7 +8,13 @@ SDLC="python3 $PLUGIN/bin/sdlc"
 init_repo() {
   git init -q -b main
   git config user.name "Eval Human"; git config user.email "eval@example.com"; git config commit.gpgsign false
+  # Approvals must be SSH-signed by an allow-listed key: give the fixture its own throwaway key.
+  ssh-keygen -q -t ed25519 -N "" -C eval -f "$PWD/.eval-signing-key"
+  git config gpg.format ssh; git config user.signingkey "$PWD/.eval-signing-key.pub"
   $SDLC init >/dev/null
+  mkdir -p .aiops/config
+  echo "eval@example.com namespaces=\"git\" $(cat .eval-signing-key.pub)" > .aiops/config/allowed-signers
+  printf '.eval-signing-key*\n' >> .gitignore
   cat > Makefile <<'MK'
 .PHONY: format lint typecheck test build check
 format:
