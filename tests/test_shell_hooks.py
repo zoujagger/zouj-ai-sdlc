@@ -83,6 +83,15 @@ class ShellHooks(RepoCase):
                 self.assertEqual(self.bash(cmd), 2, (repo_state, cmd))
             self.assertEqual(self.bash("cat .env.example"), 0)
 
+    def test_version_matches_changelog(self):
+        import re
+        version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+        self.assertEqual(version, "0.2.0")                                       # AC-15: the hardening release
+        log = (ROOT / "CHANGELOG.md").read_text()
+        released = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", log, re.M)
+        self.assertEqual(released[0], version, "the newest CHANGELOG release must match plugin.json")
+        self.assertIn(f"[{version}]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v{version}", log)
+
     def test_ci_pins_tools(self):
         import re
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()

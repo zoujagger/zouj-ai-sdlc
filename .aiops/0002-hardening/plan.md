@@ -178,3 +178,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-02 | S6 | The existing audit signature check got the working-tree signer list early, so `make check` stayed green | signing became the default before S7 rewrote the audit | `f3e558f` |
+| 2026-11-02 | S7 | A test that picked a base predating `allowed-signers` was corrected to use a base that has one | the bootstrap rule (by design) trusts the PR's list when the base has none | `6d77010` |
+| 2026-11-02 | S12 | Two tests that used a root `NOTES.md` as their docs example now use `docs/notes.md` | the narrowed exemption no longer covers arbitrary root `*.md` | `783a908` |
+| 2026-11-02 | S14 | `sdlc doctor` signing checks (in the spec's API contracts, not listed as a plan step) were added in S14. The isolated audit test pinned existing behaviour, so it had no red | complete the spec's contract; be honest about test-first evidence | `8524464` |

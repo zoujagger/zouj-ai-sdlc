@@ -5,6 +5,48 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-02
+
+Hardening release from the state-5 review of 0001 (`.aiops/0001-zouj-ai-sdlc-plugin/review.md`, CHANGES_REQUESTED 66/100),
+delivered as intent `.aiops/0002-hardening/`.
+
+### Security
+- **Signed approvals.** Gate approvals are SSH-signed commits (`git commit -S`). `sdlc validate --ci --base <target>`
+  accepts an open gate only if its single-file approval commit is signed by a key in the **target branch's**
+  `.aiops/config/allowed-signers`, or listed in its `legacy-approvals`. A change can't vouch for itself.
+  `require_signed_approvals` now defaults to `true`.
+- **Shell guard.**
+  - Heredoc redirects after the marker (`cat <<EOF > file`) no longer slip past the read-only lock.
+  - Now detected: `git commit <pathspec>`, `git -C`, `cp/mv -t`, `find -delete/-exec`, `awk -i inplace`.
+  - Disguised engine calls (`sdl\c approve`, `"sdlc"`, `$x approve`, `$(which sdlc) hook`) and any change to
+    `CLAUDECODE` / `CLAUDE_CODE_CHILD_SESSION` (or `env -i`) are blocked.
+- **`.aiops/` integrity.** `.aiops`, intent folders and their files can't be deleted, moved or overwritten from the
+  shell. A git-tracked `.aiops/` counts as initialized even if deleted. Gates require front-matter `id` == folder, and
+  `id` is immutable.
+- **Always-on safety.** Secret reads and writes, credentials, force-push, history rewrites and production deploys are
+  guarded in **every** repo. Only the SDLC gates wait for `sdlc init`.
+- **Secret reads.** New `hooks/guard-read.sh` covers Read/Grep/Glob on `defaults/secret-paths`, and guard-bash catches
+  more shell readers of `.env` (`awk`, `sed`, `cut`, `cp`, `base64`, `xxd`, `strings`, `rg`, `< .env`, …).
+- **Supply chain.** The scaffold's Claude workflows and `aiops-gates.yml` fetch the plugin at a pinned
+  `ZOUJ_SDLC_REF` (set by `sdlc init`) and load it with `--plugin-dir`. This repo's CI audits with the base branch's
+  engine, and pins `ruff` and `@anthropic-ai/claude-code`.
+
+### Added
+- `sdlc legacy-approvals [--write]` (human-only): records pre-signing approval commits as an explicit legacy list.
+- `sdlc validate --base REF`, and `sdlc doctor` signing checks (configured key, key in `allowed-signers`, passphrase warning).
+- Scaffold: `.claude/settings.json` (Read/Edit deny rules for secrets), `.aiops/config/{allowed-signers,legacy-approvals,secret-paths}`.
+
+### Changed
+- `defaults/readonly-exempt` covers docs, README, CHANGELOG, CONTRIBUTING and SECURITY only. CLAUDE.md, REVIEW.md,
+  `skills/` and `agents/` are locked in states 1-3.
+- State 6 DONE is reported on any branch once the PASS review is on main.
+- Secret globs moved from `defaults/protected-paths` to `defaults/secret-paths`.
+
+### Upgrading
+Each approver runs `git config gpg.format ssh` and `git config user.signingkey ~/.ssh/id_ed25519.pub`, then adds
+their key to `.aiops/config/allowed-signers`. Run `sdlc legacy-approvals --write` once, and re-run `sdlc init` to add
+the new scaffold files (existing files are kept). See README → "Approver setup".
+
 ## [0.1.0] - 2026-10-30
 
 First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-template` this repo grew out of.
@@ -45,5 +87,6 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zoujagger/zouj-ai-sdlc/releases/tag/v0.1.0
