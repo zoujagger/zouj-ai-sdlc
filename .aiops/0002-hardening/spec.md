@@ -1,7 +1,7 @@
 ---
 id: 0002
 title: Harden gates and guards (review 0001 findings)
-status: Approved
+status: Draft
 risk: high
 intent: ./intent.md
 created: 2026-10-30
@@ -66,6 +66,26 @@ Released as **v0.2.0**: signing is a new requirement for approvers. Users and sy
   - Moving an approved artifact back to Draft stays allowed, and is now documented.
 - **R-9 Hygiene for 0001.** 0001's Deviation log records the bootstrap exception and the S7 deviation, and each row
   gets a commit ref. 0002 commits carry `Red:` / `Green:` evidence.
+- **R-10 A human for each signature (decided after review 0002).**
+  - `sdlc approve`, the prompt hook and `sdlc doctor` accept a signing key only if every signature needs the human:
+    - a FIDO `sk-` key (touch), or
+    - a passphrase-protected private key that is **not** loaded in the reachable `ssh-agent`.
+  - Anything else is refused **before stamping**, and `doctor` fails (✗).
+  - The human-owned escape hatch is `.aiops/config.json` `"approval_key_policy": "any"`. The default is `"human"`.
+  - Approvals that need a passphrase are made with `bin/sdlc approve` in a terminal. The prompt phrase tells Claude to
+    hand the approval to the human when signing would need a TTY.
+- **R-11 Review 0002 fixes.**
+  - Heredoc markers count only outside quotes and comments.
+  - R-4 also covers `export -n` / `declare +x` / `typeset +x` / `env -`, wrapper functions or aliases around `sdlc`,
+    a non-literal first argument to `sdlc`, `xargs sdlc`, a copied engine binary, and a split `AIOps-Approval` string.
+  - The audit fails closed on an unresolvable or empty `--base`. Only a resolvable base that lacks `allowed-signers`
+    bootstraps.
+  - `.aiops` integrity also covers globs, `$PWD`, `$(pwd)`, `find` start paths, `tar -C` and `git apply/am`.
+  - Secret-read guards unquote before matching, resolve symlinks, and exempt `.env.example` per token, not per
+    command. `secret-paths` gains `*id_ed25519*`, `*id_ecdsa*`, `*/.ssh/*`, `*/.aws/credentials`, `*/.netrc`,
+    `*/.npmrc` and `*/secrets/*`.
+  - Legacy entries must be full shas, and `legacy-approvals --write` records only commits that pass every other audit check.
+  - Force-push through a `+refspec`, `git --work-tree` and `curl -o` / `wget -O` are caught.
 - Non-functional: stdlib only; no new runtime dependencies; every block message keeps "reason + Procedure"; the
   hook median stays under 150 ms per call.
 
@@ -108,6 +128,28 @@ Released as **v0.2.0**: signing is a new requirement for approvers. Users and sy
   `agents/x.md`, then it is blocked. `README.md`, `CHANGELOG.md` and `docs/x.md` remain writable.
 - **AC-15**: Given this repo after the change, when `sdlc validate --all --ci --base origin/main` runs, then it passes
   (0001's and 0002's pre-signing approvals are in `legacy-approvals`). `make check` passes, and plugin.json says `0.2.0`.
+- **AC-16**: Given `approval_key_policy: "human"` (the default), when `sdlc approve` or `sdlc doctor` runs, then:
+  - an unencrypted key, or a key loaded in the reachable ssh-agent, is refused before stamping (doctor ✗), with the
+    fix (`ssh-keygen -p`, `ssh-add -d`, or an `sk-` key)
+  - an encrypted key that isn't in the agent, or an `sk-` key, passes the precheck
+  - `"any"` restores the old behaviour
+- **AC-17**: Given states 1-3, when a heredoc marker appears only inside quotes or a comment (`echo '<<EOF'` or
+  `# <<EOF` followed by `echo 1 > src/app.py` on the next line), then the write on the next line is still blocked.
+- **AC-18**: Given any state, when the agent runs `export -n CLAUDECODE`, `declare +x CLAUDECODE`, `env - sdlc …`,
+  `f(){ sdlc "$@"; }; f approve 0001 intent`, `alias s=sdlc`, `sdlc $(echo approve) …`, `x=approve; sdlc $x …`,
+  `echo … | xargs sdlc`, `cp bin/sdlc /tmp/s`, or a commit whose message builds `AIOps-Approval` from pieces, then each
+  is blocked.
+- **AC-19**: Given `--base REF` where REF doesn't resolve, or `--base` with an empty value, when
+  `sdlc validate --ci` runs, then it fails. An allow-listed signature verified against a base that has the signer is
+  accepted (positive test).
+- **AC-20**: Given an initialized repo, when the agent runs `rm -rf .ai*`, `rm -rf $PWD/.aiops`,
+  `rm -rf "$(pwd)/.aiops"`, `cd .aiops && rm -rf *`, `find . -name test-lock -delete`, `tar -xf x.tar -C .aiops` or
+  `git apply x.patch` (a patch touching `.aiops/`), then each is blocked.
+- **AC-21**: Given any repo, when the agent runs `cp .env /tmp/x; cat .env.example`, `cat ".env"`, `cat .e?v`, or
+  Reads a symlink to `.env`, `~/.ssh/id_ed25519` or `sub/secrets/x`, then each is blocked.
+- **AC-22**: Given `legacy-approvals` with a short sha, when the audit runs, then the entry doesn't match. When
+  `sdlc legacy-approvals --write` runs, then it skips approval commits that fail the other audit checks. And
+  `git push origin +main`, `git --work-tree=src checkout app.py` (locked) and `curl -o src/x …` (locked) are blocked.
 
 ## Data model
 No database. File and config contract:
@@ -127,7 +169,10 @@ No database. File and config contract:
   with instructions if the setup is missing.
 - `sdlc legacy-approvals [--write]` (human only): lists the unsigned approval commits of currently open gates.
   `--write` appends them to `.aiops/config/legacy-approvals`.
-- `sdlc doctor`: adds signing checks (`user.signingkey`, `gpg.format=ssh`, key present in `allowed-signers`).
+- `sdlc doctor`: adds signing checks (`user.signingkey`, `gpg.format=ssh`, key present in `allowed-signers`, and
+  under `approval_key_policy: "human"` a key that needs the human for each signature).
+- `.aiops/config.json` `approval_key_policy`: `"human"` (default) | `"any"`.
+- `sdlc validate --ci --base REF` exits 1 when REF doesn't resolve or is empty.
 - New hook `hooks/guard-read.sh` on `PreToolUse` `Read|Grep|Glob` (`file_path`, `path`, `pattern`). Exit 2 blocks.
 - Unchanged: hook JSON in and out, and exit codes (0 allow, 2 block). Every block message keeps `Procedure:`.
 
@@ -176,5 +221,5 @@ No database. File and config contract:
   config.json is the documented emergency switch, and it's human-owned.
 
 ## Open questions
-- [ ] Should a passphrase-protected key (or `ssh-add -c`) be *required* (doctor fails) or only recommended (doctor warns)? Proposed default: warn (zoujagger)
+- [x] Should a protected key be *required* or only recommended? → **Required: a human for each signature** (a passphrase key not in ssh-agent, or an `sk-` key); approvals move to the terminal (zoujagger, 2026-11-02, after review 0002)
 - [ ] Should the tech lead approve `risk: high` specs a second time? Carried over from 0001 (zoujagger)
