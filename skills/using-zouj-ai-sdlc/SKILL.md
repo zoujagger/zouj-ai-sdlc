@@ -28,7 +28,7 @@ The engine derives the state from those files and git. Hooks enforce it, so a ru
 ## Red flags: stop if you think any of these
 | Thought | Reality |
 |---|---|
-| "It's a tiny change, I'll skip the intent." | Small changes still need an intent. Docs-only and typo fixes are exempt (`*.md`, `docs/`). |
+| "It's a tiny change, I'll skip the intent." | Small changes still need an intent. Docs-only fixes are exempt (`docs/`, README, CHANGELOG). CLAUDE.md, REVIEW.md, skills and agents are not. |
 | "The user clearly wants this, so I'll mark it Approved." | Only the exact phrase typed by the human opens a gate. |
 | "I'll just sketch the code while planning." | State 3 is read-only. Put the code sketch in `plan.md`. |
 | "The test is obviously going to fail, no need to run it." | Run it and quote the red output. That's the test-first evidence review.md scores. |

@@ -7,13 +7,14 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from . import approvals, guards
 from . import artifacts as A
-from .machine import (KINDS, PLUGIN_ROOT, SCHEMAS, active_dir, evaluate, find_dir, git, initialized, intent_dirs,
-                      project_root)
+from .machine import (KINDS, PLUGIN_ROOT, SCHEMAS, active_dir, config, evaluate, find_dir, git, initialized,
+                      intent_dirs, project_root)
 from .schema import validate
 
 TEMPLATES = PLUGIN_ROOT / "templates"
@@ -319,6 +320,27 @@ zouj-ai-sdlc is now active in this repo. Next:
     return 0
 
 
+def _doctor_signing(root, row):
+    problem = approvals.signing_problem(root)
+    row(problem is None, "approval signing configured (ssh)" if problem is None else f"approval signing: {problem}",
+        "git config gpg.format ssh && git config user.signingkey ~/.ssh/id_ed25519.pub")
+    if problem:
+        return
+    key = git(root, "config", "user.signingkey") or ""
+    pub = Path(key).expanduser()
+    pubtext = pub.read_text().split() if pub.is_file() else key.split()
+    signers = root / ".aiops" / "config" / "allowed-signers"
+    listed = len(pubtext) >= 2 and signers.is_file() and pubtext[1] in signers.read_text()
+    row(listed, "signing key is in .aiops/config/allowed-signers",
+        "add `<email> namespaces=\"git\" <public key>` to .aiops/config/allowed-signers (human-owned) via a reviewed PR")
+    private = pub.with_suffix("") if pub.suffix == ".pub" else None
+    if private and private.is_file():
+        probe = subprocess.run(["ssh-keygen", "-y", "-P", "", "-f", str(private)], capture_output=True, text=True)
+        if probe.returncode == 0:
+            out("  ! signing key has no passphrase: anything running as you could sign approvals. "
+                "Add one (ssh-keygen -p) or load it with ssh-add -c")
+
+
 def cmd_doctor(root, args):
     fail = 0
 
@@ -338,6 +360,8 @@ def cmd_doctor(root, args):
             "edit the Makefile or: sdlc init --stack python|node|go --force")
     for b in ("gh", "jq"):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")
+    if initialized(root) and config(root).get("require_signed_approvals"):
+        _doctor_signing(root, row)
     if initialized(root):
         for d in intent_dirs(root):
             for kind in KINDS:

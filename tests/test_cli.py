@@ -78,6 +78,17 @@ class Lifecycle(RepoCase):
         r = self.run_sdlc("validate", "--all", "--ci", "--base", "base")
         self.assertEqual(r.returncode, 1, r.stdout)          # the base has no legacy list yet
 
+    def test_doctor_checks_signing(self):
+        from helpers import git
+        out = self.run_sdlc("doctor").stdout
+        self.assertIn("✓ approval signing configured (ssh)", out)
+        self.assertIn("✓ signing key is in .aiops/config/allowed-signers", out)
+        self.assertIn("! signing key has no passphrase", out)        # fixture keys are unprotected: warn, don't fail
+        git(self.root, "config", "--unset", "user.signingkey")
+        r = self.run_sdlc("doctor")
+        self.assertIn("✗ approval signing", r.stdout)
+        self.assertEqual(r.returncode, 1)
+
     def test_new_draft_status_validate(self):
         shutil.rmtree(self.d)
         r = self.run_sdlc("new", "csv-export", "--title", "CSV export")

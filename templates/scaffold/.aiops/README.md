@@ -5,7 +5,10 @@ The `sdlc` engine derives each intent's state from these files and git. Run `sdl
 
 - **Gates:** a human types `Intent Approved NNNN`, `Spec Approved NNNN` or `Plan Approved NNNN` as the whole prompt
   (or runs `sdlc approve NNNN intent|spec|plan` in a terminal). The approval is stamped (`approved-by/at/via/sha256`)
-  and committed alone with an `AIOps-Approval:` trailer. CI (`aiops-gates.yml`) audits every gate.
+  and committed alone, **SSH-signed**, with an `AIOps-Approval:` trailer. CI (`aiops-gates.yml`) checks the signature
+  against the target branch's `config/allowed-signers`.
+- **Approver setup:** `git config gpg.format ssh`, `git config user.signingkey ~/.ssh/id_ed25519.pub`, add the key to
+  `config/allowed-signers` (`<email> namespaces="git" <public key>`), and land it through a reviewed PR.
 - **Stale approvals:** editing an approved body re-closes its gate. Plans keep their approval when steps are ticked
   and the Deviation log grows.
 - `config/`: human-owned guard lists that extend the plugin defaults (`protected-paths`, `test-paths`, `readonly-exempt`).

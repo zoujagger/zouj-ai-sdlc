@@ -236,6 +236,20 @@ class Approvals(RepoCase):
         errors = approvals.audit(self.root, self.d, "intent")
         self.assertTrue(errors and "not signed" in errors[0], errors)
 
+    def test_audit_rejects_multi_file_approval_commit(self):
+        self.write("intent", INTENT)
+        self.approve("intent")
+        self.write("spec", SPEC)
+        text = (self.d / "spec.md").read_text()
+        digest = A.approval_hash("spec", text)
+        (self.d / "spec.md").write_text(A.set_fields(text, {"status": "Approved", "approved-by": "bot",
+                                                             "approved-sha256": digest}))
+        (self.root / "src" / "app.py").write_text("sneaky\n")
+        git(self.root, "add", "-A")    # right trailer and digest, but bundled with code
+        git(self.root, "commit", "-qm", "chore(aiops): Spec Approved 0001", "-m", f"AIOps-Approval: spec 0001 sha256={digest}")
+        errors = approvals.audit(self.root, self.d, "spec")
+        self.assertTrue(errors and "must change only" in errors[0], errors)
+
     def test_audit_requires_allow_listed_signer(self):
         from helpers import allowed_signer_line, signing_key
         cfg = self.root / ".aiops" / "config.json"

@@ -132,7 +132,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `.github/CODEOWNERS` (modify)
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_ci_pins_tools`, a static check of ci.yml
   - Covers: AC-15
-- [ ] **S14**: Docs, isolated audit test, 0001 hygiene
+- [x] **S14**: Docs, isolated audit test, 0001 hygiene
   - Files:
     - `SECURITY.md` `:9`
     - `docs/architecture.md` (threat model), `docs/state-machine.md`, `README.md` (signing setup), `templates/scaffold/.aiops/README.md`

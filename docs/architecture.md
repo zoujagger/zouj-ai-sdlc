@@ -33,19 +33,23 @@ lib/sdlc_engine/
 ## Threat model
 | Threat | Mitigation | Residual |
 |---|---|---|
-| The agent edits `status:`/`approved-*` | the pre-edit guard compares old and new front matter | none for Edit/Write |
-| The agent runs `sdlc approve`, `sdlc hook prompt`, or imports the engine | the pre-bash guard, plus the CLI refusing under `CLAUDECODE` | an obfuscated interpreter call could slip through |
-| The agent writes code in states 1-3 via the shell | static write detection (redirects, `sed -i`, `tee`, `cp/mv/rm`, installs, git) | `python -c "open(...).write()"` and similar aren't parsed |
-| A forged approval commit | the pre-bash guard blocks `AIOps-Approval` text. CI requires the approval commit to touch only that artifact, to carry the matching `sha256=`, and not to be co-authored by Claude. With `require_signed_approvals`, it must also be signed | without signing, a local actor who crafts a single-file commit (e.g. `git commit -F`) can pass. Turn on signing plus CODEOWNERS on `.aiops/` |
-| The agent deletes or restores an artifact through git | `git rm/mv/checkout/restore/reset/stash` on `.aiops/*` artifacts is always blocked | none for the listed subcommands |
+| The agent edits `status:`/`approved-*`/`id` | the pre-edit guard compares old and new front matter | none for Edit/Write |
+| The agent runs a human-only engine command (`approve`, `close`, `unlock`, `hook`, `legacy-approvals`) | the pre-bash guard matches the command *after unquoting* (`sdl\c`, `"sdlc"`), dynamic command words (`$x approve`, `$(which sdlc) hook`), engine imports, and any change to `CLAUDECODE` / `CLAUDE_CODE_CHILD_SESSION` or `env -i`. The CLI also refuses under those markers | interpreter calls (`python -c`) aren't parsed. **Signing makes them unable to open a gate** |
+| The agent writes code in states 1-3 via the shell | static write detection: redirects (heredoc-aware), `sed -i`/`awk -i inplace`, `tee`, `cp/mv -t`, `rm`, `find -delete/-exec`, installs, formatters, `git add/commit <pathspec>/apply/stash/checkout`, `git -C`, with `cd` tracking and recursion into `bash -c`/`eval` | interpreter writes aren't parsed |
+| A forged approval | CI accepts an open gate only if its approval commit is single-file, carries the matching `sha256=`, isn't co-authored by Claude, and is **signed by a key in `allowed-signers` read from the target branch** (`--base`), or is listed in the target branch's `legacy-approvals` | an agent that can use an **unprotected** signing key can sign as you. Use a passphrase or `ssh-add -c`. The bootstrap PR that first adds `allowed-signers` trusts its own list (warned) and needs CODEOWNERS review |
+| A PR vouches for itself | CI reads signers, the legacy list and config from the base ref. This repo also audits with the base branch's *engine* | none, given CODEOWNERS on `.aiops/config*` |
+| The agent removes or rewrites `.aiops/` | `.aiops`, intent folders and their contents can't be a shell target (`rm`, `mv`, `cp`, git rm/mv/checkout/restore) in any state. A git-tracked `.aiops/` counts as initialized even if deleted | none for the parsed forms |
+| A copied approved folder opens a gate for another intent | gates require front-matter `id` == folder id, and `id` is immutable | none |
 | The engine can't start (python missing, a broken schema) | `hooks/engine.sh` maps any non-0/2 exit of a `pre-*` guard to a block (fail closed) | none |
-| Repos without `.aiops/` | **every** hook is dormant, including the secrets, force-push, prod-deploy and test-lock guards from the old template | by design, so a user-wide install never blocks unrelated repos. Run `sdlc init` to opt in |
-| The agent edits its own instructions in states 1-3 | `*.md` is read-only-exempt by default, which includes `CLAUDE.md` and, in this repo, `skills/` and `agents/` | narrow `readonly-exempt` per repo if that matters. Behaviour files are covered by CODEOWNERS |
+| Secrets read into the session | `guard-read.sh` (Read/Grep/Glob) and guard-bash's shell readers block `defaults/secret-paths` in **every** repo. The scaffold ships `.claude/settings.json` deny rules | interpreter reads aren't parsed |
+| Safety off in unrelated repos | secrets, force-push, history rewrite and prod-deploy guards are always on. Only the SDLC gates wait for `sdlc init` | none |
+| The agent edits its own instructions in states 1-3 | the read-only exemption covers docs, README, CHANGELOG, CONTRIBUTING and SECURITY only. CLAUDE.md, REVIEW.md, `skills/` and `agents/` are locked | per-repo `readonly-exempt` can widen it. It's human-owned |
+| An unpinned plugin in privileged CI jobs | the scaffold fetches the plugin at `ZOUJ_SDLC_REF` (`v<version>` from `sdlc init`) and loads it with `--plugin-dir` | a mutable tag. Pin a full sha |
 | The approval is reused after the content changes | `approved-sha256` re-closes the gate | none |
 | A review becomes stale | `commit:` plus a diff check outside `.aiops/` | none |
 
-The local guards are a **deterrent with audit**, not a security boundary. Treat `aiops-gates` as a required status
-check and require CODEOWNERS review on `.aiops/` for the hard guarantee.
+The local guards are a **deterrent**. The hard guarantee is the signed-approval audit. Make `aiops-gates` a required
+status check, require CODEOWNERS review on `.aiops/`, and protect your signing key.
 
 ## Limits and decisions
 - Plugins can't ship permission rules (plugin `settings.json` supports only `agent` and `subagentStatusLine`), so
