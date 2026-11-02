@@ -28,7 +28,8 @@ re_push_main="git push.*( |:)(main|master)${E}"
 re_history="git (reset --hard|clean -[a-z]*f|filter-branch|filter-repo)"
 re_bypass="(--no-verify|core\\.hooksPath|SKIP_STOP_VERIFY=1|--dangerously-skip-permissions)"
 re_pipe_sh="(curl|wget)[^|]*\\| ?(sudo )?(ba|z)?sh${E}"
-re_read_env="${S}(cat|less|more|head|tail|bat|grep|source|\\.) [^|;&]*\\.env(\\.[a-z]+)?${E}"
+re_read_env="${S}(cat|less|more|head|tail|bat|grep|rg|ag|awk|gawk|sed|cut|sort|uniq|tr|nl|tac|cp|mv|base64|xxd|od|hexdump|strings|source|\\.) [^|;&]*\\.env(\\.[a-z]+)?${E}"
+re_redirect_env="<[ ]?[^ |;&]*\\.env(\\.[a-z]+)?${E}"
 re_env_example="\\.env\\.(example|sample|template)${E}"
 re_dump_env="(${S}printenv|${S}env${E}|echo .*\\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD))"
 re_system="${S}(sudo|mkfs|dd if=|chmod -R 777)${E}"
@@ -42,7 +43,7 @@ re_write_op="(>|${S}(sed -i|tee|mv|cp|rm|truncate|perl -pi)${E})"
 [[ "$c" =~ $re_history ]]    && block "history/worktree destruction" "use git revert or git stash; ask the human if history must change."
 [[ "$c" =~ $re_bypass ]]     && block "attempt to bypass hooks or permissions"
 [[ "$c" =~ $re_pipe_sh ]]    && block "piping remote script to shell" "download the script, show it for review, then run it."
-if [[ "$c" =~ $re_read_env ]] && ! [[ "$c" =~ $re_env_example ]]; then
+if [[ "$c" =~ $re_read_env || "$c" =~ $re_redirect_env ]] && ! [[ "$c" =~ $re_env_example ]]; then
   block "reading .env secrets" "use .env.example for variable names; never read real secrets."
 fi
 [[ "$c" =~ $re_dump_env ]]   && block "dumping environment secrets"

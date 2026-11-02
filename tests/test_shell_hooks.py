@@ -63,6 +63,26 @@ class ShellHooks(RepoCase):
         self.assertEqual(dep("Bash", {"command": "make deploy ENV=staging"}), 0)
         self.assertEqual(dep("Bash", {"command": "grep -r product src/"}), 0)
 
+    def test_secret_reads_blocked(self):
+        import shutil
+        read = lambda tool, **ti: self.run_hook("guard-read.sh", {"tool_name": tool, "tool_input": ti})  # noqa: E731
+        for repo_state in ("initialized", "plain"):
+            if repo_state == "plain":
+                shutil.rmtree(self.root / ".aiops")
+            for ti in ({"file_path": ".env"}, {"file_path": str(self.root / "secrets" / "x")}, {"file_path": "id.pem"},
+                       {"file_path": "deploy/x.key"}, {"file_path": "config/.env.production"}):
+                self.assertEqual(read("Read", **ti), 2, (repo_state, ti))
+            self.assertEqual(read("Grep", pattern="API", path=".env"), 2)
+            self.assertEqual(read("Grep", pattern="API", glob=".env*"), 2)
+            self.assertEqual(read("Glob", pattern="**/*.pem"), 2)
+            for ti in ({"file_path": ".env.example"}, {"file_path": "src/app.py"}):
+                self.assertEqual(read("Read", **ti), 0, ti)
+            self.assertEqual(read("Grep", pattern=r"\.env", path="src"), 0)
+            for cmd in ("awk 1 .env", "sed -n p .env", "cp .env /tmp/x", "base64 .env", "xxd .env", "strings .env",
+                        "cut -d= -f2 .env", "rg KEY .env", "python3 x.py < .env"):
+                self.assertEqual(self.bash(cmd), 2, (repo_state, cmd))
+            self.assertEqual(self.bash("cat .env.example"), 0)
+
     def test_safety_guards_always_on(self):
         import shutil
         shutil.rmtree(self.root / ".aiops")

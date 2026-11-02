@@ -101,7 +101,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `hooks/guard-files.sh` `:11` (modify: secret-paths and the credential scan unconditional, protected-paths only when enabled)
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_safety_guards_always_on`, replacing `test_dormant_without_aiops`, which today asserts that a force push is allowed
   - Covers: AC-10
-- [ ] **S9**: Secret reads
+- [x] **S9**: Secret reads
   - Files:
     - `hooks/guard-read.sh` (create)
     - `hooks/hooks.json` (modify: `Read|Grep|Glob` matcher)
