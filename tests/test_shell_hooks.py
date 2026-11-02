@@ -29,6 +29,7 @@ class ShellHooks(RepoCase):
             "cat .env": 2, "git commit --no-verify -m x": 2, "cd /tmp && rm -rf /": 2, "gh pr merge 12": 2,
             "cat .env.example": 0, "make check && git status": 0, "git push -u origin feat/0001-login": 0,
             "ls; echo a && echo b | wc -l": 0,
+            "git push origin +main": 2, "git push origin +feat/x:feat/x": 2, "git push origin feat/x:feat/x": 0,
         }
         for cmd, want in cases.items():
             self.assertEqual(self.bash(cmd), want, cmd)

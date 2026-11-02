@@ -1,5 +1,5 @@
 {
-  "description": "zouj-ai-sdlc: state-machine gates for the AI-native SDLC. Every hook is a no-op in repos without .aiops/ (run `sdlc init`).",
+  "description": "zouj-ai-sdlc: safety guards (secrets, credentials, force-push, history rewrites, production deploys) run in every repo; the state-machine gates activate in repos initialized with `sdlc init` (.aiops/).",
   "hooks": {
     "SessionStart": [
       {

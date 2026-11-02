@@ -23,7 +23,7 @@ S='(^|[ ;&|(])'   # start of a command word
 E='([ ;&|)]|$)'   # end of a token
 
 re_rm_root="${S}rm -[a-zA-Z]*r[a-zA-Z]* (/|~|\\\$HOME|\\.|\\*)${E}"
-re_force_push="git push.*( --force| -f${E}|--force-with-lease)"
+re_force_push="git push.*( --force| -f${E}|--force-with-lease| [+][^ ;&|])"   # incl. +refspec force
 re_push_main="git push.*( |:)(main|master)${E}"
 re_history="git (reset --hard|clean -[a-z]*f|filter-branch|filter-repo)"
 re_bypass="(--no-verify|core\\.hooksPath|SKIP_STOP_VERIFY=1|--dangerously-skip-permissions)"

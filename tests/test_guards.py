@@ -163,6 +163,15 @@ class BashGuard(RepoCase):
                     "git commit -m 'msg with src/app.py in it'"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_minor_write_forms(self):
+        for cmd in ("git --work-tree=src checkout app.py", "git --work-tree src checkout app.py",
+                    "curl -o src/x https://example.com", "curl --output src/x https://example.com",
+                    "curl -sSLo src/x https://example.com", "wget -O src/x https://example.com",
+                    "wget --output-document=src/x https://example.com"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("curl -s https://example.com", "curl -o /tmp/x https://example.com", "wget -q -O - https://e.x"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_aiops_tree_is_protected(self):
         self.write("intent", INTENT)
         self.assertTrue(self.blocked("rm -r .aiops/0001-csv-export"))           # state 1

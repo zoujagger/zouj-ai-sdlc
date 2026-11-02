@@ -18,8 +18,11 @@ delivered as intent `.aiops/0002-hardening/`.
 - **Shell guard.**
   - Heredoc redirects after the marker (`cat <<EOF > file`) no longer slip past the read-only lock.
   - Now detected: `git commit <pathspec>`, `git -C`, `cp/mv -t`, `find -delete/-exec`, `awk -i inplace`.
-  - Disguised engine calls (`sdl\c approve`, `"sdlc"`, `$x approve`, `$(which sdlc) hook`) and any change to
-    `CLAUDECODE` / `CLAUDE_CODE_CHILD_SESSION` (or `env -i`) are blocked.
+  - Known disguises of engine calls are blocked: `sdl\c approve`, `"sdlc"`, `$x approve`,
+    `$(which sdlc) hook`, wrapper functions and aliases, `sdlc $(…)`, `xargs sdlc`, copied engines.
+  - So are the known ways of changing `CLAUDECODE` / `CLAUDE_CODE_CHILD_SESSION` (`VAR=`, `unset`, `export -n`,
+    `declare +x`, `env -i` / `env -`).
+  - Static parsing can't be complete. The hard control is a human for each signature.
 - **`.aiops/` integrity.** `.aiops`, intent folders and their files can't be deleted, moved or overwritten from the
   shell. A git-tracked `.aiops/` counts as initialized even if deleted. Gates require front-matter `id` == folder, and
   `id` is immutable.

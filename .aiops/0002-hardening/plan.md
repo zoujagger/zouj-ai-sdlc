@@ -197,7 +197,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `lib/sdlc_engine/cli.py` (`legacy-approvals` prints author and date)
   - Test first: `tests/test_engine.py::Approvals::test_legacy_needs_full_sha_and_clean_commit` → a 7-char prefix passes today
   - Covers: AC-22
-- [ ] **S23**: Minor bypasses and stale text
+- [x] **S23**: Minor bypasses and stale text
   - Files:
     - `hooks/guard-bash.sh` (`git push … +ref` force push)
     - `lib/sdlc_engine/guards.py` (`git --work-tree=DIR` as a git cwd; `curl -o/--output`, `wget -O/--output-document` write targets)

@@ -297,6 +297,8 @@ def write_targets(words, cwd):
         return target_dir or nonopt[-1:]
     if name == "dd":
         return [a[3:] for a in args if a.startswith("of=")]
+    if name in ("curl", "wget"):
+        return [t for t in _download_targets(name, args) if t != "-"]
     if name == "find" and any(a in FIND_ACTIONS for a in args):
         return args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))]
     inplace = (name in INPLACE and any(re.match(r"^-[a-zA-Z]*i", a) or a.startswith("--in-place") for a in args)) \
@@ -304,6 +306,24 @@ def write_targets(words, cwd):
     if inplace:
         return [a for a in nonopt if (Path(cwd) / a).is_file()]
     return []
+
+
+def _download_targets(name, args):
+    """Files curl (-o/--output) or wget (-O/--output-document) would write."""
+    short, long = ("o", "--output") if name == "curl" else ("O", "--output-document")
+    out = []
+    for i, a in enumerate(args):
+        if a.startswith(long + "="):
+            out.append(a.split("=", 1)[1])
+        elif a == long and i + 1 < len(args):
+            out.append(args[i + 1])
+        elif re.match(r"^-[a-zA-Z]+$", a) and short in a[1:]:
+            rest = a[a.index(short, 1) + 1:]
+            if rest:
+                out.append(rest)          # -oFILE / -sSLoFILE
+            elif i + 1 < len(args):
+                out.append(args[i + 1])   # -o FILE / -sSLo FILE
+    return out
 
 
 FIND_ACTIONS = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
@@ -350,11 +370,12 @@ def _git_sub(args, cwd):
     """(subcommand, its args, the directory git runs in after any `-C DIR`)."""
     i = 0
     while i < len(args):
-        if args[i] == "-C" and i + 1 < len(args):
-            d = Path(args[i + 1]).expanduser()
+        if args[i] in ("-C", "--work-tree") and i + 1 < len(args) or args[i].startswith("--work-tree="):
+            value = args[i].split("=", 1)[1] if "=" in args[i] else args[i + 1]
+            d = Path(value).expanduser()
             cwd = d if d.is_absolute() else cwd / d
-            i += 2
-        elif args[i] in ("-c", "--git-dir", "--work-tree"):
+            i += 1 if "=" in args[i] else 2
+        elif args[i] in ("-c", "--git-dir"):
             i += 2
         elif args[i].startswith("-"):
             i += 1
