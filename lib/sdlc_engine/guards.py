@@ -156,7 +156,14 @@ MAKE_WRITERS = {"format", "fmt", "fix", "generate", "gen", "migrate", "codegen"}
 HUMAN_SUBS = r"(approve|close|unlock|hook|legacy-approvals)"
 ENGINE_RES = (   # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
     re.compile(rf"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*{HUMAN_SUBS}\b"),
-    re.compile(rf"(\$\w+|\$\{{[^}}]*\}}|\$\([^)]*\)|`[^`]*`)\s+{HUMAN_SUBS}\b"),   # dynamic command word
+    re.compile(rf"\S*[$`]\S*\s+{HUMAN_SUBS}\b"),                       # dynamic command word: $s, ${s}lc, $(…)
+    re.compile(rf"(\$\([^)]*\)|`[^`]*`)\S*\s+{HUMAN_SUBS}\b"),            # $(which sdlc) hook, `which sdlc` close
+    re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*\S*[$`]"),              # dynamic subcommand: sdlc $x, sdlc $(…)
+    re.compile(r"(\bfunction\s+\w+|\b\w+\s*\(\s*\))\s*\{[^}]*\bsdlc\b"),   # a function wrapping sdlc
+    re.compile(r"\balias\s+\w+=\S*\bsdlc\b"),
+    re.compile(r"\bxargs\b[^;&|\n]*\bsdlc\b"),
+    re.compile(r"\b(cp|install|rsync|ln|mv|scp)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)"),   # copying the engine
+    re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
 MARKERS = r"(CLAUDECODE|CLAUDE_CODE_CHILD_SESSION)"
@@ -164,7 +171,8 @@ ENV_RES = (
     re.compile(rf"\b{MARKERS}\s*="),
     re.compile(rf"\bunset\b[^;&|\n]*\b{MARKERS}\b"),
     re.compile(rf"(\s-u\s*|--unset[=\s]+){MARKERS}\b"),
-    re.compile(r"\benv\s+(-\S+\s+)*(-i|--ignore-environment)\b"),
+    re.compile(r"\benv\s+(-\S+\s+)*(-i|--ignore-environment|-)(\s|$)"),
+    re.compile(rf"\b(export|declare|typeset|readonly|local)\b[^;&|\n]*\b{MARKERS}\b"),   # export -n, declare +x, …
 )
 
 
@@ -371,10 +379,10 @@ def check_bash(data):
     root = project_root(cwd)
     if not initialized(root) or not cmd.strip():
         return None
-    if "AIOps-Approval" in cmd:
-        return _block("human gate", "approval commits are created only by a human approval.",
-                      "ask the human to type the approval phrase (e.g. `Plan Approved 0001`).")
     plain = re.sub(r"[\\'\"]", "", cmd)
+    if "AIOps-Approval" in plain or ("AIOps-" in plain and "Approval" in plain):   # also split or printf-built
+        return _block("human gate", "approval commits are created only by a human approval.",
+                      "ask the human to approve in their terminal (`bin/sdlc approve NNNN intent|spec|plan`).")
     if any(r.search(plain) for r in ENV_RES):
         return _block("human gate", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
                       "would let human-only commands run as the agent.",

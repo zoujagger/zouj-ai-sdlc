@@ -160,7 +160,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `tests/helpers.py` (fixtures opt into `"any"`, since unprotected test keys can't prompt)
   - Test first: `tests/test_engine.py::Approvals::test_key_policy_requires_a_human_per_signature` → an unprotected key passes `signing_problem()` today
   - Covers: AC-16
-- [ ] **S18**: Engine invocation, the remaining shell forms
+- [x] **S18**: Engine invocation, the remaining shell forms
   - Files: `lib/sdlc_engine/guards.py` (modify):
     - `ENV_RES`: `export -n`, `declare|typeset +x`, `env -`
     - `ENGINE_RES`: a function or alias whose body calls `sdlc`, `sdlc` followed by a non-literal word, `xargs … sdlc`, copying `bin/sdlc` or `sdlc_engine`

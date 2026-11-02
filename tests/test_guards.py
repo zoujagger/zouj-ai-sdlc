@@ -186,6 +186,21 @@ class BashGuard(RepoCase):
                     "echo $HOME", "make test"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_engine_cannot_be_disguised_further(self):
+        self.to_execution()
+        for cmd in ("export -n CLAUDECODE CLAUDE_CODE_CHILD_SESSION; f(){ sdlc \"$@\"; }; f approve 0001 intent",
+                    "export -n CLAUDECODE", "declare +x CLAUDECODE", "typeset +x CLAUDE_CODE_CHILD_SESSION",
+                    "env - PATH=/usr/bin make test", "function g { sdlc \"$@\"; }; g approve 0001 plan",
+                    "alias s=sdlc", "sdlc $(echo approve) 0001 intent", "x=approve; sdlc $x 0001 intent",
+                    "sdlc ${X:-approve} 0001 intent", "${s}lc approve 0001 intent",
+                    "echo approve 0001 intent | xargs sdlc", "cp bin/sdlc /tmp/s", "cp -r lib/sdlc_engine /tmp/e",
+                    "cat bin/sdlc > /tmp/s", "git commit -m \"$(printf 'AIOps-%s: plan 0001' Approval)\"",
+                    "git commit -m 'AIOps-Appro''val: plan 0001'"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("sdlc status 0001", "sdlc new my-thing", "cat bin/sdlc", "f(){ echo hi; }; f",
+                    "x=1; echo $x", "export PATH=$PATH:/opt/bin"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",
