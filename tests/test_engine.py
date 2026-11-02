@@ -103,6 +103,19 @@ class States(RepoCase):
         (self.root / ".aiops" / "state" / "active").write_text("0001\n")
         self.assertFalse(lock(self.root)[0])
 
+    def test_copied_folder_does_not_open_gates(self):
+        import shutil
+        from sdlc_engine.machine import gate
+        self.write("intent", INTENT)
+        self.approve("intent")
+        copy = self.root / ".aiops" / "0002-copy"
+        shutil.copytree(self.d, copy)
+        self.assertTrue(gate(self.d, "intent")[0])
+        ok, why = gate(copy, "intent")
+        self.assertFalse(ok)
+        self.assertIn("id", why)
+        self.assertEqual(evaluate(self.root, copy).state, 1)
+
     def test_initialized_when_tracked_but_missing(self):
         import shutil
         from sdlc_engine.machine import initialized

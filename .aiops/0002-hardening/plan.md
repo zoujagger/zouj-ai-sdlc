@@ -58,7 +58,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `tests/test_guards.py::BashGuard::test_aiops_tree_is_protected` → `rm -r .aiops` allowed in state 4 today
     - `tests/test_engine.py::States::test_initialized_when_tracked_but_missing`
   - Covers: AC-4, AC-5
-- [ ] **S4**: Bind gates to the folder id
+- [x] **S4**: Bind gates to the folder id
   - Files:
     - `lib/sdlc_engine/machine.py` (modify: `gate()` `:114` requires front `id` == folder id)
     - `lib/sdlc_engine/guards.py` (modify: `check_artifact` `:88` blocks changing `id`)

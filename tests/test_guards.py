@@ -69,6 +69,13 @@ class EditGuard(RepoCase):
         self.assertBlocked(self.edit(".aiops/0001-csv-export/review.md", "---\nid: 0001\n---\n"),
                            "needs an approved plan.md")
 
+    def test_id_is_immutable(self):
+        self.write("intent", INTENT)
+        self.assertBlocked(self.edit(".aiops/0001-csv-export/intent.md", old="id: 0001", new="id: 0002"), "id")
+        self.write("intent", INTENT)
+        self.approve("intent")
+        self.assertBlocked(self.edit(".aiops/0001-csv-export/spec.md", SPEC.format(id="0009")), "id")
+
     def test_guardrail_config_is_human_owned(self):
         self.assertBlocked(self.edit(".aiops/config/readonly-exempt", "src/*"), "human-owned")
         self.assertBlocked(self.edit(".aiops/state/test-lock", ""), "engine state")

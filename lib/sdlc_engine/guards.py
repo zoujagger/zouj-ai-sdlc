@@ -97,6 +97,9 @@ def check_artifact(d, kind, new_text):
     path = d / f"{kind}.md"
     new = A.parse(new_text)
     gate_value = schema["gate"]
+    if new.get("id") and new.get("id") != ident:
+        return _block("artifacts", f"`id: {new.get('id')}` in {kind}.md must match its folder ({ident}).",
+                      "keep `id` equal to the folder number; artifacts can't be moved between intents.")
     if not path.is_file():
         if schema["requires"]:
             ok, why = gate(d, schema["requires"])
@@ -112,6 +115,8 @@ def check_artifact(d, kind, new_text):
                           "leave them out; they are stamped when the human approves.")
         return None
     old = A.parse(path.read_text())
+    if old.get("id") != new.get("id"):
+        return _block("artifacts", f"`id` in {kind}.md can't be changed.", "keep `id` equal to the folder number.")
     for f in A.APPROVAL_FIELDS:
         if old.get(f) != new.get(f):
             return _block("human gate", f"`{f}` in {kind}.md can only be written by a human approval.",

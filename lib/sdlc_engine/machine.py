@@ -121,6 +121,8 @@ def gate(d, kind):
     want = SCHEMAS[kind]["gate"]
     if a.get("status") != want:
         return False, f"status is {a.get('status') or 'unset'}"
+    if a.get("id") != d.name[:4]:
+        return False, f"id {a.get('id') or 'unset'} does not match the folder {d.name}"
     if a.get("approved-sha256") != A.approval_hash(kind, text):
         return False, "changed since approval"
     return True, ""
