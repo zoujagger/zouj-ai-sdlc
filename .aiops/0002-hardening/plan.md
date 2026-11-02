@@ -183,7 +183,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `git apply/am` patches touching `.aiops/`
   - Test first: `tests/test_guards.py::BashGuard::test_aiops_tree_is_protected_from_globs_and_find` → `rm -rf .ai*` etc. are allowed today
   - Covers: AC-20
-- [ ] **S21**: Secret reads, the remaining forms
+- [x] **S21**: Secret reads, the remaining forms
   - Files:
     - `hooks/guard-bash.sh` (modify: unquote before matching; drop `.env.(example|sample|template)` tokens instead of exempting the command; glob tokens that match `.env`)
     - `hooks/guard-read.sh` (modify: match the given and the resolved (`realpath -m`) path)

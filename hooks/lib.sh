@@ -70,6 +70,7 @@ aiops_enabled() {
 secret_template() {
   case "$1" in
     .env.example|*/.env.example|.env.sample|*/.env.sample|.env.template|*/.env.template) return 0 ;;
+    *.pub) return 0 ;;   # public keys are not secret
   esac
   return 1
 }

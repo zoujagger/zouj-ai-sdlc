@@ -63,6 +63,25 @@ class ShellHooks(RepoCase):
         self.assertEqual(dep("Bash", {"command": "make deploy ENV=staging"}), 0)
         self.assertEqual(dep("Bash", {"command": "grep -r product src/"}), 0)
 
+    def test_secret_reads_blocked_further(self):
+        import os
+        read = lambda **ti: self.run_hook("guard-read.sh", {"tool_name": "Read", "tool_input": ti})  # noqa: E731
+        for cmd in ("cp .env /tmp/x; cat .env.example", 'cat ".env"', "cat '.env'", "cat .e?v", "cat .en*",
+                    'cat < ".env"', "cat .env.example .env"):
+            self.assertEqual(self.bash(cmd), 2, cmd)
+        for cmd in ("cat .env.example", "cat .env.sample .env.template", "ls -a", "ls .e*"):
+            self.assertEqual(self.bash(cmd), 0, cmd)
+        (self.root / ".env").write_text("TOKEN=x\n")
+        (self.root / "docs").mkdir()
+        os.symlink(self.root / ".env", self.root / "docs" / "x.md")
+        self.assertEqual(read(file_path=str(self.root / "docs" / "x.md")), 2)
+        for path in ("/home/someone/.ssh/id_ed25519", "~/.ssh/id_ecdsa", "~/.aws/credentials", "~/.netrc",
+                     "sub/secrets/x", "pkg/.npmrc"):
+            self.assertEqual(read(file_path=path), 2, path)
+        self.assertEqual(read(file_path="/home/someone/.ssh/id_ed25519.pub"), 0)   # public keys are fine
+        settings = json.loads((ROOT / "templates" / "scaffold" / ".claude" / "settings.json").read_text())
+        self.assertIn("Read(~/.ssh/**)", settings["permissions"]["deny"])
+
     def test_secret_reads_blocked(self):
         import shutil
         read = lambda tool, **ti: self.run_hook("guard-read.sh", {"tool_name": tool, "tool_input": ti})  # noqa: E731
