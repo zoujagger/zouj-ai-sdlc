@@ -45,7 +45,8 @@ def project_root(start=None):
 
 
 def initialized(root):
-    return (root / ".aiops").is_dir()
+    """`.aiops/` on disk, or tracked in git (so deleting the folder can't switch the gates off)."""
+    return (root / ".aiops").is_dir() or bool(git(root, "ls-files", "--", ".aiops"))
 
 
 def config(root):

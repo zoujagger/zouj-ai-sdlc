@@ -17,6 +17,12 @@ from .machine import (SCHEMAS, active_dir, config, current_branch, evaluate, gat
 
 ARTIFACT_RE = re.compile(r"^\.aiops/(\d{4}-[a-z0-9-]+)/(intent|spec|plan|review)\.md$")
 GUARDED_RE = re.compile(r"^\.aiops/(config(/|\.json$)|state(/|$))")
+INTENT_TREE_RE = re.compile(r"^\.aiops(/\d{4}-[a-z0-9-]+(/.*)?)?$")
+
+
+def _aiops_protected(rel):
+    """`.aiops` itself, an intent folder or anything in it, or engine state/config: never a shell target."""
+    return bool(INTENT_TREE_RE.match(rel) or GUARDED_RE.match(rel))
 
 
 def _block(rule, reason, procedure):
@@ -352,7 +358,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             rel = _rel(root, t, cwd)
             if rel is None:
                 continue
-            if ARTIFACT_RE.match(rel) or GUARDED_RE.match(rel):
+            if _aiops_protected(rel):
                 return _block("artifacts", f"shell writes to '{rel}' bypass the gate guard.",
                               "edit artifacts with the Edit/Write tools; engine state changes go through `sdlc`.")
             if locked and _code_paths(root, [rel]):
@@ -368,7 +374,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             sub, rest, gcwd = _git_sub(args, cwd)
             if sub in GIT_TREE_WRITERS:
                 hit = next((r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-"))
-                            if r and (ARTIFACT_RE.match(r) or GUARDED_RE.match(r))), None)
+                            if r and _aiops_protected(r)), None)
                 if hit:
                     return _block("artifacts", f"`git {sub}` on '{hit}' would delete or rewrite an artifact outside the "
                                   "gate guard.", "edit artifacts with the Edit/Write tools; ask the human to remove one.")

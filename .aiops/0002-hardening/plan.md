@@ -49,7 +49,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `_check_command`: git paths resolved against `-C`, and `git commit <pathspec>`
   - Test first: `tests/test_guards.py::BashGuard::test_more_write_forms_while_locked` → all six forms allowed today
   - Covers: AC-3
-- [ ] **S3**: `.aiops` integrity
+- [x] **S3**: `.aiops` integrity
   - Files:
     - `lib/sdlc_engine/guards.py` (modify: new `_aiops_protected(rel)`, covering `.aiops`, intent dirs and their contents, applied to shell targets and git rm/mv)
     - `lib/sdlc_engine/machine.py` (modify: `initialized()` `:47` also `git ls-files .aiops`)

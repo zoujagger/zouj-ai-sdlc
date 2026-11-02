@@ -141,6 +141,17 @@ class BashGuard(RepoCase):
                     "git commit -m 'msg with src/app.py in it'"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_aiops_tree_is_protected(self):
+        self.write("intent", INTENT)
+        self.assertTrue(self.blocked("rm -r .aiops/0001-csv-export"))           # state 1
+        self.to_execution()
+        for cmd in ("rm -r .aiops", "mv .aiops x", "rm -r .aiops/0001-csv-export", "rmdir .aiops/state",
+                    "cp -r .aiops/0001-csv-export .aiops/0002-copy", "git rm -r .aiops",
+                    "git mv .aiops/0001-csv-export y", "cd .aiops && rm -r 0001-csv-export"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("cat .aiops/0001-csv-export/plan.md", "ls .aiops", "git add .aiops/0001-csv-export/plan.md"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",

@@ -103,6 +103,16 @@ class States(RepoCase):
         (self.root / ".aiops" / "state" / "active").write_text("0001\n")
         self.assertFalse(lock(self.root)[0])
 
+    def test_initialized_when_tracked_but_missing(self):
+        import shutil
+        from sdlc_engine.machine import initialized
+        self.write("intent", INTENT)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "intent")
+        shutil.rmtree(self.root / ".aiops")
+        self.assertTrue(initialized(self.root))
+        self.assertTrue(lock(self.root)[0])
+
     def test_spike_profile_and_uninitialized_repo_do_not_lock(self):
         import os
         os.environ["SDLC_HOOK_PROFILE"] = "spike"

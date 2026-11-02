@@ -96,6 +96,20 @@ class ShellHooks(RepoCase):
                            text=True, env=env, cwd=self.root)
         self.assertEqual(r.returncode, 0, r.stderr)   # no python needed when the repo isn't initialized
 
+    def test_engine_wrapper_stays_on_when_aiops_is_tracked_but_deleted(self):
+        import shutil
+        from helpers import INTENT, git
+        self.write("intent", INTENT)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "intent")
+        shutil.rmtree(self.root / ".aiops")
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        payload = json.dumps({"tool_name": "Write", "cwd": str(self.root),
+                              "tool_input": {"file_path": str(self.root / "src" / "app.py"), "content": "x"}})
+        r = subprocess.run([str(HOOKS / "engine.sh"), "pre-edit"], input=payload, capture_output=True, text=True,
+                           env=env, cwd=self.root)
+        self.assertEqual(r.returncode, 2, r.stderr)
+
     def test_hook_scripts_are_executable_and_parse(self):
         for f in HOOKS.glob("*.sh"):
             if f.name != "lib.sh":
