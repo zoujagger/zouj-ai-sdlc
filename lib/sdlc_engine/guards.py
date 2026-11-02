@@ -14,7 +14,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 from . import artifacts as A
-from .machine import (SCHEMAS, active_dir, config, current_branch, evaluate, gate, git, glob_hit, globs,
+from .machine import (PLUGIN_ROOT, SCHEMAS, active_dir, config, current_branch, evaluate, gate, git, glob_hit, globs,
                       initialized, lock, phrase, project_root)
 
 ARTIFACT_RE = re.compile(r"^\.aiops/(\d{4}-[a-z0-9-]+)/(intent|spec|plan|review)\.md$")
@@ -474,6 +474,39 @@ def _patch_touches_aiops(args, cwd, root):
     return False
 
 
+SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.hookspath)$", re.I)
+GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list", "--show-origin",
+                    "--show-scope", "--name-only", "--null", "-z", "--type", "--bool", "--int", "--path"}
+GIT_CONFIG_WRITES = {"--unset", "--unset-all", "--replace-all", "--add", "--rename-section", "--remove-section",
+                     "-e", "--edit"}
+
+
+def _git_config_writes_signing(rest):
+    """`git config …` that sets or removes a signing/hook key (reads stay allowed)."""
+    opts = [a for a in rest if a.startswith("-")]
+    words = [a for a in rest if not a.startswith("-")]
+    if not words or not SIGNING_CONFIG_RE.match(words[0]):
+        return any(o in ("-e", "--edit") for o in opts)
+    if any(o in GIT_CONFIG_WRITES for o in opts):
+        return True
+    if any(o in GIT_CONFIG_READS for o in opts):
+        return False
+    return len(words) >= 2                      # `git config key value`
+
+
+def _in_plugin(target, cwd, root):
+    """True for a write into the installed plugin (not when the project *is* the plugin checkout)."""
+    if PLUGIN_ROOT.resolve() == root.resolve():
+        return False
+    p = Path(target).expanduser()
+    p = (Path(cwd) / p) if not p.is_absolute() else p
+    try:
+        p.resolve().relative_to(PLUGIN_ROOT.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
     for words, redirs in segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
         words = _strip_prefix(words)
@@ -499,7 +532,13 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
         for t in targets:
             if t.startswith("/dev/"):
                 continue
+            if _in_plugin(t, cwd, root):
+                return _block("toolchain", f"`{' '.join(words)[:80]}` writes into the installed plugin ({t}).",
+                              "the plugin's code is what the human runs to approve; change it through its own repo.")
             rel = _rel(root, t, cwd)
+            if rel is not None and (rel == ".git" or rel.startswith(".git/")):
+                return _block("toolchain", f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
+                              "use git commands; ask the human for config or hook changes.")
             if rel is None:
                 continue
             if _aiops_protected(rel):
@@ -516,6 +555,9 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                           "leave the PR for a CODEOWNER to review and merge.")
         if name == "git":
             sub, rest, gcwd = _git_sub(args, cwd)
+            if sub == "config" and _git_config_writes_signing(rest):
+                return _block("toolchain", "git signing / hook settings are human-owned (they decide who signs approvals).",
+                              "ask the human to change git config themselves (globally).")
             if sub in ("apply", "am") and _patch_touches_aiops(rest, gcwd, root):
                 return _block("artifacts", f"`git {sub}` with a patch touching .aiops/ bypasses the gate guard.",
                               "edit artifacts with the Edit/Write tools.")

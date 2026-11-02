@@ -151,6 +151,37 @@ class States(RepoCase):
 
 
 class Approvals(RepoCase):
+    def test_signing_toolchain_is_pinned(self):
+        from sdlc_engine import approvals as ap
+        self.write("intent", INTENT)
+        for key, value in (("gpg.ssh.program", "/tmp/evil-signer"), ("core.hooksPath", "/tmp/hooks"),
+                           ("user.signingkey", "/tmp/k.pub")):
+            git(self.root, "config", "--local", key, value)
+            ok, msg = ap.approve(self.root, self.d, "intent", via="test")
+            self.assertFalse(ok, key)
+            self.assertIn("repo-local", msg)
+            git(self.root, "config", "--local", "--unset", key)
+        hook = self.root / ".git" / "hooks" / "post-commit"            # a planted hook must not run
+        hook.write_text(f"#!/bin/sh\ntouch {self.root}/hook-ran\n")
+        hook.chmod(0o755)
+        calls, real = [], ap.git
+
+        def spy(root, *args, **kw):
+            calls.append((args, kw))
+            return real(root, *args, **kw)
+        ap.git = spy
+        try:
+            self.approve("intent")
+        finally:
+            ap.git = real
+        args, kw = next(c for c in calls if "commit" in c[0])
+        self.assertIn("core.hooksPath=/dev/null", args)
+        self.assertIn("--no-verify", args)
+        self.assertTrue(any(a.startswith("gpg.ssh.program=/") and a.endswith("ssh-keygen") for a in args), args)
+        self.assertIn("timeout", kw)
+        self.assertIsNone(kw["timeout"])                               # a slow passphrase or touch isn't killed
+        self.assertFalse((self.root / "hook-ran").exists())
+
     def test_key_policy_requires_a_human_per_signature(self):
         import os
         import subprocess
@@ -166,7 +197,7 @@ class Approvals(RepoCase):
         self.assertEqual(A.parse((self.d / "intent.md").read_text()).get("status"), "Draft")
         # 2. a passphrase key that is NOT in ssh-agent: passes the precheck (git will ask the human)
         protected = signing_key("protected", passphrase="s3cret-pass")
-        git(self.root, "config", "user.signingkey", f"{protected}.pub")
+        git(self.root, "config", "--global", "user.signingkey", f"{protected}.pub")
         self.assertIsNone(ap.signing_problem(self.root))
         # 3. the same key loaded in ssh-agent: refused (it would sign without asking)
         agent = subprocess.run(["ssh-agent", "-s"], capture_output=True, text=True, check=True).stdout
@@ -187,14 +218,14 @@ class Approvals(RepoCase):
         # 4. a FIDO sk- key: a touch per signature, accepted
         sk = self.root / "sk.pub"
         sk.write_text("sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t owner\n")
-        git(self.root, "config", "user.signingkey", str(sk))
+        git(self.root, "config", "--global", "user.signingkey", str(sk))
         self.assertIsNone(ap.signing_problem(self.root))
         # 5. the human-owned escape hatch restores the old behaviour for an unprotected key
-        git(self.root, "config", "user.signingkey", f"{signing_key()}.pub")
+        git(self.root, "config", "--global", "user.signingkey", f"{signing_key()}.pub")
         cfg.write_text('{"approval_key_policy": "any"}')
         self.assertIsNone(ap.signing_problem(self.root))
     def test_refuses_without_signing_key_before_stamping(self):
-        git(self.root, "config", "--unset", "user.signingkey")
+        git(self.root, "config", "--global", "--unset", "user.signingkey")
         self.write("intent", INTENT)
         ok, msg = approvals.approve(self.root, self.d, "intent", via="test")
         self.assertFalse(ok)
@@ -296,7 +327,7 @@ class Approvals(RepoCase):
         from helpers import allowed_signer_line, signing_key
         cfg = self.root / ".aiops" / "config.json"
         # 1. unlisted key: signed, but not by an allow-listed signer
-        git(self.root, "config", "user.signingkey", f"{signing_key('intruder')}.pub")
+        git(self.root, "config", "--global", "user.signingkey", f"{signing_key('intruder')}.pub")
         self.write("intent", INTENT)
         self.approve("intent")
         errors = approvals.audit(self.root, self.d, "intent")

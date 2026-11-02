@@ -6,6 +6,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -42,6 +43,13 @@ KEY_HELP = (
     "(add one with `ssh-keygen -p -f ~/.ssh/id_ed25519`; unload with `ssh-add -d ~/.ssh/id_ed25519`), or a FIDO\n"
     "`sk-` key that needs a touch. Then approve in your own terminal: `bin/sdlc approve NNNN intent|spec|plan`\n"
     "(it asks for the passphrase). Escape hatch (human-owned): \"approval_key_policy\": \"any\" in .aiops/config.json.")
+
+
+# The approval commit always signs with the system's ssh-keygen and without hooks, whatever the repo's config says:
+# anything an agent can write (repo git config, .git/hooks) must not sit between the human and the signature.
+SSH_KEYGEN = "/usr/bin/ssh-keygen" if Path("/usr/bin/ssh-keygen").is_file() else (shutil.which("ssh-keygen") or "ssh-keygen")
+PINNED = ("-c", "gpg.format=ssh", "-c", f"gpg.ssh.program={SSH_KEYGEN}", "-c", "core.hooksPath=/dev/null")
+LOCAL_SIGNING_RE = r"^(user\.signingkey|gpg\..*|core\.hookspath)$"
 
 
 def _signing_key_files(root):
@@ -82,6 +90,12 @@ def signing_problem(root):
         return None
     if not cfg["commit_approvals"]:
         return "require_signed_approvals needs commit_approvals: true in .aiops/config.json"
+    local = git(root, "config", "--local", "--get-regexp", LOCAL_SIGNING_RE)
+    if local:
+        keys = ", ".join(sorted({ln.split()[0] for ln in local.splitlines()}))
+        return (f"repo-local git config sets {keys}: signing settings must come from your global git config "
+                f"(`git config --global …`), and the repo's own config must not override them "
+                f"(remove with `git config --local --unset <key>`)")
     if not git(root, "config", "user.signingkey"):
         return "git has no signing key configured (user.signingkey)"
     if (git(root, "config", "gpg.format") or "openpgp") != "ssh":
@@ -132,12 +146,13 @@ def approve(root, d, kind, via, who=None):
         body = f"{TRAILER}: {kind} {ident} sha256={digest}\nApproved-By: {who}"
         sign = ["-S"] if signed else []
         if git(root, "add", "--", rel) is None or \
-                git(root, "commit", "-q", *sign, "-m", title, "-m", body, "--", rel) is None:
+                git(root, *PINNED, "commit", "--no-verify", "-q", *sign, "-m", title, "-m", body, "--", rel,
+                    timeout=None) is None:
             if signed:   # an unsigned stamp would never pass the audit: roll it back
                 path.write_text(text)
                 git(root, "reset", "-q", "--", rel)
-                return False, (f"{kind}.md for {ident} was NOT approved: signing needs you (passphrase or touch), "
-                               f"and there is no terminal here. Approve in your own terminal: "
+                return False, (f"{kind}.md for {ident} was NOT approved: the signed commit failed (signing needs "
+                               f"you: a passphrase or touch, which needs a terminal). Approve in your own terminal: "
                                f"`bin/sdlc approve {ident} {kind}`.")
             note = "\n(The approval is in the working tree, but committing it failed. Commit it yourself.)"
         else:

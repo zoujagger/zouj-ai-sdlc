@@ -211,6 +211,19 @@ class BashGuard(RepoCase):
                     "echo $HOME", "make test"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_signing_toolchain_is_guarded(self):
+        from helpers import ROOT
+        self.to_execution()
+        engine = ROOT / "lib" / "sdlc_engine" / "approvals.py"            # the installed plugin's code
+        for cmd in ("git config gpg.ssh.program /tmp/s", "git config --local user.signingkey /tmp/k.pub",
+                    "git config --global gpg.format openpgp", "git config core.hooksPath /tmp/h",
+                    "git config --replace-all gpg.ssh.allowedSignersFile x", "cp /tmp/h .git/hooks/post-commit",
+                    "echo x >> .git/config", f"sed -i s/G/U/ {engine}", f"cp /tmp/x {ROOT}/hooks/guard-bash.sh"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("git config user.name", "git config --get gpg.format", "git config --list", "cat .git/config",
+                    "git config user.email me@example.com"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_engine_cannot_be_disguised_further(self):
         self.to_execution()
         for cmd in ("export -n CLAUDECODE CLAUDE_CODE_CHILD_SESSION; f(){ sdlc \"$@\"; }; f approve 0001 intent",

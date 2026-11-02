@@ -30,9 +30,10 @@ DEFAULT_CONFIG = {"lock_when_idle": True, "commit_approvals": True, "main_branch
                   "approval_key_policy": "human"}
 
 
-def git(root, *args):
+def git(root, *args, timeout=10):
+    """stdout of `git args` in root, or None on failure. timeout=None waits for a human (passphrase, touch)."""
     try:
-        r = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return r.stdout.strip() if r.returncode == 0 else None

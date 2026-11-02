@@ -327,6 +327,11 @@ zouj-ai-sdlc is now active in this repo. Next:
     return 0
 
 
+def _is_ssh_identity(private):
+    cfg = Path.home() / ".ssh" / "config"
+    return cfg.is_file() and private.name in cfg.read_text(errors="replace")
+
+
 def _doctor_signing(root, row):
     problem = approvals.signing_problem(root)
     row(problem is None, "approval signing configured (ssh)" if problem is None else f"approval signing: {problem}",
@@ -345,7 +350,10 @@ def _doctor_signing(root, row):
         probe = subprocess.run(["ssh-keygen", "-y", "-P", "", "-f", str(private)], capture_output=True, text=True)
         if probe.returncode == 0:
             out("  ! signing key has no passphrase: anything running as you could sign approvals. "
-                "Add one (ssh-keygen -p) or load it with ssh-add -c")
+                "Add one (ssh-keygen -p) and keep it out of ssh-agent")
+    if private and (private.name.startswith("id_") or _is_ssh_identity(private)):
+        out("  ! signing key is also an SSH login identity: ssh (AddKeysToAgent) can load it into an agent that "
+            "signs silently. Prefer a dedicated signing key")
 
 
 def cmd_doctor(root, args):

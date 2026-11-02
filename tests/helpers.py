@@ -164,6 +164,11 @@ class RepoCase(unittest.TestCase):
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "AIOPS_INTENT", "SDLC_HOOK_PROFILE",
                                  "CLAUDE_PROJECT_DIR", "SSH_AUTH_SOCK", "SSH_AGENT_PID")}
+        # Signing config must come from *global* git config (repo-local overrides are refused), so each test gets
+        # its own throwaway global config file.
+        self.gitconfig = self.root.parent / f"{self.root.name}.gitconfig"
+        self.gitconfig.write_text("")
+        self.env.update({"GIT_CONFIG_GLOBAL": str(self.gitconfig), "GIT_CONFIG_NOSYSTEM": "1"})
         self._saved_env = dict(os.environ)
         os.environ.clear()
         os.environ.update(self.env)
@@ -171,8 +176,8 @@ class RepoCase(unittest.TestCase):
         git(self.root, "config", "user.name", "Human Owner")
         git(self.root, "config", "user.email", "owner@example.com")
         git(self.root, "config", "commit.gpgsign", "false")
-        git(self.root, "config", "gpg.format", "ssh")
-        git(self.root, "config", "user.signingkey", f"{signing_key()}.pub")
+        git(self.root, "config", "--global", "gpg.format", "ssh")
+        git(self.root, "config", "--global", "user.signingkey", f"{signing_key()}.pub")
         (self.root / "README.md").write_text("x\n")
         (self.root / "src").mkdir()
         (self.root / "src" / "app.py").write_text("x = 1\n")
@@ -193,6 +198,7 @@ class RepoCase(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._saved_env)
         self._tmp.cleanup()
+        self.gitconfig.unlink(missing_ok=True)
 
     # artifact helpers
     def write(self, kind, text):

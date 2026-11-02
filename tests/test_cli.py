@@ -111,7 +111,7 @@ class Lifecycle(RepoCase):
         r = self.run_sdlc("doctor")                                   # the default policy: the same key fails
         self.assertIn("✗ approval signing: the signing key has no passphrase", r.stdout)
         self.assertEqual(r.returncode, 1)
-        git(self.root, "config", "--unset", "user.signingkey")
+        git(self.root, "config", "--global", "--unset", "user.signingkey")
         r = self.run_sdlc("doctor")
         self.assertIn("✗ approval signing", r.stdout)
         self.assertEqual(r.returncode, 1)

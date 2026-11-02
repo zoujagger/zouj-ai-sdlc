@@ -211,7 +211,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Covers: AC-16
 
 <!-- Amendment after review 0002 round 2 (CHANGES_REQUESTED 79/100): S25-S32. HIGHs first, then MEDIUM, MAJORs, LOW/MINOR, docs. -->
-- [ ] **S25**: The signing toolchain can't be redirected
+- [x] **S25**: The signing toolchain can't be redirected
   - Files:
     - `lib/sdlc_engine/approvals.py`: the approval commit runs `git -c gpg.format=ssh -c gpg.ssh.program=ssh-keygen -c core.hooksPath=/dev/null commit --no-verify -S` with **no timeout**. `signing_problem()` refuses repo-local `user.signingkey`/`gpg.*`/`core.hooksPath`.
     - `lib/sdlc_engine/machine.py`: `git()` gets an optional timeout.
