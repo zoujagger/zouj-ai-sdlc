@@ -92,7 +92,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 
     Plus `tests/test_cli.py::Lifecycle::test_legacy_approvals_is_human_only`
   - Covers: AC-9
-- [ ] **S8**: Safety guards always on
+- [x] **S8**: Safety guards always on
   - Files:
     - `defaults/secret-paths` (create: the secret globs moved out of `defaults/protected-paths`)
     - `hooks/lib.sh` (modify: `secret_match`)

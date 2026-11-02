@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse(Edit|MultiEdit|Write): protect paths in defaults/protected-paths + .aiops/config/protected-paths, and stop
-# credentials being written.
+# PreToolUse(Edit|MultiEdit|Write): in every repo, block secret paths (defaults/secret-paths) and credential-looking
+# content. In initialized repos also protect defaults/protected-paths + .aiops/config/protected-paths.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -8,18 +8,18 @@ source "$(dirname "$0")/lib.sh"
 input=$(cat)
 path=$(json_get tool_input.file_path <<<"$input") || fail_closed guard-files
 root=${CLAUDE_PROJECT_DIR:-$PWD}
-aiops_enabled "$root" || exit 0
 rel=$(rel_path "$path" "$root")
 
 block() { echo "BLOCKED by guard-files: $1" >&2; exit 2; }
 
-case "$rel" in
-  .env.example|*/.env.example|.env.sample|*/.env.sample) ;;   # templates are fine
-  *)
-    if hit=$(config_match "$rel" "$root" protected-paths); then
-      block "'$rel' is protected (${hit#* })"
-    fi ;;
-esac
+if ! secret_template "$rel"; then
+  if hit=$(config_match "$rel" "$root" secret-paths); then
+    block "'$rel' is secret material (${hit#* }); use env vars / the secret manager"
+  fi
+  if aiops_enabled "$root" && hit=$(config_match "$rel" "$root" protected-paths); then
+    block "'$rel' is protected (${hit#* })"
+  fi
+fi
 
 # Credential patterns: scan the raw payload so content, new_string, and MultiEdit edits are all covered.
 if grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{36}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}' <<<"$input"; then

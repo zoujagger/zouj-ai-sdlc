@@ -5,8 +5,7 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 
-input=$(cat)
-aiops_enabled "${CLAUDE_PROJECT_DIR:-$PWD}" || exit 0
+input=$(cat)   # the production gate applies in every repo, initialized or not
 tool=$(json_get tool_name <<<"$input") || fail_closed guard-deploy
 
 block() {
