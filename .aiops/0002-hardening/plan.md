@@ -1,7 +1,7 @@
 ---
 id: 0002
 title: Harden gates and guards (review 0001 findings)
-status: Approved
+status: Draft
 spec: ./spec.md
 created: 2026-10-30
 approved-by: zoujagger <ulrichjagger@gmail.com>
@@ -210,6 +210,60 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Test first: `tests/test_cli.py::Lifecycle::test_prompt_approval_explains_terminal_fallback` → the prompt hook doesn't mention the terminal fallback today
   - Covers: AC-16
 
+<!-- Amendment after review 0002 round 2 (CHANGES_REQUESTED 79/100): S25-S32. HIGHs first, then MEDIUM, MAJORs, LOW/MINOR, docs. -->
+- [ ] **S25**: The signing toolchain can't be redirected
+  - Files:
+    - `lib/sdlc_engine/approvals.py`: the approval commit runs `git -c gpg.format=ssh -c gpg.ssh.program=ssh-keygen -c core.hooksPath=/dev/null commit --no-verify -S` with **no timeout**. `signing_problem()` refuses repo-local `user.signingkey`/`gpg.*`/`core.hooksPath`.
+    - `lib/sdlc_engine/machine.py`: `git()` gets an optional timeout.
+    - `lib/sdlc_engine/guards.py`: `git config` of those keys, and shell writes under `.git/` or the plugin root, are blocked.
+    - `lib/sdlc_engine/cli.py`: doctor flags repo-local overrides, warns when the signing key is also an SSH identity, and its passphrase hint no longer suggests `ssh-add -c`.
+  - Test first: `tests/test_engine.py::Approvals::test_signing_toolchain_is_pinned` (a repo-local `gpg.ssh.program` is refused, and a 15 s signer still succeeds) and `tests/test_guards.py::BashGuard::test_signing_toolchain_is_guarded` → allowed today
+  - Covers: AC-23
+- [ ] **S26**: Shell secret reads beyond `.env`
+  - Files:
+    - `hooks/guard-bash.sh`: every unquoted, tilde-expanded word is checked against `secret-paths` (templates and `.pub` excepted).
+    - `hooks/guard-read.sh`: a Grep/Glob `path` that is a secret directory (`<path>/x` matches `secret-paths`) is blocked.
+    - `defaults/secret-paths`: adds `*/.aws/*`, `*/.config/gcloud/*`, `*/.docker/config.json`, `*/.kube/config`.
+  - Test first: `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_beyond_env` → `cat ~/.aws/credentials` and Grep `path: ~/.ssh` are allowed today
+  - Covers: AC-24
+- [ ] **S27**: Protected paths apply to shell writes; workflow ownership
+  - Files:
+    - `lib/sdlc_engine/guards.py`: in initialized repos, shell write targets are checked against `protected-paths`.
+    - `templates/scaffold/.github/CODEOWNERS`: adds `/.github/` and `/.claude/`.
+  - Test first: `tests/test_guards.py::BashGuard::test_shell_writes_respect_protected_paths` → `sed -i … .github/workflows/aiops-gates.yml` is allowed today
+  - Covers: AC-25
+- [ ] **S28**: Heredoc scanner skips arithmetic and ANSI-C strings
+  - Files: `lib/sdlc_engine/guards.py` (`_heredoc_marks`: skip `$((…))`/`((…))` and `$'…'`)
+  - Test first: `tests/test_guards.py::BashGuard::test_heredoc_marker_in_arithmetic_or_ansi_c` → `echo $((1<<EOF))` followed by a write is allowed today
+  - Covers: AC-26
+- [ ] **S29**: The remaining `.aiops` integrity forms
+  - Files: `lib/sdlc_engine/guards.py`:
+    - patch headers up to tab or space; `-p0`/`--directory`
+    - `git apply`/`am` from stdin is refused in initialized repos
+    - tar `-C`/`--directory` in any position; `unzip -d`
+    - `find -i*` predicates are case-insensitive
+    - brace expansion of targets; `VAR=value` assignments earlier in the same command are substituted
+  - Test first: `tests/test_guards.py::BashGuard::test_aiops_integrity_remaining_forms` → `tar -C .aiops -xf x` and `rm -rf {.aiops,x}` are allowed today
+  - Covers: AC-27
+- [ ] **S30**: Safety variants and false positives
+  - Files:
+    - `hooks/guard-deploy.sh`: quotes are stripped before matching.
+    - `hooks/guard-bash.sh`: force-push checks run on the unquoted copy; also `-[a-z]*f`, and `--mirror`.
+    - `lib/sdlc_engine/guards.py`: the dynamic-word rule applies only in command position; a marker in `X=` assignments only; the trailer check matches `AIOps-Approval:` or a `%s`-assembled `AIOps-…:` together with `Approval`.
+  - Test first: `tests/test_shell_hooks.py::ShellHooks::test_safety_variants` and `tests/test_guards.py::BashGuard::test_no_false_positives` → allowed (or blocked) wrongly today
+  - Covers: AC-28
+- [ ] **S31**: Legacy recording, `sk-` keys without a touch, CI fails closed
+  - Files:
+    - `lib/sdlc_engine/approvals.py`: `unsigned_approvals()` lists only commits that are reachable from main and predate the commit introducing `allowed-signers`; `key_protection()` rejects an `sk-` key whose allowed-signers entry has `no-touch-required`.
+    - `lib/sdlc_engine/cli.py`: `legacy-approvals --write` confirms each entry; `--yes` skips this.
+    - `.github/workflows/ci.yml`: fail closed on an unresolvable base.
+  - Test first: `tests/test_engine.py::Approvals::test_legacy_write_only_pre_signing_on_main` and `::test_sk_key_without_touch_rejected`, plus `tests/test_shell_hooks.py::ShellHooks::test_ci_pins_tools` (adding fail-closed) → red today
+  - Covers: AC-29
+- [ ] **S32**: Docs and plan hygiene
+  - Files: `docs/architecture.md` (toolchain row, approval isolation, required workflow, residuals), `README.md` and `SECURITY.md` (signing-key options incl. the `"any"` escape hatch and its cost), `CHANGELOG.md` `[0.2.0]`, `tests/test_engine.py` (blank-line nit), plan Test definitions (the extra round-2 tests)
+  - Test first: `tests/test_shell_hooks.py::ShellHooks::test_docs_state_the_residuals`, a static check that architecture.md lists the toolchain row and the approval-isolation advice → missing today
+  - Covers: AC-23
+
 ## Risks
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
@@ -248,6 +302,13 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | AC-19 | `tests/test_engine.py::Approvals::test_audit_fails_closed_on_unresolvable_base`, `::test_audit_accepts_allow_listed_signer_against_base`, `tests/test_cli.py::Lifecycle::test_validate_rejects_empty_base` | unit, cli | fail closed; positive base path |
 | AC-20 | `tests/test_guards.py::BashGuard::test_aiops_tree_is_protected_from_globs_and_find` | hook | globs, $PWD, find, tar -C, git apply |
 | AC-21 | `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_blocked_further` | hook | compound .env.example, quotes, globs, symlinks, ~/.ssh, nested secrets |
+| AC-23 | `tests/test_engine.py::Approvals::test_signing_toolchain_is_pinned`, `tests/test_guards.py::BashGuard::test_signing_toolchain_is_guarded`, `tests/test_shell_hooks.py::ShellHooks::test_docs_state_the_residuals` | unit, hook, static | pinned and hook-less signing without a timeout; repo-local overrides refused; toolchain writes blocked |
+| AC-24 | `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_beyond_env` | hook | any secret-paths word in the shell; directory Grep/Glob |
+| AC-25 | `tests/test_guards.py::BashGuard::test_shell_writes_respect_protected_paths`, `tests/test_cli.py::Init::test_scaffold_pins_and_protects` | hook, cli | protected paths for shell writes; CODEOWNERS for /.github/ and /.claude/ |
+| AC-26 | `tests/test_guards.py::BashGuard::test_heredoc_marker_in_arithmetic_or_ansi_c` | hook | arithmetic and ANSI-C `<<` aren't markers |
+| AC-27 | `tests/test_guards.py::BashGuard::test_aiops_integrity_remaining_forms` | hook | patches, tar, unzip, -iname, braces, variables |
+| AC-28 | `tests/test_shell_hooks.py::ShellHooks::test_safety_variants`, `tests/test_guards.py::BashGuard::test_no_false_positives` | hook | quoted prod, '+main', -fu, --mirror; no false positives |
+| AC-29 | `tests/test_engine.py::Approvals::test_legacy_write_only_pre_signing_on_main`, `::test_sk_key_without_touch_rejected`, `tests/test_shell_hooks.py::ShellHooks::test_ci_pins_tools` | unit, static | legacy recording limits; sk no-touch; CI fails closed |
 | AC-22 | `tests/test_engine.py::Approvals::test_legacy_needs_full_sha_and_clean_commit`, `tests/test_guards.py::BashGuard::test_minor_write_forms`, `tests/test_shell_hooks.py::ShellHooks::test_guard_bash` | unit, hook | full-sha legacy, vetted --write, +refspec, --work-tree, curl -o |
 
 ## Deviation log
@@ -262,3 +323,6 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | 2026-11-02 | S10 | Also created `templates/scaffold/.aiops/config/secret-paths` (not in S10's file list) | consumers need the extension point for the new list | `5710883` |
 | 2026-11-02 | S9, S15 | `hooks/hooks.json` and `.claude-plugin/plugin.json` were rewritten by `json.dump` (reformatting churn; plugin.json now uses `\u2192` escapes) | edited programmatically; S23 restores readable formatting | `98e696c`, `f5ec258` |
 | 2026-11-02 | — | Review 0002 returned CHANGES_REQUESTED (69/100). The spec was amended (R-10, R-11, AC-16..AC-22) and re-approved; the plan was amended with S16-S24 | fix all findings, as the human asked | `fbd1da2`, `3210a8e` |
+| 2026-11-02 | S17, S19, S21, S24 | Unlogged in round 1: S17 touched `evals/_lib/repo.sh` and `tests/test_cli.py` (not `cli.py`); S19 added `test_scaffold_gate_verifies_base`; S21 touched `hooks/lib.sh`; S24 changed `approve()`'s refusal text and edited `skills/init`, `skills/using-zouj-ai-sdlc` | found by review round 2 | `de58a62`, `f1e5c0e`, `d35068d`, `ecd8f70` |
+| 2026-11-02 | — | **Human decision:** this repo uses `approval_key_policy: "any"` with the existing passphrase-less key instead of a dedicated or protected signing key ("keep commit simple"). Approvals go through `!` again. Residual: anything running as the user can sign approvals here | human-owned config, set by zoujagger in a signed commit | `c74a836` |
+| 2026-11-02 | — | Review round 2 returned CHANGES_REQUESTED (79/100). The spec was amended (R-12, AC-23..AC-29) and re-approved; the plan was amended with S25-S32 | the human chose to fix round 2 inside 0002 | `0ee464b`, `d8f1f54`, `8185ac6` |
