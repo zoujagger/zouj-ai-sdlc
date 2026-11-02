@@ -126,7 +126,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Files: `defaults/readonly-exempt` (modify: `docs/*`, `README.md`, `*/README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`)
   - Test first: `tests/test_guards.py::EditGuard::test_policy_files_not_exempt` → `CLAUDE.md` is writable in state 1 today
   - Covers: AC-14
-- [ ] **S13**: Plugin CI: base-engine audit and pinned tools
+- [x] **S13**: Plugin CI: base-engine audit and pinned tools
   - Files:
     - `.github/workflows/ci.yml` (modify: `aiops-gates` runs the `origin/<base>` engine with `--base`; `ruff==0.6.9`; `@anthropic-ai/claude-code@2.1.314`)
     - `.github/CODEOWNERS` (modify)

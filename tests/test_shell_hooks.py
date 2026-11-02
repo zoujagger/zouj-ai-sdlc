@@ -83,6 +83,18 @@ class ShellHooks(RepoCase):
                 self.assertEqual(self.bash(cmd), 2, (repo_state, cmd))
             self.assertEqual(self.bash("cat .env.example"), 0)
 
+    def test_ci_pins_tools(self):
+        import re
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        self.assertRegex(ci, r"pip install -q ruff==\d+\.\d+\.\d+")
+        self.assertRegex(ci, r"npm install -g @anthropic-ai/claude-code@\d+\.\d+\.\d+")
+        gates = ci[ci.index("aiops-gates:"):]
+        self.assertIn('git worktree add -q "$RUNNER_TEMP/base"', gates)      # the base branch's engine, not the PR's
+        self.assertIn('"$RUNNER_TEMP/base/bin/sdlc"', gates)
+        self.assertRegex(gates, r"validate --all --ci --base \"\$BASE_SHA\"")
+        self.assertIsNone(re.search(r"^\s*run: python3 bin/sdlc", gates, re.M))
+        self.assertRegex((ROOT / ".github" / "CODEOWNERS").read_text(), r"/\.aiops/config")
+
     def test_safety_guards_always_on(self):
         import shutil
         shutil.rmtree(self.root / ".aiops")

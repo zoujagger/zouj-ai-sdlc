@@ -22,11 +22,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install linters and Claude Code
+      - name: Install linters and Claude Code (pinned)
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          pip install -q ruff
-          npm install -g @anthropic-ai/claude-code
+          pip install -q ruff==0.6.9
+          npm install -g @anthropic-ai/claude-code@2.1.314
       - name: make check
         run: make check
       - name: Validate plugin manifest
@@ -38,5 +38,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Audit this repo's own gates
-        run: python3 bin/sdlc validate --all --ci
+      - name: Audit this repo's gates with the base branch's engine
+        # A PR must not be able to weaken the audit that judges it: the engine, signer list and legacy list all come
+        # from the target branch.
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if ! git rev-parse -q --verify "${BASE_SHA}^{commit}" >/dev/null; then
+            echo "::warning::no base commit (${BASE_SHA}); auditing against this commit's parent"
+            BASE_SHA=$(git rev-parse HEAD~1)
+          fi
+          git worktree add -q "$RUNNER_TEMP/base" "$BASE_SHA"
+          if grep -q -- '--base' "$RUNNER_TEMP/base/lib/sdlc_engine/cli.py"; then
+            python3 "$RUNNER_TEMP/base/bin/sdlc" validate --all --ci --base "$BASE_SHA"
+          else   # engines before v0.2.0 have no --base and audit with their own (older) rules
+            python3 "$RUNNER_TEMP/base/bin/sdlc" validate --all --ci
+          fi
