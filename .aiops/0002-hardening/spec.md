@@ -1,7 +1,7 @@
 ---
 id: 0002
 title: Harden gates and guards (review 0001 findings)
-status: Approved
+status: Draft
 risk: high
 intent: ./intent.md
 created: 2026-10-30
@@ -86,6 +86,37 @@ Released as **v0.2.0**: signing is a new requirement for approvers. Users and sy
     `*/.npmrc` and `*/secrets/*`.
   - Legacy entries must be full shas, and `legacy-approvals --write` records only commits that pass every other audit check.
   - Force-push through a `+refspec`, `git --work-tree` and `curl -o` / `wget -O` are caught.
+- **R-12 Review 0002 round-2 fixes.**
+  - **Signing toolchain.**
+    - The approval commit runs with pinned settings: `-c gpg.format=ssh -c gpg.ssh.program=ssh-keygen
+      -c core.hooksPath=/dev/null` and `--no-verify`, and no timeout.
+    - `user.signingkey`, `gpg.*` and `core.hooksPath` set in the repo-local config are refused, by `approve` and by
+      `doctor`. The signing key comes from global config only.
+    - The agent's shell can't set those keys (`git config …`), and can't write under `.git/` or the plugin's install
+      root.
+    - `doctor` warns when the signing key is also an SSH `IdentityFile` or is auto-added to an agent, and recommends
+      a dedicated signing key.
+  - **Secret reads in the shell.** Any word of any command that, unquoted and tilde-expanded, matches `secret-paths`
+    is blocked. Templates and `.pub` stay allowed.
+    - Grep/Glob are blocked when their `path` equals, or is an ancestor of, a secret directory (`~/.ssh`, `~/.aws`,
+      `*/secrets`).
+    - `secret-paths` gains `*/.aws/*`, `*/.config/gcloud/*`, `*/.docker/config.json` and `*/.kube/config`.
+  - **Workflow integrity.**
+    - In initialized repos, shell write targets are checked against `protected-paths`, as Edit/Write already are.
+    - The scaffold's CODEOWNERS covers `/.github/` and `/.claude/`.
+    - The docs recommend enforcing `aiops-gates` as a ruleset "required workflow".
+  - **Parser.**
+    - `<<` inside `$((…))`/`((…))` and inside `$'…'` is not a heredoc marker.
+    - Remaining AC-20 forms: timestamped `diff -u` headers, `git apply -p0/--directory`, a patch from stdin, tar's
+      `-C`/`--directory` in any position, `unzip -d`, and case-insensitive `find -i*` predicates.
+    - Brace-expanded targets (`{.aiops,x}`) and targets assigned earlier in the same command (`D=.aiops; rm -rf $D`).
+  - **Safety variants.** `ENV="prod"` quoted, `'+main'`, combined `-fu`, and `git push --mirror`.
+  - **Legacy.** `sdlc legacy-approvals --write` records only commits that predate the commit introducing
+    `allowed-signers` and are reachable from the main branch, and it confirms each entry (`--yes` skips this).
+  - **This repo's CI** fails closed on an unresolvable base.
+  - **False positives.** The dynamic-command rule applies only in command position. `[ … ]`/`test` comparisons
+    mentioning a marker aren't env changes. A trailer is matched only as `AIOps-Approval:`, with pieces assembled.
+  - **`sk-` keys** whose allowed-signers entry carries `no-touch-required` don't count as "a human for each signature".
 - Non-functional: stdlib only; no new runtime dependencies; every block message keeps "reason + Procedure"; the
   hook median stays under 150 ms per call.
 
@@ -151,6 +182,29 @@ Released as **v0.2.0**: signing is a new requirement for approvers. Users and sy
   `sdlc legacy-approvals --write` runs, then it skips approval commits that fail the other audit checks. And
   `git push origin +main`, `git --work-tree=src checkout app.py` (locked) and `curl -o src/x …` (locked) are blocked.
 
+- **AC-23**: Given repo-local `gpg.ssh.program`, `gpg.format`, `user.signingkey` or `core.hooksPath`, when
+  `sdlc approve` or `sdlc doctor` runs, then it refuses (doctor ✗). The approval commit runs with pinned
+  `gpg.ssh.program`, no hooks and no timeout (a 15 s signer still succeeds). The agent's
+  `git config [--local] gpg.ssh.program x`, `cp x .git/hooks/post-commit` and writes under the plugin root are blocked.
+- **AC-24**: Given any repo, when the agent runs `cat ~/.aws/credentials`, `cat server.pem`, `cat secrets/x`,
+  `paste .env`, `diff .env /dev/null`, `grep -r . ~/.ssh`, or Grep/Glob with `path` `~/.ssh`, `~/.aws` or `secrets`,
+  then each is blocked. `cat .env.example` and `cat id_ed25519.pub` stay allowed.
+- **AC-25**: Given an initialized repo, when the agent runs `sed -i … .github/workflows/aiops-gates.yml` or
+  `cp x .claude/settings.json` (protected paths), then each is blocked. The scaffold CODEOWNERS lists `/.github/` and
+  `/.claude/`.
+- **AC-26**: Given states 1-3, when a command contains `$((1<<EOF))` or `$'a<<EOF'` followed by
+  `echo 1 > src/app.py` on the next line, then it is blocked.
+- **AC-27**: Given any state, when the agent applies a timestamped `diff -u` patch touching `.aiops/`, or runs
+  `git apply -p0 …`, `cat p | git apply`, `tar -C .aiops -xf x`, `tar -xf x --directory=.aiops`, `unzip x -d .aiops`,
+  `find . -iname TEST-LOCK -delete`, `rm -rf {.aiops,x}` or `D=.aiops; rm -rf $D`, then each is blocked.
+- **AC-28**: Given any repo, when the agent runs `make deploy ENV="prod"`, `git push origin '+main'`,
+  `git push -fu origin x` or `git push --mirror`, then each is blocked. `echo $HOME close the door`,
+  `[ "$CLAUDECODE" = 1 ]` and `git commit -m 'Close: AIOps-x Approval flow'` are allowed.
+- **AC-29**: Given `sdlc legacy-approvals --write`, when an unsigned approval commit postdates the commit that
+  introduced `allowed-signers`, or isn't reachable from main, then it is not recorded. Each recorded entry is
+  confirmed (`--yes` skips this). An `sk-` key with `no-touch-required` in allowed-signers fails the key policy. This
+  repo's `ci.yml` fails closed on an unresolvable base.
+
 ## Data model
 No database. File and config contract:
 
@@ -173,6 +227,8 @@ No database. File and config contract:
   under `approval_key_policy: "human"` a key that needs the human for each signature).
 - `.aiops/config.json` `approval_key_policy`: `"human"` (default) | `"any"`.
 - `sdlc validate --ci --base REF` exits 1 when REF doesn't resolve or is empty.
+- `sdlc legacy-approvals [--write] [--yes]`: lists or records pre-signing approvals only, confirming each one.
+- `sdlc doctor`: refuses repo-local signing overrides, and warns on a signing key that doubles as an SSH auth or agent key.
 - New hook `hooks/guard-read.sh` on `PreToolUse` `Read|Grep|Glob` (`file_path`, `path`, `pattern`). Exit 2 blocks.
 - Unchanged: hook JSON in and out, and exit codes (0 allow, 2 block). Every block message keeps `Procedure:`.
 
