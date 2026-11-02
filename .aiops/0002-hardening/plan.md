@@ -80,7 +80,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `tests/helpers.py` (modify: `RepoCase` generates an ed25519 key, sets `gpg.format=ssh` and `user.signingkey`, writes `.aiops/config/allowed-signers`)
   - Test first: `tests/test_engine.py::Approvals::test_refuses_without_signing_key_before_stamping` and `::test_approval_commit_is_signed`
   - Covers: AC-8
-- [ ] **S7**: The audit verifies allow-listed signers, the base ref and the legacy list
+- [x] **S7**: The audit verifies allow-listed signers, the base ref and the legacy list
   - Files:
     - `lib/sdlc_engine/approvals.py` (modify: `audit(root, d, kind, base=None)` `:75` with `%G?`/`%GF` through a temporary `gpg.ssh.allowedSignersFile` from the base ref, the legacy list, and the bootstrap rule)
     - `lib/sdlc_engine/cli.py` (modify: `cmd_validate` `:166` `--base`; new human-only `cmd_legacy_approvals`; `COMMANDS`, `USAGE`, `HUMAN_ONLY` list)

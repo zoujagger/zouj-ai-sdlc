@@ -222,6 +222,43 @@ class Approvals(RepoCase):
         errors = approvals.audit(self.root, self.d, "intent")
         self.assertTrue(errors and "not signed" in errors[0], errors)
 
+    def test_audit_requires_allow_listed_signer(self):
+        from helpers import allowed_signer_line, signing_key
+        cfg = self.root / ".aiops" / "config.json"
+        # 1. unlisted key: signed, but not by an allow-listed signer
+        git(self.root, "config", "user.signingkey", f"{signing_key('intruder')}.pub")
+        self.write("intent", INTENT)
+        self.approve("intent")
+        errors = approvals.audit(self.root, self.d, "intent")
+        self.assertTrue(errors and "allow-listed" in errors[0], errors)
+        # 2. the PR adds its own key: trusted from the working tree, rejected against the base ref
+        git(self.root, "add", ".aiops/config/allowed-signers")
+        git(self.root, "commit", "-qm", "signers (owner only)")
+        git(self.root, "branch", "base")
+        with self.signers.open("a") as f:
+            f.write(allowed_signer_line("owner@example.com", signing_key("intruder")))
+        self.assertEqual(approvals.audit(self.root, self.d, "intent"), [])
+        errors = approvals.audit(self.root, self.d, "intent", base="base")
+        self.assertTrue(errors and "allow-listed" in errors[0], errors)
+        # 3. unsigned, then listed in legacy-approvals (read from base) → accepted
+        cfg.write_text('{"require_signed_approvals": false}')
+        self.write("spec", SPEC)
+        self.approve("spec")
+        cfg.write_text('{"require_signed_approvals": true}')
+        sha = git(self.root, "log", "-1", "--format=%H")
+        self.assertTrue(approvals.audit(self.root, self.d, "spec"))
+        (self.root / ".aiops" / "config" / "legacy-approvals").write_text(f"# pre-signing approvals\n{sha}\n")
+        self.assertEqual(approvals.audit(self.root, self.d, "spec"), [])
+        self.assertTrue(approvals.audit(self.root, self.d, "spec", base="base"))   # not in the base's legacy list
+
+    def test_audit_bootstraps_when_base_has_no_signer_list(self):
+        git(self.root, "branch", "base")                       # base predates allowed-signers
+        self.write("intent", INTENT)
+        self.approve("intent")
+        warnings = []
+        self.assertEqual(approvals.audit(self.root, self.d, "intent", base="base", warnings=warnings), [])
+        self.assertTrue(warnings and "bootstrap" in warnings[0], warnings)
+
     def test_closed_intent(self):
         self.write("intent", INTENT.replace("status: Draft", "status: Closed"))
         self.assertEqual(evaluate(self.root, self.d).state, 0)

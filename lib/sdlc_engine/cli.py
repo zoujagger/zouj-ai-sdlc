@@ -30,7 +30,8 @@ Lifecycle (any user or agent)
   new <slug> [--title T]     state 1: create .aiops/NNNN-slug/intent.md (Draft) and make it active
   draft <id> spec|plan|review  create the next artifact from its template (only when its input is approved)
   use <id>                   make an intent the active one (branch names feat/NNNN-* win over this)
-  validate [id] [--all] [--ci]  check artifacts against schemas/; --ci also audits approval commits
+  validate [id] [--all] [--ci] [--base REF]  check artifacts against schemas/; --ci also audits approval
+                             commits (signers, legacy list and config read from REF when given)
   lock                       /fix: lock test files after the human approved the failing test
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
   doctor                     check tools and wiring
@@ -39,6 +40,7 @@ Human only (refused inside Claude Code)
   approve <id> intent|spec|plan   open a gate (same as typing `Plan Approved NNNN` in the prompt)
   close <id>                 close an intent without implementing it
   unlock                     release the /fix test lock
+  legacy-approvals [--write] list (or record) unsigned approval commits of open gates as legacy
 """
 
 
@@ -166,7 +168,9 @@ def cmd_use(root, args):
 def cmd_validate(root, args):
     _need_init(root)
     ci = "--ci" in args
-    ids = [a for a in args if not a.startswith("--")]
+    base = args[args.index("--base") + 1] if "--base" in args[:-1] else None
+    ids = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--base")]
+    trust_warnings = []
     dirs = intent_dirs(root) if "--all" in args or not ids and not active_dir(root) else [_resolve(root, ids[0] if ids else None)]
     failed = 0
     for d in dirs:
@@ -175,14 +179,37 @@ def cmd_validate(root, args):
                 continue
             errors, warnings = validate(d, kind)
             if ci and kind != "review":
-                errors += approvals.audit(root, d, kind)
+                errors += approvals.audit(root, d, kind, base=base, warnings=trust_warnings)
             for e in errors:
                 out(f"✗ .aiops/{d.name}/{kind}.md: {e}")
             for w in warnings:
                 out(f"! .aiops/{d.name}/{kind}.md: {w}")
             failed += bool(errors)
+    for w in dict.fromkeys(trust_warnings):
+        out(f"! {w}")
     out(f"validate: {len(dirs)} intent(s), {failed} artifact(s) with errors")
     return 1 if failed else 0
+
+
+def cmd_legacy_approvals(root, args):
+    """Human-only migration aid: unsigned approval commits that predate signing become an explicit legacy list."""
+    if approvals.running_under_agent():
+        out(HUMAN_ONLY, sys.stderr)
+        return 1
+    _need_init(root)
+    found = approvals.unsigned_approvals(root)
+    for sha, what in found:
+        out(f"{sha}  {what}")
+    if not found:
+        out("No unsigned approvals of open gates.")
+    if "--write" in args and found:
+        f = root / approvals.LEGACY
+        f.parent.mkdir(parents=True, exist_ok=True)
+        known = f.read_text() if f.is_file() else "# Unsigned approval commits accepted by the audit (human-owned, append-only).\n"
+        new = [f"{sha}  # {what}" for sha, what in found if sha not in known]
+        f.write_text(known.rstrip("\n") + "\n" + "".join(f"{ln}\n" for ln in new))
+        out(f"Recorded {len(new)} commit(s) in {approvals.LEGACY}. Commit it; CI reads it from the base branch.")
+    return 0
 
 
 def cmd_approve(root, args):
@@ -407,7 +434,7 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
-            "unlock": cmd_unlock, "init": cmd_init, "doctor": cmd_doctor}
+            "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor}
 
 
 def main(argv=None):

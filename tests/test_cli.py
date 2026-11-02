@@ -34,6 +34,26 @@ class Init(RepoCase):
 
 
 class Lifecycle(RepoCase):
+    def test_legacy_approvals_is_human_only(self):
+        from helpers import git
+        git(self.root, "add", ".aiops/config/allowed-signers")
+        git(self.root, "commit", "-qm", "signers")
+        git(self.root, "branch", "base")                     # base: has a signer list, no legacy list
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text('{"require_signed_approvals": false}')
+        self.write("intent", INTENT)
+        self.approve("intent")
+        cfg.write_text('{"require_signed_approvals": true}')
+        self.assertEqual(self.run_sdlc("validate", "--all", "--ci").returncode, 1)
+        self.assertEqual(self.run_sdlc("legacy-approvals", "--write", env={"CLAUDECODE": "1"}).returncode, 1)
+        r = self.run_sdlc("legacy-approvals", "--write")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        sha = git(self.root, "log", "-1", "--format=%H")
+        self.assertIn(sha, (self.root / ".aiops" / "config" / "legacy-approvals").read_text())
+        self.assertEqual(self.run_sdlc("validate", "--all", "--ci").returncode, 0)
+        r = self.run_sdlc("validate", "--all", "--ci", "--base", "base")
+        self.assertEqual(r.returncode, 1, r.stdout)          # the base has no legacy list yet
+
     def test_new_draft_status_validate(self):
         shutil.rmtree(self.d)
         r = self.run_sdlc("new", "csv-export", "--title", "CSV export")

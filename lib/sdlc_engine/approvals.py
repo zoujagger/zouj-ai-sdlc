@@ -3,11 +3,13 @@ with an `AIOps-Approval:` trailer so CI can audit who opened each gate. Only two
 UserPromptSubmit hook (the human typed `Plan Approved`) and `sdlc approve` run by a human in a terminal.
 """
 import datetime
+import json
 import os
 import re
+import tempfile
 
 from . import artifacts as A
-from .machine import SCHEMAS, config, evaluate, gate, git, read
+from .machine import DEFAULT_CONFIG, SCHEMAS, config, evaluate, gate, git, intent_dirs, read
 from .schema import validate
 
 TRAILER = "AIOps-Approval"
@@ -106,8 +108,61 @@ def close(root, d, who=None):
     return True, f"Intent {d.name[:4]} closed."
 
 
-def audit(root, d, kind):
-    """CI check: an open gate must come from a human approval commit, not from an agent-authored commit."""
+SIGNERS, LEGACY, CONFIG = ".aiops/config/allowed-signers", ".aiops/config/legacy-approvals", ".aiops/config.json"
+
+
+def trust(root, base=None, warnings=None):
+    """(config, allowed-signers text, legacy approval shas): from `base` when given, else the working tree.
+    A PR must not be able to vouch for itself, so CI passes the target branch as `base`. Only when the base has
+    no signer list at all (the change that introduces signing) does the working tree count, with a warning."""
+    def tree(rel):
+        f = root / rel
+        return f.read_text() if f.is_file() else None
+
+    def at_base(rel):
+        return git(root, "show", f"{base}:{rel}")
+
+    src = tree
+    if base:
+        if at_base(SIGNERS) is None:
+            if warnings is not None:
+                warnings.append(f"bootstrap: {base} has no {SIGNERS}, so this change's signer list is trusted. "
+                                "It must get CODEOWNERS review.")
+        else:
+            src = at_base
+    cfg = dict(DEFAULT_CONFIG)
+    try:
+        cfg.update(json.loads(src(CONFIG) or "{}"))
+    except ValueError:
+        pass
+    legacy = {ln.split()[0] for ln in (src(LEGACY) or "").splitlines() if ln.strip() and not ln.lstrip().startswith("#")}
+    return cfg, src(SIGNERS) or "", legacy
+
+
+def signature(root, sha, signers):
+    """git's %G? for `sha`, verified against `signers` (G = good signature by an allow-listed key)."""
+    with tempfile.NamedTemporaryFile("w", suffix=".allowed-signers", delete=False) as f:
+        f.write(signers)
+    try:
+        return git(root, "-c", f"gpg.ssh.allowedSignersFile={f.name}", "log", "-1", "--format=%G?", sha) or "N"
+    finally:
+        os.unlink(f.name)
+
+
+def approval_commit(root, d, kind, digest):
+    """(sha, message) of the oldest commit that introduced `approved-sha256: digest`, or None."""
+    rel = str((d / f"{kind}.md").relative_to(root))
+    log = git(root, "log", "--format=%H%x00%B%x1e", "-S", f"approved-sha256: {digest}", "--", rel)
+    if not log:
+        return None
+    oldest = [e for e in log.split("\x1e") if e.strip()][-1]   # git log is newest first
+    sha, _, msg = oldest.strip().partition("\x00")
+    return sha, msg
+
+
+def audit(root, d, kind, base=None, warnings=None):
+    """CI check: an open gate must come from a single-file approval commit signed by an allow-listed key
+    (or listed in legacy-approvals), never from an agent-authored commit."""
     text = read(d, kind)
     a = A.parse(text or "")
     if a.get("status") != SCHEMAS[kind]["gate"]:
@@ -118,11 +173,10 @@ def audit(root, d, kind):
     if not a.get("approved-by"):
         return [f"{kind}.md is approved without approved-by"]
     rel = str((d / f"{kind}.md").relative_to(root))
-    log = git(root, "log", "--format=%H%x00%B%x1e", "-S", f"approved-sha256: {a.get('approved-sha256')}", "--", rel)
-    if not log:
+    found = approval_commit(root, d, kind, a.get("approved-sha256"))
+    if not found:
         return [f"{kind}.md approval is not committed (expected a commit with an `{TRAILER}:` trailer)"]
-    oldest = [e for e in log.split("\x1e") if e.strip()][-1]   # git log is newest first
-    sha, _, msg = oldest.strip().partition("\x00")
+    sha, msg = found
     if f"{TRAILER}: {kind} {d.name[:4]}" not in msg:
         return [f"{kind}.md approval was introduced by {sha[:10]}, which is not an approval commit"]
     if CLAUDE_TRAILER_RE.search(msg):
@@ -133,8 +187,24 @@ def audit(root, d, kind):
     if touched != [rel]:
         return [f"{kind}.md approval commit {sha[:10]} must change only {rel} (it also touches "
                 f"{', '.join(t for t in touched if t != rel)[:120]})"]
-    signers = root / ".aiops" / "config" / "allowed-signers"
-    if config(root).get("require_signed_approvals") and git(
-            root, "-c", f"gpg.ssh.allowedSignersFile={signers}", "log", "-1", "--format=%G?", sha) not in ("G", "U"):
-        return [f"{kind}.md approval commit {sha[:10]} is not signed (require_signed_approvals is on)"]
+    cfg, signers, legacy = trust(root, base, warnings)
+    if cfg.get("require_signed_approvals") and not any(len(x) >= 7 and sha.startswith(x) for x in legacy):
+        verdict = signature(root, sha, signers)
+        if verdict != "G":
+            return [f"{kind}.md approval commit {sha[:10]} is not signed by an allow-listed signer "
+                    f"(git %G? = {verdict}; signers from {base or 'the working tree'})"]
     return []
+
+
+def unsigned_approvals(root):
+    """Approval commits of open gates that don't verify against the working-tree signer list."""
+    _, signers, _ = trust(root)
+    out = []
+    for d in intent_dirs(root):
+        for kind in ("intent", "spec", "plan"):
+            a = A.parse(read(d, kind) or "")
+            if a.get("status") == SCHEMAS[kind]["gate"] and a.get("approved-sha256"):
+                found = approval_commit(root, d, kind, a.get("approved-sha256"))
+                if found and signature(root, found[0], signers) != "G":
+                    out.append((found[0], f"{d.name}/{kind}.md"))
+    return out
