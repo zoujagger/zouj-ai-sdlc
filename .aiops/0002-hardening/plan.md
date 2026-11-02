@@ -148,7 +148,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 
 <!-- Amendment after review 0002 (CHANGES_REQUESTED 69/100): S16-S24, written in state 3 and needing `Plan Approved 0002` again.
      Order: the BLOCKER first, then the HIGH (key policy, then shell hardening), the MAJORs, LOW, MINOR, and docs last. -->
-- [ ] **S16**: Heredoc markers only outside quotes and comments
+- [x] **S16**: Heredoc markers only outside quotes and comments
   - Files: `lib/sdlc_engine/guards.py` (modify: `strip_heredocs()` finds markers with a quote- and comment-aware scan of each line)
   - Test first: `tests/test_guards.py::BashGuard::test_heredoc_marker_in_quotes_or_comment` → `echo '<<EOF'` / `# <<EOF`, then `echo 1 > src/app.py`, is allowed today
   - Covers: AC-17

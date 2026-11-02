@@ -168,14 +168,44 @@ ENV_RES = (
 )
 
 
+def _heredoc_marks(line):
+    """[(start, end, delimiter)] of `<<WORD` markers that are real: outside quotes and comments."""
+    marks, i, quote = [], 0, None
+    while i < len(line):
+        c = line[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 2
+                continue
+            quote = None if c == quote else quote
+            i += 1
+            continue
+        if c == "\\":
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or line[i - 1] in " \t;&|("):
+            break                                   # the rest of the line is a comment
+        elif m := HEREDOC_MARK_RE.match(line, i):
+            marks.append((m.start(), m.end(), m.group(3)))
+            i = m.end()
+            continue
+        i += 1
+    return marks
+
+
 def strip_heredocs(cmd):
-    """Drop heredoc bodies but keep the rest of each marker line, so `cat <<EOF > file` still shows its redirect."""
+    """Drop heredoc bodies but keep the rest of each marker line, so `cat <<EOF > file` still shows its redirect.
+    Only markers outside quotes and comments count: `echo '<<EOF'` must not hide the lines after it."""
     lines, out, i = cmd.split("\n"), [], 0
     while i < len(lines):
-        marks = HEREDOC_MARK_RE.findall(lines[i])
-        out.append(HEREDOC_MARK_RE.sub(" ", lines[i]))
+        line, marks = lines[i], _heredoc_marks(lines[i])
+        for start, end, _ in reversed(marks):
+            line = line[:start] + " " + line[end:]
+        out.append(line)
         i += 1
-        for _dash, _quote, delim in marks:
+        for _start, _end, delim in marks:
             while i < len(lines) and lines[i].strip() != delim:
                 i += 1
             i += 1   # the delimiter line itself

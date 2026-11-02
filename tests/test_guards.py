@@ -146,6 +146,14 @@ class BashGuard(RepoCase):
             self.assertTrue(self.blocked(cmd), cmd)
         self.assertFalse(self.blocked("cat <<EOF > src/app.py\nx = 2\nEOF"))
 
+    def test_heredoc_marker_in_quotes_or_comment(self):
+        for cmd in ("echo '<<EOF'\necho 1 > src/app.py", 'echo "x <<EOF"\nrm src/app.py',
+                    "# <<EOF\nrm src/app.py", "echo hi # cat <<EOF\necho 1 > src/app.py"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        self.to_execution()
+        self.assertTrue(self.blocked("echo '<<EOF'\nsed -i s/Draft/Approved/ .aiops/0001-csv-export/intent.md"))
+        self.assertFalse(self.blocked("cat <<'EOF' > src/app.py\n# '<<X' not a marker\nEOF"))
+
     def test_more_write_forms_while_locked(self):
         for cmd in ("git commit src/app.py -m x", "git commit -m x -- src/app.py", "git -C src checkout app.py",
                     "cp -t src README.md", "cp --target-directory=src README.md", "find src -delete",
