@@ -140,7 +140,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `.aiops/0001-zouj-ai-sdlc-plugin/plan.md` (Deviation log only: the bootstrap exception, the S7 deviation, commit refs)
   - Test first: `tests/test_engine.py::Approvals::test_audit_rejects_multi_file_approval_commit` → the current assertion accepts either message
   - Covers: AC-9, AC-15
-- [ ] **S15**: This repo's migration and the v0.2.0 release
+- [x] **S15**: This repo's migration and the v0.2.0 release
   - Files: `.claude-plugin/plugin.json` (0.2.0), `CHANGELOG.md` (`[0.2.0]`)
   - **Human**: write `.aiops/config/allowed-signers` with your key, configure SSH signing, and run `sdlc legacy-approvals --write`. These are human-owned guardrail files, so the agent can't write them.
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_version_matches_changelog`
