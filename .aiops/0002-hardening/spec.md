@@ -1,14 +1,14 @@
 ---
 id: 0002
 title: Harden gates and guards (review 0001 findings)
-status: Draft
+status: Approved
 risk: high
 intent: ./intent.md
 created: 2026-10-30
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-02T09:04:45Z
+approved-at: 2026-11-02T14:56:38Z
 approved-via: cli
-approved-sha256: 3f42aa78903276307379d1389da49fb83675fae21e2d696e8c6b70edf63b52c9
+approved-sha256: 85229e927a7096ade504136c0f4aa62d19efdbc33b127f52cfd90ec2fdb1bd8c
 ---
 
 # Spec: Harden gates and guards (review 0001 findings)
