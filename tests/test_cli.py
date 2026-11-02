@@ -29,6 +29,30 @@ class Init(RepoCase):
         self.assertIn("wired format, lint, typecheck, test, build", r.stdout)
         self.assertIn("pytest -q", (self.root / "Makefile").read_text())
 
+    def test_scaffold_pins_and_protects(self):
+        from helpers import ROOT
+        version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        settings = json.loads((self.root / ".claude" / "settings.json").read_text())
+        self.assertIn("Read(./.env)", settings["permissions"]["deny"])
+        self.assertIn("Read(./**/*.pem)", settings["permissions"]["deny"])
+        gates = (self.root / ".github" / "workflows" / "aiops-gates.yml").read_text()
+        self.assertIn(f"ZOUJ_SDLC_REF: v{version}", gates)
+        self.assertIn("--base", gates)
+        for wf in sorted((self.root / ".github" / "workflows").glob("claude*.yml")):
+            text = wf.read_text()
+            self.assertIn(f"ZOUJ_SDLC_REF: v{version}", text, wf.name)
+            self.assertIn("--plugin-dir", text, wf.name)
+            self.assertNotIn("plugin_marketplaces", text, wf.name)
+        leftovers = [p for p in self.root.rglob("*") if p.is_file() and ".git/" not in str(p)
+                     and "__ZOUJ_SDLC_REF__" in p.read_text(errors="replace")]
+        self.assertEqual(leftovers, [])
+        cfg = json.loads((self.root / ".aiops" / "config.json").read_text())
+        self.assertIs(cfg["require_signed_approvals"], True)
+        for name in ("allowed-signers", "legacy-approvals"):
+            self.assertTrue((self.root / ".aiops" / "config" / name).is_file(), name)
+        self.assertRegex((self.root / ".github" / "CODEOWNERS").read_text(), r"/\.aiops/config\.json\s+@your-org/maintainers")
+
     def test_unknown_stack_fails(self):
         self.assertEqual(self.run_sdlc("init", "--stack", "cobol").returncode, 1)
 

@@ -108,7 +108,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `hooks/guard-bash.sh` `:31` (modify: extend the `re_read_env` readers)
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_blocked` → Read of `.env` and `awk 1 .env` are allowed today
   - Covers: AC-11
-- [ ] **S10**: Scaffold: deny list, pinning, signer stubs
+- [x] **S10**: Scaffold: deny list, pinning, signer stubs
   - Files:
     - `templates/scaffold/.claude/settings.json` (create)
     - `templates/scaffold/.aiops/config/{allowed-signers,legacy-approvals}` (create)

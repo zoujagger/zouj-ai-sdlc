@@ -269,6 +269,13 @@ def _wire_stack(makefile, stack):
     return wired
 
 
+REF_PLACEHOLDER = "__ZOUJ_SDLC_REF__"
+
+
+def plugin_version():
+    return json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+
+
 def cmd_init(root, args):
     stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
     force = "--force" in args
@@ -285,6 +292,10 @@ def cmd_init(root, args):
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+        if dst.suffix in (".yml", ".yaml", ".md", ".json"):
+            text = dst.read_text()
+            if REF_PLACEHOLDER in text:   # pin consumer CI to this plugin's release
+                dst.write_text(text.replace(REF_PLACEHOLDER, f"v{plugin_version()}"))
         created.append(str(rel))
     for p in (root / ".aiops" / "state",):
         p.mkdir(parents=True, exist_ok=True)
