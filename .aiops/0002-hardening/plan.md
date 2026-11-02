@@ -167,7 +167,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - the trailer check on `plain` (also `AIOps-` with `Approval` assembled separately)
   - Test first: `tests/test_guards.py::BashGuard::test_engine_cannot_be_disguised_further` → `export -n CLAUDECODE; f(){ sdlc "$@"; }; f approve …` is allowed today
   - Covers: AC-18
-- [ ] **S19**: The audit fails closed on a bad base; positive test
+- [x] **S19**: The audit fails closed on a bad base; positive test
   - Files:
     - `lib/sdlc_engine/approvals.py` (modify: `trust()` verifies `REF^{commit}`, raising `BaseRefError`; bootstrap only for a resolvable ref with no file)
     - `lib/sdlc_engine/cli.py` (`cmd_validate`: an empty `--base`, or a `BaseRefError`, exits 1)

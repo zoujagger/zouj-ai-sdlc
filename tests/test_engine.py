@@ -321,6 +321,24 @@ class Approvals(RepoCase):
         self.assertEqual(approvals.audit(self.root, self.d, "spec"), [])
         self.assertTrue(approvals.audit(self.root, self.d, "spec", base="base"))   # not in the base's legacy list
 
+    def test_audit_fails_closed_on_unresolvable_base(self):
+        self.write("intent", INTENT)
+        self.approve("intent")
+        for base in ("does-not-exist", "0" * 40):
+            errors = approvals.audit(self.root, self.d, "intent", base=base, warnings=[])
+            self.assertTrue(errors and "does not resolve" in errors[0], (base, errors))
+
+    def test_audit_accepts_allow_listed_signer_against_base(self):
+        git(self.root, "add", ".aiops/config/allowed-signers")
+        git(self.root, "commit", "-qm", "signers")
+        git(self.root, "branch", "base")
+        self.write("intent", INTENT)
+        self.approve("intent")                                   # signed by the owner key, which the base lists
+        self.signers.write_text("")                              # the PR even empties its own list
+        warnings = []
+        self.assertEqual(approvals.audit(self.root, self.d, "intent", base="base", warnings=warnings), [])
+        self.assertEqual(warnings, [])
+
     def test_audit_bootstraps_when_base_has_no_signer_list(self):
         git(self.root, "branch", "base")                       # base predates allowed-signers
         self.write("intent", INTENT)

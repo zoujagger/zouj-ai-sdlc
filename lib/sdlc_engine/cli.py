@@ -169,7 +169,13 @@ def cmd_use(root, args):
 def cmd_validate(root, args):
     _need_init(root)
     ci = "--ci" in args
-    base = args[args.index("--base") + 1] if "--base" in args[:-1] else None
+    base = None
+    if "--base" in args:
+        i = args.index("--base")
+        base = args[i + 1] if i + 1 < len(args) else ""
+        if not base.strip():
+            out("--base needs a commit or branch (the target branch: the trust anchor for signers)", sys.stderr)
+            return 1
     ids = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--base")]
     trust_warnings = []
     dirs = intent_dirs(root) if "--all" in args or not ids and not active_dir(root) else [_resolve(root, ids[0] if ids else None)]

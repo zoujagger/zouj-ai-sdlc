@@ -28,5 +28,11 @@ jobs:
           git init -q "$RUNNER_TEMP/zouj-ai-sdlc"
           git -C "$RUNNER_TEMP/zouj-ai-sdlc" fetch -q --depth 1 "$ZOUJ_SDLC_REPO" "$ZOUJ_SDLC_REF"
           git -C "$RUNNER_TEMP/zouj-ai-sdlc" checkout -q FETCH_HEAD
+      - name: Verify the trust anchor
+        run: |
+          if [ -z "$BASE_SHA" ] || ! git rev-parse -q --verify "${BASE_SHA}^{commit}" >/dev/null; then
+            echo "::error::base commit '${BASE_SHA}' does not resolve; refusing to audit against the change itself"
+            exit 1
+          fi
       - name: Validate artifacts and audit approvals
         run: python3 "$RUNNER_TEMP/zouj-ai-sdlc/bin/sdlc" validate --all --ci --base "$BASE_SHA"

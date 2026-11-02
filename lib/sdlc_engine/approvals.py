@@ -156,6 +156,10 @@ def close(root, d, who=None):
 SIGNERS, LEGACY, CONFIG = ".aiops/config/allowed-signers", ".aiops/config/legacy-approvals", ".aiops/config.json"
 
 
+class BaseRefError(Exception):
+    """The trust anchor (`--base`) doesn't resolve: fail closed rather than trusting the change itself."""
+
+
 def trust(root, base=None, warnings=None):
     """(config, allowed-signers text, legacy approval shas): from `base` when given, else the working tree.
     A PR must not be able to vouch for itself, so CI passes the target branch as `base`. Only when the base has
@@ -168,7 +172,10 @@ def trust(root, base=None, warnings=None):
         return git(root, "show", f"{base}:{rel}")
 
     src = tree
-    if base:
+    if base is not None:
+        if not base.strip() or git(root, "rev-parse", "-q", "--verify", f"{base}^{{commit}}") is None:
+            raise BaseRefError(f"base ref {base!r} does not resolve to a commit; refusing to audit against the change "
+                               "itself (fetch the target branch, e.g. actions/checkout with fetch-depth: 0)")
         if at_base(SIGNERS) is None:
             if warnings is not None:
                 warnings.append(f"bootstrap: {base} has no {SIGNERS}, so this change's signer list is trusted. "
@@ -232,7 +239,10 @@ def audit(root, d, kind, base=None, warnings=None):
     if touched != [rel]:
         return [f"{kind}.md approval commit {sha[:10]} must change only {rel} (it also touches "
                 f"{', '.join(t for t in touched if t != rel)[:120]})"]
-    cfg, signers, legacy = trust(root, base, warnings)
+    try:
+        cfg, signers, legacy = trust(root, base, warnings)
+    except BaseRefError as exc:
+        return [str(exc)]
     if cfg.get("require_signed_approvals") and not any(len(x) >= 7 and sha.startswith(x) for x in legacy):
         verdict = signature(root, sha, signers)
         if verdict != "G":

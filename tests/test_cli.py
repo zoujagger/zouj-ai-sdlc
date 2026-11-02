@@ -56,8 +56,21 @@ class Init(RepoCase):
     def test_unknown_stack_fails(self):
         self.assertEqual(self.run_sdlc("init", "--stack", "cobol").returncode, 1)
 
+    def test_scaffold_gate_verifies_base(self):
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        gates = (self.root / ".github" / "workflows" / "aiops-gates.yml").read_text()
+        self.assertIn('git rev-parse -q --verify "${BASE_SHA}^{commit}"', gates)
+        self.assertIn("exit 1", gates)
+
 
 class Lifecycle(RepoCase):
+    def test_validate_rejects_empty_base(self):
+        self.write("intent", INTENT)
+        for args in (["--base", ""], ["--base"]):
+            r = self.run_sdlc("validate", "--all", "--ci", *args)
+            self.assertEqual(r.returncode, 1, (args, r.stdout, r.stderr))
+            self.assertIn("--base", r.stdout + r.stderr)
+
     def test_legacy_approvals_is_human_only(self):
         from helpers import git
         git(self.root, "add", ".aiops/config/allowed-signers")
