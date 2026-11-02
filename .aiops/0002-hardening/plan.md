@@ -232,7 +232,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `templates/scaffold/.github/CODEOWNERS`: adds `/.github/` and `/.claude/`.
   - Test first: `tests/test_guards.py::BashGuard::test_shell_writes_respect_protected_paths` → `sed -i … .github/workflows/aiops-gates.yml` is allowed today
   - Covers: AC-25
-- [ ] **S28**: Heredoc scanner skips arithmetic and ANSI-C strings
+- [x] **S28**: Heredoc scanner skips arithmetic and ANSI-C strings
   - Files: `lib/sdlc_engine/guards.py` (`_heredoc_marks`: skip `$((…))`/`((…))` and `$'…'`)
   - Test first: `tests/test_guards.py::BashGuard::test_heredoc_marker_in_arithmetic_or_ansi_c` → `echo $((1<<EOF))` followed by a write is allowed today
   - Covers: AC-26

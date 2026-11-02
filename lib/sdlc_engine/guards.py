@@ -178,20 +178,39 @@ ENV_RES = (
 )
 
 
+def _arith_end(line, i):
+    """Index just past the `))` closing an arithmetic expression whose `((` starts at i."""
+    depth = 0
+    for j in range(i, len(line)):
+        depth += {"(": 1, ")": -1}.get(line[j], 0)
+        if depth == 0:
+            return j + 1
+    return len(line)
+
+
 def _heredoc_marks(line):
-    """[(start, end, delimiter)] of `<<WORD` markers that are real: outside quotes and comments."""
+    """[(start, end, delimiter)] of `<<WORD` markers that are real: outside quotes ('…', "…", $'…'), comments and
+    arithmetic ($((…)), ((…)), where `<<` is a shift)."""
     marks, i, quote = [], 0, None
     while i < len(line):
         c = line[i]
         if quote:
-            if c == "\\" and quote == '"':
+            if c == "\\" and quote in ('"', "$'"):
                 i += 2
                 continue
-            quote = None if c == quote else quote
+            if c == quote[-1]:
+                quote = None
             i += 1
             continue
         if c == "\\":
             i += 2
+            continue
+        if line.startswith("$'", i):
+            quote = "$'"
+            i += 2
+            continue
+        if line.startswith("$((", i) or (line.startswith("((", i) and (i == 0 or line[i - 1] in " \t;&|(")):
+            i = _arith_end(line, i + 1 if c == "$" else i)
             continue
         if c in "'\"":
             quote = c
@@ -229,8 +248,8 @@ def tokenize(cmd):
     lex.commenters = ""
     try:
         return list(lex)
-    except ValueError:   # unbalanced quotes: fall back to whitespace split
-        return cmd.split()
+    except ValueError:   # unbalanced quotes ($'…' confuses shlex): split crudely but keep command boundaries
+        return re.findall(r"[;&|]+|[^\s;&|]+", cmd.replace("\n", " ; "))
 
 
 def segments(tokens):

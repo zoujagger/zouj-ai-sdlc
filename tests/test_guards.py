@@ -146,6 +146,15 @@ class BashGuard(RepoCase):
             self.assertTrue(self.blocked(cmd), cmd)
         self.assertFalse(self.blocked("cat <<EOF > src/app.py\nx = 2\nEOF"))
 
+    def test_heredoc_marker_in_arithmetic_or_ansi_c(self):
+        for cmd in ("echo $((1<<EOF))\necho 1 > src/app.py", "(( x = 1<<EOF ))\necho 1 > src/app.py",
+                    "echo $'a<<EOF'\necho 1 > src/app.py", "echo $'it\\'s <<EOF'\nrm src/app.py"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        self.to_execution()
+        self.assertTrue(self.blocked("echo $((1<<EOF))\nrm -rf .aiops\nEOF"))
+        for cmd in ("x=$((1<<2))\necho $x", "cat <<EOF > /tmp/x\n$((1<<2))\nEOF\necho ok"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_heredoc_marker_in_quotes_or_comment(self):
         for cmd in ("echo '<<EOF'\necho 1 > src/app.py", 'echo "x <<EOF"\nrm src/app.py',
                     "# <<EOF\nrm src/app.py", "echo hi # cat <<EOF\necho 1 > src/app.py"):
