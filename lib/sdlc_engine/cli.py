@@ -378,6 +378,23 @@ def _doctor_signing(root, row):
             "signs silently. Prefer a dedicated signing key")
 
 
+CODEOWNERS_FILES = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")   # GitHub's lookup order
+AIOPS_PATTERNS = {"*", "**", "/**", ".aiops", ".aiops/", ".aiops/*", ".aiops/**", "/.aiops", "/.aiops/", "/.aiops/*",
+                  "/.aiops/**"}
+
+
+def codeowners_cover_aiops(root):
+    """True if the first CODEOWNERS file GitHub would read gives /.aiops/ an owner. The last matching rule wins, as on
+    GitHub, so a later `/.aiops/` line without owners removes the coverage."""
+    f = next((root / rel for rel in CODEOWNERS_FILES if (root / rel).is_file()), None)
+    owned = False
+    for line in (f.read_text(errors="replace").splitlines() if f else []):
+        words = line.split("#", 1)[0].split()
+        if words and words[0] in AIOPS_PATTERNS:
+            owned = len(words) > 1
+    return owned
+
+
 def cmd_doctor(root, args):
     fail = 0
 
@@ -401,6 +418,12 @@ def cmd_doctor(root, args):
         cfg = config(root)
         out(f"  ✓ profile: {cfg['profile']} (approval_key_policy: {cfg.get('approval_key_policy')}, "
             f"signed approvals: {'yes' if cfg.get('require_signed_approvals') else 'no'})")
+        covered, msg = codeowners_cover_aiops(root), "CODEOWNERS covers /.aiops/"
+        fix = "add `/.aiops/ @<approver>` to .github/CODEOWNERS (human-owned) and require CODEOWNER review on main"
+        if cfg["profile"] == "strict":                 # strict: a CODEOWNER must review every change to .aiops/
+            row(covered, msg, fix)
+        else:
+            out(f"  {'✓' if covered else '!'} {msg}" + ("" if covered else f" (recommended)\n      fix: {fix}"))
     if initialized(root) and config(root).get("require_signed_approvals"):
         _doctor_signing(root, row)
     if initialized(root):

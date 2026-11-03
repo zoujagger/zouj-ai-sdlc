@@ -117,6 +117,28 @@ class Lifecycle(RepoCase):
         r = self.run_sdlc("validate", "--all", "--ci", "--base", "base")
         self.assertEqual(r.returncode, 1, r.stdout)          # the base has no legacy list yet
 
+    def test_strict_requires_codeowners(self):
+        cfg = self.root / ".aiops" / "config.json"
+        owners = self.root / ".github" / "CODEOWNERS"
+        owners.parent.mkdir(parents=True, exist_ok=True)
+        owners.write_text("/src/ @someone\n")                          # doesn't cover /.aiops/
+        cfg.write_text('{"profile": "strict", "require_signed_approvals": false}')
+        r = self.run_sdlc("doctor")
+        self.assertIn("✗ CODEOWNERS covers /.aiops/", r.stdout)
+        self.assertIn("/.aiops/ @", r.stdout)                            # the fix names the line to add
+        self.assertEqual(r.returncode, 1)
+        cfg.write_text('{"profile": "team", "require_signed_approvals": false}')
+        r = self.run_sdlc("doctor")
+        self.assertIn("! CODEOWNERS covers /.aiops/", r.stdout)         # team: a warning only
+        self.assertEqual(r.returncode, 0, r.stdout)
+        owners.write_text("/.aiops/ @owner\n")
+        cfg.write_text('{"profile": "strict", "require_signed_approvals": false}')
+        r = self.run_sdlc("doctor")
+        self.assertIn("✓ CODEOWNERS covers /.aiops/", r.stdout)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        owners.write_text("/.aiops/\n")                                 # a pattern without an owner covers nothing
+        self.assertEqual(self.run_sdlc("doctor").returncode, 1)
+
     def test_doctor_checks_signing(self):
         from helpers import git
         out = self.run_sdlc("doctor").stdout

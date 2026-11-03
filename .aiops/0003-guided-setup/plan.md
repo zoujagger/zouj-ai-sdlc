@@ -66,7 +66,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
     passphrase key is refused, an `sk-` key with `no-touch-required` is refused, an `sk-` key with touch passes, and
     doctor refuses `"approval_key_policy": "bogus"`. Red: `"sk"` is treated like `"any"`.
   - Covers: AC-7
-- [ ] **S4**: Strict requires CODEOWNERS on `.aiops/`
+- [x] **S4**: Strict requires CODEOWNERS on `.aiops/`
   - Files: `lib/sdlc_engine/cli.py` (doctor) (modify)
   - Test first: `tests/test_cli.py::Lifecycle::test_strict_requires_codeowners`. With `profile: strict` and
     CODEOWNERS not covering `/.aiops/`, the row is ✗ and doctor exits 1. Under `team` it's only `!`. Red: there's no
