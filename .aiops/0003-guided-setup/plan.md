@@ -72,7 +72,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
     CODEOWNERS not covering `/.aiops/`, the row is ✗ and doctor exits 1. Under `team` it's only `!`. Red: there's no
     such row.
   - Covers: AC-15
-- [ ] **S5**: Setup preflight
+- [x] **S5**: Setup preflight
   - Files: `lib/sdlc_engine/setup.py` (create), `lib/sdlc_engine/cli.py` (`setup` in COMMANDS) (modify)
   - Test first: `tests/test_setup.py::Preflight::test_rows_and_blocking`, with stub `claude`, `gh` and `git` on PATH:
     - a missing `workflow` scope gives `!` plus `gh auth refresh -h github.com -s workflow`

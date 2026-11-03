@@ -35,6 +35,7 @@ Lifecycle (any user or agent)
                              commits (signers, legacy list and config read from REF when given)
   lock                       /fix: lock test files after the human approved the failing test
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
+  setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
   doctor                     check tools and wiring
 
 Human only (refused inside Claude Code)
@@ -395,6 +396,11 @@ def codeowners_cover_aiops(root):
     return owned
 
 
+def cmd_setup(root, args):
+    from . import setup   # imported here: setup builds on init_actions/apply_init in this module
+    return setup.main(root, args)
+
+
 def cmd_doctor(root, args):
     fail = 0
 
@@ -533,7 +539,8 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
-            "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor}
+            "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
+            "setup": cmd_setup}
 
 
 def main(argv=None):
