@@ -37,4 +37,8 @@ for field in $fields; do
     fi
   done
 done
+# Grep/Glob on a directory that holds a secret directory (`~`, a repo with secrets/), or whose glob reaches one.
+if [[ "$tool" == Grep || "$tool" == Glob ]]; then
+  secret_scan "$input" || exit 2
+fi
 exit 0

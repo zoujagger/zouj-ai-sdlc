@@ -89,3 +89,17 @@ is_test_path() {
   rel=$(rel_path "$1" "$2")
   config_match "$rel" "$2" test-paths >/dev/null
 }
+
+# secret_scan <hook-json>: the shell/search secret-read scan (lib/sdlc_engine/secret_scan.py). Returns 0 (allow) or
+# 1 after printing the block to stderr; fails closed if python3 can't run it. -I: no cwd, PYTHONPATH or user site.
+secret_scan() {
+  local rc=0
+  printf '%s' "$1" | python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1])
+from sdlc_engine.secret_scan import main; sys.exit(main())' "$PLUGIN_ROOT/lib" || rc=$?
+  case $rc in
+    0) return 0 ;;
+    2) return 1 ;;
+    *) echo "BLOCKED: the secret-read scan failed to run (exit $rc), so it fails closed. python3 >= 3.9 is required." >&2
+       return 1 ;;
+  esac
+}

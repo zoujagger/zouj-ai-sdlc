@@ -82,6 +82,35 @@ class ShellHooks(RepoCase):
                 self.assertEqual(grep(pattern=".", path=path), 2, (repo_state, path))
             self.assertEqual(grep(pattern=".", path="src"), 0)
 
+    def test_secret_reads_through_globs_and_substitutions(self):
+        import time
+        home = self.root.parent / f"{self.root.name}.home"
+        for rel in (".aws/credentials", ".ssh/id_ed25519"):
+            (home / rel).parent.mkdir(parents=True, exist_ok=True)
+            (home / rel).write_text("secret\n")
+        self.env["HOME"] = str(home)
+        (self.root / "server.pem").write_text("x")
+        (self.root / "secrets").mkdir()
+        (self.root / "secrets" / "x").write_text("x")
+        for cmd in ("cat ~/.aws/cred*", "cat ~/.ssh/id_ed2551?", "cat ~/.ss?/id_ed25519", "cat ~/.ssh/id_[e]d25519",
+                    "cat *.pem", "cd ~/.aws && cat credentials", "echo $(cat ~/.aws/credentials)",
+                    "printf '%s' \"$(cat secrets/x)\"", 'echo "$(<~/.aws/credentials)"', "cat<~/.aws/credentials",
+                    "grep -r KEY ~", "grep -rn KEY .", "cat $HOME/.aws/credentials"):
+            self.assertEqual(self.bash(cmd), 2, cmd)
+        for cmd in ('git commit -m "fix: load .env in dev"', "grep -rn id_rsa src", "grep -rn '\\.pem' src",
+                    "rg -n 'secrets/' docs", "gh pr create --body 'reads ~/.aws/config'", "ls ~/.aws/*", "cat *.md",
+                    "cat <<'EOF' > notes.md\nsee ~/.aws/credentials and .env\nEOF", "grep -rn TODO src"):
+            self.assertEqual(self.bash(cmd), 0, cmd)
+        grep = lambda **ti: self.run_hook("guard-read.sh", {"tool_name": "Grep", "tool_input": ti})  # noqa: E731
+        self.assertEqual(grep(pattern="KEY", path=str(home), glob=".aws/**"), 2)
+        self.assertEqual(grep(pattern="KEY", path=str(home)), 2)                  # an ancestor of ~/.ssh and ~/.aws
+        self.assertEqual(grep(pattern="KEY", path=str(self.root)), 2)             # an ancestor of secrets/
+        self.assertEqual(grep(pattern="KEY", path=str(self.root / "src")), 0)
+        heredoc = "cat <<'EOF' > notes.md\n" + "".join(f"line {i} with words a b c d e f\n" for i in range(60)) + "EOF"
+        start = time.monotonic()
+        self.assertEqual(self.bash(heredoc), 0)
+        self.assertLess(time.monotonic() - start, 0.5)                          # was ~835 ms with a subshell per word
+
     def test_secret_reads_blocked_further(self):
         import os
         read = lambda **ti: self.run_hook("guard-read.sh", {"tool_name": "Read", "tool_input": ti})  # noqa: E731

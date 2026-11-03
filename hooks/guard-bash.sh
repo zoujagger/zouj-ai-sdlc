@@ -5,7 +5,8 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 
-cmd=$(json_get tool_input.command) || fail_closed guard-bash
+input=$(cat)
+cmd=$(json_get tool_input.command <<<"$input") || fail_closed guard-bash
 root=${CLAUDE_PROJECT_DIR:-$PWD}
 enabled=0; aiops_enabled "$root" && enabled=1   # SDLC rules below only apply in initialized repos
 
@@ -29,9 +30,6 @@ re_push_main="git push[^;&|]*( |:)(main|master)${E}"
 re_history="git (reset --hard|clean -[a-z]*f|filter-branch|filter-repo)"
 re_bypass="(--no-verify|core\\.hooksPath|SKIP_STOP_VERIFY=1|--dangerously-skip-permissions)"
 re_pipe_sh="(curl|wget)[^|]*\\| ?(sudo )?(ba|z)?sh${E}"
-re_read_env="${S}(cat|less|more|head|tail|bat|grep|rg|ag|awk|gawk|sed|cut|sort|uniq|tr|nl|tac|cp|mv|base64|xxd|od|hexdump|strings|source|\\.) [^|;&]*\\.env(\\.[a-z]+)?${E}"
-re_redirect_env="<[ ]?[^ |;&]*\\.env(\\.[a-z]+)?${E}"
-re_reader="${S}(cat|less|more|head|tail|bat|grep|rg|ag|awk|gawk|sed|cut|sort|uniq|tr|nl|tac|cp|mv|base64|xxd|od|hexdump|strings|source|\\.) "
 re_dump_env="(${S}printenv|${S}env${E}|echo .*\\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD))"
 re_system="${S}(sudo|mkfs|dd if=|chmod -R 777)${E}"
 re_gate="gh (pr merge|pr review [^;&|]*--approve|release delete|repo delete)"
@@ -44,44 +42,10 @@ re_write_op="(>|${S}(sed -i|tee|mv|cp|rm|truncate|perl -pi)${E})"
 [[ "$c" =~ $re_history ]]    && block "history/worktree destruction" "use git revert or git stash; ask the human if history must change."
 [[ "$c" =~ $re_bypass ]]     && block "attempt to bypass hooks or permissions"
 [[ "$c" =~ $re_pipe_sh ]]    && block "piping remote script to shell" "download the script, show it for review, then run it."
-# Secret reads: match on a quote-free copy with the .env templates removed word by word (not the whole command
-# exempted), and treat glob words that would match .env (`.e?v`, `.en*`) as .env.
-u=$(printf '%s' "$u" | sed -E 's/\.env\.(example|sample|template)([^A-Za-z0-9_.]|$)/ \2/g')
-if [[ "$u" =~ $re_read_env || "$u" =~ $re_redirect_env ]]; then
-  block "reading .env secrets" "use .env.example for variable names; never read real secrets."
-fi
-if [[ "$u" =~ $re_reader ]]; then
-  read -ra words <<<"$u"   # split without glob expansion
-  for w in "${words[@]}"; do
-    w=${w#<}
-    # shellcheck disable=SC2053  # unquoted RHS = glob match on purpose
-    if [[ "$w" == *[\*\?\[]* && .env == $w ]]; then
-      block "reading .env secrets (glob '$w')" "use .env.example for variable names; never read real secrets."
-    fi
-  done
-fi
-# Any argument naming secret material (defaults/secret-paths + .aiops/config/secret-paths, also a secret directory),
-# whatever the command: `cat ~/.aws/credentials`, `paste .env`, `grep -r . ~/.ssh`, `cp ~/.ssh/id_ed25519 x`.
-# Words that are themselves glob patterns (`'*.pem'` into .gitignore) and harmless commands (echo, ls, …) are skipped.
-secret_word() {   # secret_word <word>: true if the word names secret material
-  local w=$1 rel
-  w=${w#[<>]}; [[ "$w" == --*=* ]] && w=${w#*=}
-  w=${w/#\~/$HOME}
-  [[ -z "$w" || "$w" == *[\*\?\[]* ]] && return 1
-  rel=$(rel_path "$w" "$root")
-  secret_template "$rel" && return 1
-  config_match "$rel" "$root" secret-paths >/dev/null || config_match "$rel/x" "$root" secret-paths >/dev/null
-}
-while IFS= read -r seg; do
-  read -ra ws <<<"$seg"   # split without glob expansion
-  (( ${#ws[@]} )) || continue
-  case "${ws[0]##*/}" in echo|printf|ls|test|\[|mkdir|which|type|cd|true|false|:) continue ;; esac
-  for w in "${ws[@]:1}"; do
-    if secret_word "$w"; then
-      block "reading secret material ('$w')" "use .env.example / documentation for names; never read real secrets into the session."
-    fi
-  done
-done < <(printf '%s\n' "$u" | tr ';&|' '\n\n\n')
+# Secret reads: every word of every command (substitutions included; heredoc bodies, message values and grep patterns
+# excluded), after ~/$HOME/glob expansion and with `cd` tracked, against defaults/secret-paths + .aiops/config/secret-paths.
+# One python pass (lib/sdlc_engine/secret_scan.py) instead of a subshell per word.
+secret_scan "$input" || exit 2
 [[ "$c" =~ $re_dump_env ]]   && block "dumping environment secrets"
 [[ "$c" =~ $re_system ]]     && block "privileged or dangerous system command"
 (( enabled )) && [[ "$c" =~ $re_gate ]] && block "merging/approving/deleting is a human gate" "a CODEOWNER approves and merges the PR (state 5 is the human's decision); the agent never approves its own work."
