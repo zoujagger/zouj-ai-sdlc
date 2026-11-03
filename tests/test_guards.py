@@ -31,8 +31,15 @@ class EditGuard(RepoCase):
         self.assertEqual(self.edit("src/app.py", "x = 2\n").returncode, 0)
 
     def test_docs_and_outside_paths_stay_writable(self):
-        self.assertEqual(self.edit("NOTES.md", "n").returncode, 0)
+        self.assertEqual(self.edit("docs/notes.md", "n").returncode, 0)
         self.assertEqual(self.hook("pre-edit", self.hook_input("Write", file_path="/tmp/x.py", content="")).returncode, 0)
+
+    def test_policy_files_not_exempt(self):
+        self.write("intent", INTENT)                                   # state 1: read-only
+        for rel in ("CLAUDE.md", "REVIEW.md", "skills/x/SKILL.md", "agents/x.md", "NOTES.md"):
+            self.assertBlocked(self.edit(rel, "x"), "read-only lock")
+        for rel in ("README.md", "sub/README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "docs/x.md"):
+            self.assertEqual(self.edit(rel, "x").returncode, 0, rel)
 
     def test_agent_cannot_approve_by_editing(self):
         self.write("intent", INTENT)
@@ -69,6 +76,13 @@ class EditGuard(RepoCase):
         self.assertBlocked(self.edit(".aiops/0001-csv-export/review.md", "---\nid: 0001\n---\n"),
                            "needs an approved plan.md")
 
+    def test_id_is_immutable(self):
+        self.write("intent", INTENT)
+        self.assertBlocked(self.edit(".aiops/0001-csv-export/intent.md", old="id: 0001", new="id: 0002"), "id")
+        self.write("intent", INTENT)
+        self.approve("intent")
+        self.assertBlocked(self.edit(".aiops/0001-csv-export/spec.md", SPEC.format(id="0009")), "id")
+
     def test_guardrail_config_is_human_owned(self):
         self.assertBlocked(self.edit(".aiops/config/readonly-exempt", "src/*"), "human-owned")
         self.assertBlocked(self.edit(".aiops/state/test-lock", ""), "engine state")
@@ -95,7 +109,7 @@ class BashGuard(RepoCase):
 
     def test_read_only_state_allows_reading_and_running(self):
         for cmd in ("ls -la > /dev/null 2>&1", "grep -rn x src | head", "make test", "git status", "git log -3",
-                    "cat > /tmp/scratch.txt <<'EOF'\nx > src/app.py\nEOF", "echo hi >> NOTES.md",
+                    "cat > /tmp/scratch.txt <<'EOF'\nx > src/app.py\nEOF", "echo hi >> docs/notes.md",
                     "git switch -c feat/0001-csv-export", "sdlc status", "python3 -c 'print(1)'"):
             self.assertFalse(self.blocked(cmd), cmd)
 
@@ -119,6 +133,277 @@ class BashGuard(RepoCase):
                     "sed -i 's/Draft/Approved/' .aiops/0001-csv-export/plan.md",
                     "echo 0001 > .aiops/state/active"):
             self.assertTrue(self.blocked(cmd), cmd)
+
+    def test_heredoc_redirect_after_marker(self):
+        for cmd in ("cat <<EOF > src/app.py\nx = 2\nEOF", "cat <<'EOF' >> src/app.py\nx\nEOF",
+                    "cat <<-EOF > src/x.py\n\tx\n\tEOF", "tee src/a.py <<EOF\nx\nEOF"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("cat <<'EOF' > /tmp/scratch.txt\nx > src/app.py\nEOF", "grep -c x <<< 'a > src/b.py'"):
+            self.assertFalse(self.blocked(cmd), cmd)
+        self.to_execution()
+        for cmd in ("cat <<'EOF' > .aiops/0001-csv-export/intent.md\nstatus: Approved\nEOF",
+                    "cat <<EOF > .aiops/state/active\n0001\nEOF", "cat <<EOF > .aiops/config.json\n{}\nEOF"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        self.assertFalse(self.blocked("cat <<EOF > src/app.py\nx = 2\nEOF"))
+
+    def test_heredoc_marker_in_arithmetic_or_ansi_c(self):
+        for cmd in ("echo $((1<<EOF))\necho 1 > src/app.py", "(( x = 1<<EOF ))\necho 1 > src/app.py",
+                    "echo $'a<<EOF'\necho 1 > src/app.py", "echo $'it\\'s <<EOF'\nrm src/app.py"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        self.to_execution()
+        self.assertTrue(self.blocked("echo $((1<<EOF))\nrm -rf .aiops\nEOF"))
+        for cmd in ("x=$((1<<2))\necho $x", "cat <<EOF > /tmp/x\n$((1<<2))\nEOF\necho ok"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_heredoc_marker_in_quotes_or_comment(self):
+        for cmd in ("echo '<<EOF'\necho 1 > src/app.py", 'echo "x <<EOF"\nrm src/app.py',
+                    "# <<EOF\nrm src/app.py", "echo hi # cat <<EOF\necho 1 > src/app.py"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        self.to_execution()
+        self.assertTrue(self.blocked("echo '<<EOF'\nsed -i s/Draft/Approved/ .aiops/0001-csv-export/intent.md"))
+        self.assertFalse(self.blocked("cat <<'EOF' > src/app.py\n# '<<X' not a marker\nEOF"))
+
+    def test_more_write_forms_while_locked(self):
+        for cmd in ("git commit src/app.py -m x", "git commit -m x -- src/app.py", "git -C src checkout app.py",
+                    "cp -t src README.md", "cp --target-directory=src README.md", "find src -delete",
+                    "find src -name x -exec rm {} +", "awk -i inplace '{print}' src/app.py"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("find src -name '*.py'", "git -C src status", "awk '{print}' src/app.py",
+                    "git commit -m 'msg with src/app.py in it'"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_minor_write_forms(self):
+        for cmd in ("git --work-tree=src checkout app.py", "git --work-tree src checkout app.py",
+                    "curl -o src/x https://example.com", "curl --output src/x https://example.com",
+                    "curl -sSLo src/x https://example.com", "wget -O src/x https://example.com",
+                    "wget --output-document=src/x https://example.com"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("curl -s https://example.com", "curl -o /tmp/x https://example.com", "wget -q -O - https://e.x"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_aiops_tree_is_protected(self):
+        self.write("intent", INTENT)
+        self.assertTrue(self.blocked("rm -r .aiops/0001-csv-export"))           # state 1
+        self.to_execution()
+        for cmd in ("rm -r .aiops", "mv .aiops x", "rm -r .aiops/0001-csv-export", "rmdir .aiops/state",
+                    "cp -r .aiops/0001-csv-export .aiops/0002-copy", "git rm -r .aiops",
+                    "git mv .aiops/0001-csv-export y", "cd .aiops && rm -r 0001-csv-export"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("cat .aiops/0001-csv-export/plan.md", "ls .aiops", "git add .aiops/0001-csv-export/plan.md"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_aiops_tree_is_protected_from_globs_and_find(self):
+        self.to_execution()
+        (self.root / ".aiops" / "state" / "test-lock").write_text("x")
+        (self.root / "evil.patch").write_text("diff --git a/.aiops/0001-csv-export/plan.md b/.aiops/0001-csv-export/plan.md\n"
+                                              "--- a/.aiops/0001-csv-export/plan.md\n+++ b/.aiops/0001-csv-export/plan.md\n")
+        (self.root / "ok.patch").write_text("diff --git a/src/app.py b/src/app.py\n--- a/src/app.py\n+++ b/src/app.py\n")
+        (self.root / "build").mkdir()
+        for cmd in ("rm -rf .ai*", "rm -rf $PWD/.aiops", 'rm -rf "$(pwd)/.aiops"', "rm -rf ${PWD}/.aiops/state",
+                    "cd .aiops && rm -rf *", "find . -name test-lock -delete", "find .aiops -delete",
+                    "find . -path '*/.aiops/*' -exec rm {} +", "find . -delete", "tar -xf x.tar -C .aiops",
+                    "git apply evil.patch", "git am evil.patch"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("find . -name '*.pyc' -delete", "rm -rf build/*", "tar -xf x.tar -C build", "git apply ok.patch",
+                    "ls .ai*", "find .aiops -name '*.md'"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_aiops_integrity_remaining_forms(self):
+        self.to_execution()
+        (self.root / ".aiops" / "state" / "test-lock").write_text("x")
+        (self.root / "tab.patch").write_text("--- a/.aiops/0001-csv-export/plan.md\t2026-01-01 00:00:00\n"
+                                             "+++ b/.aiops/0001-csv-export/plan.md\t2026-01-01 00:00:00\n")
+        (self.root / "p0.patch").write_text("--- .aiops/0001-csv-export/plan.md\n+++ .aiops/0001-csv-export/plan.md\n")
+        (self.root / "rel.patch").write_text("--- a/plan.md\n+++ b/plan.md\n")
+        (self.root / "ok.patch").write_text("--- a/src/app.py\n+++ b/src/app.py\n")
+        (self.root / "build").mkdir()
+        for cmd in ("git apply tab.patch", "git apply -p0 p0.patch", "patch -p0 < p0.patch", "patch -i tab.patch",
+                    "git apply --directory=.aiops/0001-csv-export rel.patch", "patch -d .aiops/0001-csv-export < rel.patch",
+                    "cat ok.patch | git apply", "git apply -", "git am < /dev/stdin", "cat ok.patch | patch -p1",
+                    "tar -C .aiops -xf x.tar", "tar --extract -f x.tar --directory=.aiops/state", "tar xf x.tar -C .aiops",
+                    "cd .aiops && tar -xf /tmp/x.tar", "unzip x.zip -d .aiops", "unzip -o x.zip -d .aiops/state",
+                    "find . -iname TEST-LOCK -delete", "find . -ipath '*/.AIOPS/*' -delete",
+                    "rm -rf {.aiops,x}", "rm -rf .aiops/{state,config}", "d=.aiops; rm -rf $d",
+                    "d=.aiops/state && rm -rf ${d}/test-lock", "export d=.aiops; mv $d /tmp/a"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("git apply ok.patch", "patch -p1 < ok.patch", "git am --abort", "git apply --directory=src rel.patch",
+                    "tar -C build -xf x.tar", "tar -C .aiops -cf /tmp/a.tar .", "tar -tf x.tar", "unzip x.zip -d build",
+                    "find . -iname '*.PYC' -delete", "rm -rf {build,dist}", "d=build; rm -rf $d", "x=1; echo $x"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_review_round3_minor_forms(self):
+        self.to_execution()
+        (self.root / "cq.patch").write_text('--- "a/.aio\\160s/0001-csv-export/plan.md"\n'
+                                            '+++ "b/.aio\\160s/0001-csv-export/plan.md"\n')
+        (self.root / "build").mkdir()
+        for cmd in ("git checkout main -- .github/workflows/aiops-gates.yml", "git restore -s main .claude/settings.json",
+                    "tar -xf x.tar -C.aiops", "git apply cq.patch", "echo x >> /tmp/someone/.ssh/config",
+                    "cp key /tmp/someone/.aws/credentials"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("git checkout HEAD~1 .github", "git config --path core.fsmonitor /tmp/x",
+                    "git config -z core.editor /tmp/x"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("git checkout main -- src/app.py", "git restore src/app.py", "tar -xf x.tar -Cbuild",
+                    "echo x >> /tmp/notes.txt"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_engine_cannot_be_disguised(self):
+        self.to_execution()
+        for cmd in ("env -u CLAUDECODE sdlc approve 0001 plan", "unset CLAUDECODE", "unset FOO CLAUDE_CODE_CHILD_SESSION",
+                    "CLAUDECODE= bin/sdlc approve 0001 plan", "export CLAUDE_CODE_CHILD_SESSION=0",
+                    "env -i PATH=/usr/bin make test", "sdl\\c approve 0001 plan", "\"sdlc\" approve 0001 plan",
+                    "s=sdlc; $s approve 0001 plan", "$(which sdlc) hook prompt < f", "`which sdlc` close 0001",
+                    "sdlc legacy-approvals --write", "python3 -c 'import sdlc_engine'"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("sdlc status", "sdlc validate --all", "git log --grep approve", "cat lib/sdlc_engine/guards.py",
+                    "echo $HOME", "make test"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_shell_writes_respect_protected_paths(self):
+        self.to_execution()
+        wf = self.root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "aiops-gates.yml").write_text("run: sdlc validate --all --ci\n")
+        for cmd in ("sed -i s/validate/status/ .github/workflows/aiops-gates.yml", "cp x .claude/settings.json",
+                    "echo {} > package-lock.json", "rm .github/workflows/deploy.yml", "echo X=1 > .env",
+                    "tee secrets/token < /dev/null"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        self.assertFalse(self.blocked("echo x > src/app.py"))
+
+    def test_signing_toolchain_is_guarded(self):
+        from helpers import ROOT
+        self.to_execution()
+        engine = ROOT / "lib" / "sdlc_engine" / "approvals.py"            # the installed plugin's code
+        for cmd in ("git config gpg.ssh.program /tmp/s", "git config --local user.signingkey /tmp/k.pub",
+                    "git config --global gpg.format openpgp", "git config core.hooksPath /tmp/h",
+                    "git config --replace-all gpg.ssh.allowedSignersFile x", "cp /tmp/h .git/hooks/post-commit",
+                    "echo x >> .git/config", f"sed -i s/G/U/ {engine}", f"cp /tmp/x {ROOT}/hooks/guard-bash.sh",
+                    "git config core.fsmonitor /tmp/x.sh", "git config core.attributesFile /tmp/a",
+                    "git config filter.x.clean /tmp/x.sh", "git config include.path /tmp/inc",
+                    "git config includeIf.gitdir:/x.path /tmp/inc", "git config set gpg.ssh.program /tmp/s",
+                    "git config --file .git/config user.name x", "git config -f .git/config core.hooksPath /tmp/h",
+                    "git config --type bool core.fsmonitor true", "git config -e", "git config edit"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("git config user.name", "git config --get gpg.format", "git config --list", "cat .git/config",
+                    "git config user.email me@example.com", "git config get core.fsmonitor",
+                    "git config -f /tmp/x.cfg a.b c", "git config --type bool --get core.filemode"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_engine_cannot_be_disguised_further(self):
+        self.to_execution()
+        for cmd in ("export -n CLAUDECODE CLAUDE_CODE_CHILD_SESSION; f(){ sdlc \"$@\"; }; f approve 0001 intent",
+                    "export -n CLAUDECODE", "declare +x CLAUDECODE", "typeset +x CLAUDE_CODE_CHILD_SESSION",
+                    "env - PATH=/usr/bin make test", "function g { sdlc \"$@\"; }; g approve 0001 plan",
+                    "alias s=sdlc", "sdlc $(echo approve) 0001 intent", "x=approve; sdlc $x 0001 intent",
+                    "sdlc ${X:-approve} 0001 intent", "${s}lc approve 0001 intent",
+                    "echo approve 0001 intent | xargs sdlc", "cp bin/sdlc /tmp/s", "cp -r lib/sdlc_engine /tmp/e",
+                    "cat bin/sdlc > /tmp/s", "git commit -m \"$(printf 'AIOps-%s: plan 0001' Approval)\"",
+                    "git commit -m 'AIOps-Appro''val: plan 0001'"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("sdlc status 0001", "sdlc new my-thing", "cat bin/sdlc", "f(){ echo hi; }; f",
+                    "x=1; echo $x", "export PATH=$PATH:/opt/bin"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_no_false_positives(self):
+        self.to_execution()
+        for cmd in ("echo $HOME close the door", '[ "$CLAUDECODE" = 1 ] && echo inside',
+                    "git commit -m 'Close: AIOps-x Approval flow'", "echo $(date) approve later",
+                    "test $CLAUDE_CODE_CHILD_SESSION = 1", "git log --grep AIOps-Approval"):
+            self.assertFalse(self.blocked(cmd), cmd)
+        for cmd in ("s=sdlc; $s approve 0001 plan", "x=1 && ${s}lc close 0001", "sudo $s approve 0001 plan",
+                    "echo $($s approve 0001 plan)", "CLAUDECODE= make test", "git commit -m 'AIOps-Approval : x'",
+                    "git commit -m \"$(printf 'AIOps-%s: plan 0001' Approval)\""):
+            self.assertTrue(self.blocked(cmd), cmd)
+
+    def test_wrapped_engine_calls(self):
+        self.to_execution()
+        for cmd in ('eval "$s approve 0001 plan"', 'bash -c "$s approve 0001 plan"',
+                    'sh -c "$(which sdlc) approve 0001 plan"', "nice $s approve 0001 plan",
+                    "nice -n 5 $s approve 0001 plan", "timeout 5 $s approve 0001 plan",
+                    "xargs -I{} $s approve 0001 plan", "! $s approve 0001 plan", "{ $s approve 0001 plan; }",
+                    "env -u FOO $s approve 0001 plan", 'a=CLAUDE; eval "unset ${a}CODE ${a}_CODE_CHILD_SESSION"',
+                    "export -n ${a}CODE", "env -u ${a}CODE make test", 'm=AIOps-Approval; git commit -m "$m: plan"'):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("echo $HOME close the door", "nice make test", "timeout 5 make check",
+                    "export PATH=$PATH:/opt/bin", "unset FOO"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_engine_call_forms_round4(self):
+        self.to_execution()
+        for cmd in ("unset CLAUDE{CODE,_CODE_CHILD_SESSION}", "unset CLAUDE*", "export -n CLAUDE{CODE,}",
+                    "env -u CLAUDE{CODE,} make test", "exec -c bash",
+                    "eval \"$(printf 'unset CLAUDE%s CLAUDE_%s_CHILD_SESSION' CODE CODE)\"",
+                    "s=sdlc; while $s approve 0001 plan; do break; done", "until $s approve 0001 plan; do :; done",
+                    "coproc $s approve 0001 plan", "case x in x) $s approve 0001 plan;; esac",
+                    "trap '$s approve 0001 plan' EXIT", "/bin/bash -c '$s approve 0001 plan'",
+                    "busybox sh -c '$s approve 0001 plan'", "script -qc '$s approve 0001 plan' /dev/null",
+                    "echo '$s approve 0001 plan' | bash", "source <(echo $s approve 0001 plan)",
+                    "x=approve; $s $x 0001 plan", 'FOO="a b" $s approve 0001 plan', "bin/sdl? approve 0001 plan",
+                    "bin/sdl[c] approve 0001 plan", "bin/sdl{c,} approve 0001 plan",
+                    "python3 bin/sdl? approve 0001 plan"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ('git push -u origin "$(git branch --show-current)"', "git push -u origin $BRANCH", "sort -u $f",
+                    "docker run -u $(id -u) img", "ps -u $USER", "python3 -u script.py $ARG",
+                    "curl -u $USER:$TOKEN https://example.com", "declare -r X=$Y", "unset arr[$i]",
+                    "sh scripts/x.sh $X hook", 'm=AIOps-x; echo "Approval"', "while true; do make test; break; done",
+                    'for f in *.py; do echo "$f"; done', "$EDITOR notes.md"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_review_round5_forms(self):
+        from helpers import ROOT
+        self.to_execution()
+        for cmd in ('$GIT commit -m "fix: close the file handle"', '"$VENV/bin/pytest" -k "hook or approve"',
+                    "$PYTHON -m pytest -k hook", "$PYTHON manage.py approve 12", "npx tsc && $NODE dist/cli.js close",
+                    "$(npm bin)/eslint --rule hook src", "git checkout -- .",
+                    "git restore ."):
+            self.assertFalse(self.blocked(cmd), cmd)
+        # `timeout 30 $TEST_CMD close` has the exact shape of `timeout 5 $s approve`: blocked on purpose
+        for cmd in ("timeout 30 $TEST_CMD close", "x=approve; $s $x 0001 plan", "s=sdlc; $s approve 0001 plan",
+                    "git checkout HEAD~1 -- .",
+                    "git restore --source=HEAD~1 .", "git checkout HEAD~1 -- ':/'", "git checkout HEAD~1 -- '*.yml'",
+                    "git restore -s main ':(glob)**'", "cp /tmp/evil ~/.local/bin/python3", "echo x >> ~/.profile",
+                    "echo x >> ~/.bashrc", "printf '[gpg]' >> ~/.config/git/config", "echo x >> ~/.gitconfig"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        # pre-edit refuses the installed plugin even when the plugin isn't the project
+        import shutil
+        import tempfile
+        other = tempfile.mkdtemp(dir=self.root.parent)
+        try:
+            shutil.copytree(self.root, other, dirs_exist_ok=True)
+            payload = self.hook_input("Write", file_path=str(ROOT / "lib" / "sdlc_engine" / "approvals.py"), content="x")
+            payload["cwd"] = other
+            r = self.hook("pre-edit", payload, env={"CLAUDE_PROJECT_DIR": other})
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertIn("installed plugin", r.stderr)
+        finally:
+            shutil.rmtree(other)
+
+    def test_review_round6_forms(self):
+        import os
+        self.to_execution()
+        for cmd in ("cp /tmp/python3 ~/.local/bin/", "cp -t ~/.local/bin /tmp/python3", "mv /tmp/x ~/.local/bin",
+                    "rsync /tmp/x ~/.local/bin/", "mv /tmp/x ~/bin", "cp x ~/.config/fish",
+                    "echo x >> ~/.bash_aliases", "git checkout HEAD~1 .", 'sh "$(command -v sdlc)" approve 1 intent',
+                    'set -- approve 0002 intent; $s "$@"', "$s ${a:-approve} 0001 plan"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        # any user-writable directory on PATH outside the repo is part of the toolchain
+        pathdir = self.root.parent / f"{self.root.name}.pathbin"
+        pathdir.mkdir()
+        saved = self.env["PATH"]
+        self.env["PATH"] = f"{pathdir}{os.pathsep}{saved}"          # the hook subprocess sees this PATH
+        try:
+            self.assertTrue(self.blocked(f"cp /tmp/x {pathdir}/git"))
+            link = self.root.parent / f"{self.root.name}.link"
+            link.symlink_to(pathdir)
+            self.assertTrue(self.blocked(f"cp /tmp/x {link}/python3"))
+        finally:
+            self.env["PATH"] = saved
+        for cmd in ("cp /tmp/x $HOME/.local/bin/git", 'cp /tmp/x "$HOME"/.local/bin/git', "echo x >> $HOME/.bashrc",
+                    "echo '[core]' >> ${HOME}/.gitconfig", "sed -i s/a/b/ ~/.bashrc", "sed -i s/a/b/ $HOME/.bashrc"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("cp x /tmp/y", "git checkout -- .", "git restore .", "git checkout feat/x", "mkdir -p build/bin",
+                    "echo x > $HOME_DIR_NAME.txt"):
+            self.assertFalse(self.blocked(cmd), cmd)
 
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)

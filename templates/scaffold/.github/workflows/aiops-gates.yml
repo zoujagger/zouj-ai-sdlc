@@ -1,5 +1,6 @@
-# Gate audit: every open gate in .aiops/ must come from a human approval commit (AIOps-Approval trailer,
-# not co-authored by Claude), approvals must not be stale, and artifacts must validate. Make this a required check.
+# Gate audit: every open gate in .aiops/ must come from a single-file approval commit signed by a key in the
+# target branch's .aiops/config/allowed-signers (or listed in legacy-approvals), approvals must not be stale,
+# and artifacts must validate. Make this a required check.
 name: aiops-gates
 
 on:
@@ -15,12 +16,23 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ZOUJ_SDLC_REPO: https://github.com/zoujagger/zouj-ai-sdlc.git
-      ZOUJ_SDLC_REF: v0.1.0        # pin a release tag (or a full commit sha); bump deliberately
+      ZOUJ_SDLC_REF: __ZOUJ_SDLC_REF__   # set by `sdlc init`; prefer a full commit sha, bump deliberately
+      # Trust anchor: signers, legacy list and config come from the target branch, never from the change itself.
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Fetch the zouj-ai-sdlc engine
-        run: git clone --depth 1 --branch "$ZOUJ_SDLC_REF" "$ZOUJ_SDLC_REPO" "$RUNNER_TEMP/zouj-ai-sdlc"
+        run: |
+          git init -q "$RUNNER_TEMP/zouj-ai-sdlc"
+          git -C "$RUNNER_TEMP/zouj-ai-sdlc" fetch -q --depth 1 "$ZOUJ_SDLC_REPO" "$ZOUJ_SDLC_REF"
+          git -C "$RUNNER_TEMP/zouj-ai-sdlc" checkout -q FETCH_HEAD
+      - name: Verify the trust anchor
+        run: |
+          if [ -z "$BASE_SHA" ] || ! git rev-parse -q --verify "${BASE_SHA}^{commit}" >/dev/null; then
+            echo "::error::base commit '${BASE_SHA}' does not resolve; refusing to audit against the change itself"
+            exit 1
+          fi
       - name: Validate artifacts and audit approvals
-        run: python3 "$RUNNER_TEMP/zouj-ai-sdlc/bin/sdlc" validate --all --ci
+        run: python3 "$RUNNER_TEMP/zouj-ai-sdlc/bin/sdlc" validate --all --ci --base "$BASE_SHA"

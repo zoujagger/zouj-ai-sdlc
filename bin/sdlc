@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
-"""zouj-ai-sdlc state engine CLI. On PATH while the plugin is enabled; hooks call it via ${CLAUDE_PLUGIN_ROOT}."""
+#!/bin/sh
+"exec" "python3" "-I" "$0" "$@"   # sh runs this line; for python it is a no-op string
+# zouj-ai-sdlc state engine CLI. On PATH while the plugin is enabled; hooks call it via ${CLAUDE_PLUGIN_ROOT}.
 import os
 import sys
 

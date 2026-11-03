@@ -1,11 +1,6 @@
-# Paths agents may not edit, in every state (bash glob syntax, relative to the repo root).
+# Paths agents may not edit in initialized repos, in every state (bash glob syntax, relative to the repo root).
+# Secret material lives in defaults/secret-paths, which applies in every repo.
 # Format: <glob> <reason...>. Extend per repo in .aiops/config/protected-paths. Read by hooks/guard-files.sh.
-.env* secrets/env files
-*/.env* secrets/env files
-secrets/* secret material
-*.pem secret material
-*.key secret material
-*id_rsa* secret material
 .git/* git internals
 package-lock.json lockfiles are changed by the package manager, not by hand
 yarn.lock lockfiles are changed by the package manager, not by hand

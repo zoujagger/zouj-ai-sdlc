@@ -1,0 +1,18 @@
+# What runs inside the human's approval, outside any repo: never written by agents (shell or Edit/Write), in every
+# repo where the plugin is installed (bash glob syntax; `*` crosses `/`). ~/bin is also covered. Read by
+# hooks/guard-files.sh and lib/sdlc_engine/guards.py.
+*/.gitconfig git global config
+*/.config/git/* git global config
+*/.bashrc shell startup
+*/.bash_aliases shell startup (sourced by .bashrc)
+*/.bash_logout shell startup
+*/.bash_profile shell startup
+*/.bash_login shell startup
+*/.profile shell startup
+*/.zshrc shell startup
+*/.zshenv shell startup
+*/.zprofile shell startup
+*/.config/fish/* shell startup
+*/.local/bin/* user PATH
+*/.claude/plugins/* installed plugins
+*/.claude/settings.json Claude Code settings

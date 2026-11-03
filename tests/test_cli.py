@@ -29,11 +29,104 @@ class Init(RepoCase):
         self.assertIn("wired format, lint, typecheck, test, build", r.stdout)
         self.assertIn("pytest -q", (self.root / "Makefile").read_text())
 
+    def test_scaffold_pins_and_protects(self):
+        from helpers import ROOT
+        version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        settings = json.loads((self.root / ".claude" / "settings.json").read_text())
+        self.assertIn("Read(./.env)", settings["permissions"]["deny"])
+        self.assertIn("Read(./**/*.pem)", settings["permissions"]["deny"])
+        gates = (self.root / ".github" / "workflows" / "aiops-gates.yml").read_text()
+        self.assertIn(f"ZOUJ_SDLC_REF: v{version}", gates)
+        self.assertIn("--base", gates)
+        for wf in sorted((self.root / ".github" / "workflows").glob("claude*.yml")):
+            text = wf.read_text()
+            self.assertIn(f"ZOUJ_SDLC_REF: v{version}", text, wf.name)
+            self.assertIn("--plugin-dir", text, wf.name)
+            self.assertNotIn("plugin_marketplaces", text, wf.name)
+        leftovers = [p for p in self.root.rglob("*") if p.is_file() and ".git/" not in str(p)
+                     and "__ZOUJ_SDLC_REF__" in p.read_text(errors="replace")]
+        self.assertEqual(leftovers, [])
+        cfg = json.loads((self.root / ".aiops" / "config.json").read_text())
+        self.assertIs(cfg["require_signed_approvals"], True)
+        for name in ("allowed-signers", "legacy-approvals"):
+            self.assertTrue((self.root / ".aiops" / "config" / name).is_file(), name)
+        owners = (self.root / ".github" / "CODEOWNERS").read_text()
+        self.assertRegex(owners, r"/\.aiops/config\.json\s+@your-org/maintainers")
+        self.assertRegex(owners, r"(?m)^/\.github/\s+@")
+        self.assertRegex(owners, r"(?m)^/\.claude/\s+@")
+
     def test_unknown_stack_fails(self):
         self.assertEqual(self.run_sdlc("init", "--stack", "cobol").returncode, 1)
 
+    def test_scaffold_gate_verifies_base(self):
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        gates = (self.root / ".github" / "workflows" / "aiops-gates.yml").read_text()
+        self.assertIn('git rev-parse -q --verify "${BASE_SHA}^{commit}"', gates)
+        self.assertIn("exit 1", gates)
+
 
 class Lifecycle(RepoCase):
+    def test_prompt_approval_explains_terminal_fallback(self):
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        self.write("intent", INTENT)
+        payload = json.dumps({"prompt": "Intent Approved 0001", "cwd": str(self.root),
+                              "hook_event_name": "UserPromptSubmit"})
+        r = self.run_sdlc("hook", "prompt", stdin=payload, env={"CLAUDECODE": "1"})
+        ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("NOT opened", ctx)
+        self.assertIn("/bin/sdlc approve 0001 intent`", ctx)      # the exact command for the human's terminal
+
+    def test_validate_rejects_empty_base(self):
+        self.write("intent", INTENT)
+        for args in (["--base", ""], ["--base"]):
+            r = self.run_sdlc("validate", "--all", "--ci", *args)
+            self.assertEqual(r.returncode, 1, (args, r.stdout, r.stderr))
+            self.assertIn("--base", r.stdout + r.stderr)
+
+    def test_legacy_approvals_is_human_only(self):
+        from helpers import git
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text('{"require_signed_approvals": false}')
+        self.write("intent", INTENT)
+        self.approve("intent")                               # unsigned, before signing is introduced
+        sha = git(self.root, "log", "-1", "--format=%H")
+        git(self.root, "add", ".aiops/config/allowed-signers")
+        git(self.root, "commit", "-qm", "signers")
+        git(self.root, "branch", "base")                     # base: has a signer list, no legacy list
+        git(self.root, "branch", "-f", "main", "HEAD")
+        cfg.write_text('{"require_signed_approvals": true}')
+        self.assertEqual(self.run_sdlc("validate", "--all", "--ci").returncode, 1)
+        self.assertEqual(self.run_sdlc("legacy-approvals", "--write", "--yes", env={"CLAUDECODE": "1"}).returncode, 1)
+        r = self.run_sdlc("legacy-approvals", "--write", "--yes")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(sha, (self.root / ".aiops" / "config" / "legacy-approvals").read_text())
+        self.assertEqual(self.run_sdlc("validate", "--all", "--ci").returncode, 0)
+        r = self.run_sdlc("validate", "--all", "--ci", "--base", "base")
+        self.assertEqual(r.returncode, 1, r.stdout)          # the base has no legacy list yet
+
+    def test_doctor_checks_signing(self):
+        from helpers import git
+        out = self.run_sdlc("doctor").stdout
+        self.assertIn("✓ approval signing configured (ssh)", out)
+        self.assertIn("✓ signing key is in .aiops/config/allowed-signers", out)
+        self.assertIn("! signing key has no passphrase", out)        # policy "any" (fixtures): warn, don't fail
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        r = self.run_sdlc("doctor")                                   # the default policy: the same key fails
+        self.assertIn("✗ approval signing: the signing key has no passphrase", r.stdout)
+        self.assertEqual(r.returncode, 1)
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
+        for key, value in (("gpg.format", "openpgp"), ("core.fsmonitor", "/tmp/x.sh")):   # repo-local overrides
+            git(self.root, "config", "--local", key, value)
+            r = self.run_sdlc("doctor")
+            self.assertIn(f"✗ approval signing: repo-local git config sets {key}", r.stdout)
+            self.assertEqual(r.returncode, 1)
+            git(self.root, "config", "--local", "--unset", key)
+        git(self.root, "config", "--global", "--unset", "user.signingkey")
+        r = self.run_sdlc("doctor")
+        self.assertIn("✗ approval signing", r.stdout)
+        self.assertEqual(r.returncode, 1)
+
     def test_new_draft_status_validate(self):
         shutil.rmtree(self.d)
         r = self.run_sdlc("new", "csv-export", "--title", "CSV export")

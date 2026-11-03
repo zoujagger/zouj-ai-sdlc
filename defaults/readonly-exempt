@@ -1,5 +1,10 @@
 # Paths writable in the read-only states (1 BRAINSTORMING, 2 SPECIFICATION, 3 PLAN) and with no active intent.
 # Bash glob syntax (`*` crosses `/`), relative to the repo root. Extend per repo in .aiops/config/readonly-exempt.
-# .aiops/ is always governed by the artifact rules instead.
-*.md docs and notes (not application code)
+# .aiops/ is always governed by the artifact rules instead. Policy and behaviour files (CLAUDE.md, REVIEW.md,
+# skills/, agents/) are deliberately NOT exempt: they change how agents work and go through the lifecycle.
 docs/* documentation
+README.md project readme
+*/README.md folder readmes
+CHANGELOG.md release notes
+CONTRIBUTING.md contributor guide
+SECURITY.md security policy

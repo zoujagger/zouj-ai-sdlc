@@ -8,14 +8,16 @@ root=${CLAUDE_PROJECT_DIR:-$PWD}
 plugin=${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 input=$(cat)
 
-if [[ ! -d "$root/.aiops" ]]; then
+# Initialized = .aiops/ on disk or tracked in git (deleting the folder must not switch the gates off).
+if [[ ! -d "$root/.aiops" ]] && [[ -z "$(git -C "$root" ls-files -- .aiops 2>/dev/null | head -n1)" ]]; then
   # session-start still announces the plugin so people know how to switch it on.
   [[ "$event" == session-start ]] && echo "zouj-ai-sdlc is installed but this repo is not initialized (no .aiops/), so its gates are off here. To use the AI-native SDLC workflow: /zouj-ai-sdlc:init"
   exit 0
 fi
 
 errf=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/zouj-ai-sdlc-hook.$$")
-out=$(printf '%s' "$input" | python3 "$plugin/bin/sdlc" hook "$event" 2>"$errf")
+py=/usr/bin/python3; [[ -x "$py" ]] || py=python3   # not the first python3 on PATH, which an agent could plant
+out=$(printf '%s' "$input" | "$py" -I "$plugin/bin/sdlc" hook "$event" 2>"$errf")   # -I: no cwd/PYTHONPATH/user site
 rc=$?
 err=$(cat "$errf" 2>/dev/null); rm -f "$errf"
 [[ -n "$out" ]] && printf '%s\n' "$out"

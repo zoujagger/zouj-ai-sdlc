@@ -47,9 +47,13 @@ approved-at: 2026-10-30T14:02:11Z
 approved-via: prompt                           # prompt (UserPromptSubmit) | cli (sdlc approve in a terminal)
 approved-sha256: 3f1c…                         # body hash at approval time
 ```
-With `commit_approvals: true`, the file is committed **alone** as `chore(aiops): Plan Approved NNNN`, with the
-trailer `AIOps-Approval: plan NNNN sha256=…`. `sdlc validate --ci` traces each open gate to that commit and fails if
-it's missing or co-authored by Claude.
+The file is committed **alone**, **SSH-signed** (`git commit -S`), as `chore(aiops): Plan Approved NNNN` with the
+trailer `AIOps-Approval: plan NNNN sha256=…`. `sdlc validate --ci --base <target>` traces each open gate to that commit.
+It fails if the commit is missing, touches other files, has a mismatched digest, is co-authored by Claude, or isn't
+signed by a key in the **target branch's** `.aiops/config/allowed-signers`. The only exception is a commit listed in
+its `legacy-approvals`.
+A gate is open only if the front-matter `id` equals the folder id. Moving an approved artifact back to `Draft` is
+allowed: an agent can always close a gate, never open one.
 
 ## Schemas
 `schemas/{intent,spec,plan,review}.json` define the required front matter, statuses, required `##` sections,

@@ -5,8 +5,7 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 
-input=$(cat)
-aiops_enabled "${CLAUDE_PROJECT_DIR:-$PWD}" || exit 0
+input=$(cat)   # the production gate applies in every repo, initialized or not
 tool=$(json_get tool_name <<<"$input") || fail_closed guard-deploy
 
 block() {
@@ -22,7 +21,7 @@ block() {
 P='(prod|production|prd|live)([^a-z]|$)'
 
 if [[ "$tool" == "Bash" ]]; then
-  c=$(json_get tool_input.command <<<"$input" | tr -s '[:space:]' ' ')
+  c=$(json_get tool_input.command <<<"$input" | tr -s '[:space:]' ' ' | tr -d "\"'\\\\")   # quotes out: ENV="prod"
   re_make="make [^;&|]*(deploy|rollback|release|promote)[^;&|]*ENV=${P}"
   re_wf="gh workflow run [^;&|]*deploy[^;&|]*(environment|env)=${P}"
   re_tools="(kubectl|helm|terraform|pulumi|serverless|vercel|flyctl|fly|gcloud|aws|az|eb|cdk)[^;&|]*(apply|deploy|up|upgrade|install|--prod)[^;&|]*${P}"

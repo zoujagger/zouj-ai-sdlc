@@ -60,8 +60,20 @@ glob_match() {
 # Plugin root (hooks run with CLAUDE_PLUGIN_ROOT set; fall back to this file's location for tests).
 PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 
-# aiops_enabled <root>: the plugin's hooks only act in repos initialized with `sdlc init` (.aiops/ exists).
-aiops_enabled() { [[ -d "$1/.aiops" ]]; }
+# aiops_enabled <root>: the SDLC rules act only in repos initialized with `sdlc init`: .aiops/ on disk, or tracked in
+# git (so deleting the folder can't switch them off). Safety rules (secrets, force-push, prod deploy) never check this.
+aiops_enabled() {
+  [[ -d "$1/.aiops" ]] || [[ -n "$(git -C "$1" ls-files -- .aiops 2>/dev/null | head -n1)" ]]
+}
+
+# secret_template <rel>: .env.example / .sample / .template are documentation, not secrets.
+secret_template() {
+  case "$1" in
+    .env.example|*/.env.example|.env.sample|*/.env.sample|.env.template|*/.env.template) return 0 ;;
+    *.pub) return 0 ;;   # public keys are not secret
+  esac
+  return 1
+}
 
 # config_match <rel-path> <root> <name>: glob_match against the plugin default list and .aiops/config/<name>.
 config_match() {
@@ -76,4 +88,19 @@ is_test_path() {
   local rel
   rel=$(rel_path "$1" "$2")
   config_match "$rel" "$2" test-paths >/dev/null
+}
+
+# secret_scan <hook-json>: the shell/search secret-read scan (lib/sdlc_engine/secret_scan.py). Returns 0 (allow) or
+# 1 after printing the block to stderr; fails closed if python3 can't run it. -I: no cwd, PYTHONPATH or user site.
+secret_scan() {
+  local rc=0
+  local py=/usr/bin/python3; [[ -x "$py" ]] || py=python3   # not the first python3 on PATH
+  printf '%s' "$1" | "$py" -I -c 'import sys; sys.path.insert(0, sys.argv[1])
+from sdlc_engine.secret_scan import main; sys.exit(main())' "$PLUGIN_ROOT/lib" || rc=$?
+  case $rc in
+    0) return 0 ;;
+    2) return 1 ;;
+    *) echo "BLOCKED: the secret-read scan failed to run (exit $rc), so it fails closed. python3 >= 3.9 is required." >&2
+       return 1 ;;
+  esac
 }

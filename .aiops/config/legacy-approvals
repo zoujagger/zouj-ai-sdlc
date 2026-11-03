@@ -1,0 +1,7 @@
+# Unsigned approval commits accepted by the audit (human-owned, append-only).
+0ae7bae6f5d76253194eeec6346ef5f48c0fc3ee  # 0001-zouj-ai-sdlc-plugin/intent.md
+b013108c08bb7a9c045230bd86a3c8ba60d471d9  # 0001-zouj-ai-sdlc-plugin/spec.md
+a09f5b1845fddcfc5498c4bbf04e4ec7efce26f5  # 0001-zouj-ai-sdlc-plugin/plan.md
+556832b4dadbaf39fe14f57a6ed8caa99da59213  # 0002-hardening/intent.md
+759ba2ea569dfbd65f4a806e86024edb2228a495  # 0002-hardening/spec.md
+798fa54babd18fcbf2d8ba3c677220b908168c09  # 0002-hardening/plan.md

@@ -26,12 +26,16 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           REF_NAME: ${{ github.ref_name }}
         run: echo "version=${INPUT_VERSION:-$REF_NAME}" >> "$GITHUB_OUTPUT"
+      - name: Fetch zouj-ai-sdlc (pinned)
+        env:
+          ZOUJ_SDLC_REF: __ZOUJ_SDLC_REF__   # set by `sdlc init`; prefer a full commit sha, bump deliberately
+        run: |
+          git init -q "$RUNNER_TEMP/zouj-ai-sdlc"
+          git -C "$RUNNER_TEMP/zouj-ai-sdlc" fetch -q --depth 1 https://github.com/zoujagger/zouj-ai-sdlc.git "$ZOUJ_SDLC_REF"
+          git -C "$RUNNER_TEMP/zouj-ai-sdlc" checkout -q FETCH_HEAD
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Load zouj-ai-sdlc (agents, skills, guards) in CI. Check the input names against the claude-code-action docs.
-          plugin_marketplaces: https://github.com/zoujagger/zouj-ai-sdlc.git
-          plugins: zouj-ai-sdlc@zouj
           prompt: |
             REPO: ${{ github.repository }}
             VERSION: ${{ steps.v.outputs.version }}
@@ -42,6 +46,7 @@ jobs:
             `gh release create <VERSION> --draft --title <VERSION> --notes-file release-notes.md`
             (if the tag doesn't exist yet, add `--target ${{ github.sha }}`). Never publish a non-draft release.
           claude_args: |
+            --plugin-dir "${{ runner.temp }}/zouj-ai-sdlc"
             --allowedTools "Bash(git log*),Bash(git describe*),Bash(git tag --list*),Bash(gh release create:*),Bash(gh release view:*),Read,Write,Grep,Glob"
         env:
           GH_TOKEN: ${{ github.token }}

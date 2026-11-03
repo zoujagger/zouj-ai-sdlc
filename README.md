@@ -1,5 +1,8 @@
 # zouj-ai-sdlc
 
+> **Status: alpha (0.2.0-alpha.1), experimental.** Gates and guards may change between alphas; don't rely on it
+> for production governance yet. Feedback welcome.
+
 A [Claude Code](https://code.claude.com) plugin that runs your software lifecycle as a **state machine over Markdown
 artifacts versioned in Git**. It's inspired by [Superpowers](https://github.com/obra/superpowers) (a bootstrap skill,
 trigger-style skills, red-flag tables, subagent-driven execution) and strictly modeled on Anthropic's *AI-Native SDLC
@@ -20,7 +23,7 @@ gate**. Here those gates are enforced by hooks instead of being left to the mode
 Or in one step (Claude Code 2.1.275+): `/plugin install zouj-ai-sdlc --marketplace zoujagger/zouj-ai-sdlc`.
 Then, in each repo that should follow the workflow: `/zouj-ai-sdlc:init` (or `sdlc init --stack python|node|go`).
 
-The plugin is **dormant in repos without `.aiops/`**: no hook blocks anything until you run init.
+Without `.aiops/` the plugin's **SDLC gates are dormant** until you run init. Its safety guards (secret reads and writes, force-push, history rewrites, production deploys, edits to the installed plugin) are on in every repo.
 Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only). `gh` and `jq` are optional.
 
 ## How it works
@@ -38,15 +41,17 @@ The state is **derived** from the artifacts and git, never stored.
 ## What is enforced (and how)
 | Rule | Mechanism |
 |---|---|
-| Only a human opens a gate | A `UserPromptSubmit` hook accepts the phrase only as the *whole* prompt. It stamps `approved-by/at/via/sha256` and commits the file alone with an `AIOps-Approval:` trailer. Edits to `status`/`approved-*`, `sdlc approve`, and forged trailers are blocked |
+| Only a human opens a gate | A `UserPromptSubmit` hook accepts the phrase only as the *whole* prompt. It stamps `approved-by/at/via/sha256` and commits the file alone, **SSH-signed**, with an `AIOps-Approval:` trailer. Edits to `status`/`approved-*`/`id`, disguised `sdlc approve` calls, env-marker tampering and forged trailers are blocked |
 | States 1-3 are read-only | `sdlc hook pre-edit` and `pre-bash` block writes outside `.aiops/` and docs: Edit/Write, redirects, `sed -i`, `cp/mv/rm`, package installs, formatters, `git add/commit/apply/stash` of code |
 | Artifacts in order | `spec.md` needs an approved intent, `plan.md` an approved spec, `review.md` an approved plan. New artifacts start as Draft |
 | Approvals can't silently drift | Editing an approved body re-closes its gate. Plans keep their approval when steps are ticked and the Deviation log grows |
 | Schema-valid artifacts | `schemas/*.json`: required front matter and sections, AC ids, every AC covered by the plan and the review. Checked after each edit and before each approval |
 | Definition of done | The Stop hook requires `make check` green. A PASS review goes stale if code changes after it |
 | Human-only final gate | Merging on main, `gh pr merge`/approve, pushing to main, and production deploys are blocked |
-| CI audit | `aiops-gates.yml` runs `sdlc validate --all --ci`: every open gate must trace to a non-agent approval commit |
-| Existing safety guards | secrets, `.env`, force-push, history rewrites, protected paths, the `/fix` test lock |
+| CI audit | `aiops-gates.yml` runs `sdlc validate --all --ci --base <target>`: every open gate must trace to a single-file approval commit signed by a key in the **target branch's** `allowed-signers` (or listed in its `legacy-approvals`) |
+| `.aiops/` integrity | `.aiops`, intent folders and their files can't be deleted, moved or overwritten from the shell; a git-tracked `.aiops/` counts as initialized |
+| Always-on safety | in **every** repo: secret reads and writes (Read/Grep/Glob and shell), credentials, force-push, history rewrites, production deploys |
+| SDLC-only guards | after `sdlc init`: protected paths, push-to-main, the merge gate, the `/fix` test lock, `make check` |
 
 Local hooks are a strong deterrent, not a sandbox. The CI audit plus CODEOWNERS on `.aiops/` are the backstop
 ([docs/architecture.md](docs/architecture.md#threat-model)).
@@ -62,11 +67,33 @@ Local hooks are a strong deterrent, not a sandbox. The CI audit plus CODEOWNERS 
 | Tests / evals | `tests/`, `evals/` | deterministic guard tests (`make test`) · behavioural evals (`make evals`, the `claude plugin eval` format) |
 
 ## Configuration (per repo, human-owned)
-- `.aiops/config.json`: `lock_when_idle` (code is read-only with no active intent, default true), `commit_approvals`, `main_branch`.
-- `.aiops/config/{readonly-exempt,protected-paths,test-paths}` extend the plugin's `defaults/`.
+- `.aiops/config.json`: `lock_when_idle` (default true), `commit_approvals`, `main_branch`, `require_signed_approvals` (default **true**).
+- `.aiops/config/allowed-signers` (keys allowed to approve) and `legacy-approvals` (pre-signing approvals the audit still accepts).
+- `.aiops/config/{readonly-exempt,protected-paths,secret-paths,test-paths}` extend the plugin's `defaults/`.
 - `SDLC_HOOK_PROFILE=spike` lifts the read-only lock and `make check` for throwaway exploration. The approval and merge gates still hold.
 - The active intent comes from the branch (`feat/NNNN-*`), else `sdlc use NNNN`, else `$AIOPS_INTENT`.
 - Unattended state 4: plugins can't grant permissions, so add the allow-rules from `.aiops/README.md` to `.claude/settings.json`.
+
+## Approver setup (signed approvals)
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/aiops_signing -C "aiops approvals"   # a dedicated key, WITH a passphrase (or an sk- key)
+git config --global gpg.format ssh                       # global: repo-local signing settings are refused
+git config --global user.signingkey ~/.ssh/aiops_signing.pub
+ssh-add -d ~/.ssh/aiops_signing 2>/dev/null              # keep it OUT of ssh-agent, which would sign silently
+echo "$(git config user.email) namespaces=\"git\" $(cat ~/.ssh/aiops_signing.pub)" >> .aiops/config/allowed-signers
+sdlc legacy-approvals --write                           # once, when upgrading: records older unsigned approvals
+git add .aiops/config && git commit -m "chore(aiops): approver keys"   # lands via PR; CI trusts the target branch's list
+```
+Signing-key options, from strongest to weakest: approve from a separate OS user or a clean clone; an `sk-` key (touch,
+without `no-touch-required`); a dedicated passphrase key kept out of ssh-agent. The escape hatch
+`"approval_key_policy": "any"` (in `.aiops/config.json`) accepts any key, at a cost: anything running as you can then
+sign approvals ([approval isolation](docs/architecture.md#approval-isolation)).
+
+`sdlc doctor` checks the setup. Under the default `approval_key_policy: "human"`, `sdlc approve` refuses before
+stamping anything unless each signature needs you: a passphrase key not loaded in ssh-agent, or an `sk-` key (touch).
+Approve in your own terminal with `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan` (Claude prints the exact path), which asks for the passphrase. Typing
+`Plan Approved NNNN` in Claude works with an `sk-` key. With a passphrase key, Claude is told the exact terminal
+command instead.
 
 ## Develop
 ```bash

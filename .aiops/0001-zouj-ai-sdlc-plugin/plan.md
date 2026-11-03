@@ -53,15 +53,18 @@ cutover that the human applies.
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
-| 2026-10-30 | S2 | Schemas are JSON, not YAML | hooks must run on stdlib only (pyyaml may be missing) | |
-| 2026-10-30 | S2 | Tests use stdlib unittest, not pytest | pytest isn't installed; there's no new dependency | |
-| 2026-10-30 | S3 | No plugin-shipped permission allow-rules | plugin settings.json supports only `agent` and `subagentStatusLine`; `/init` prints the rules to add | |
-| 2026-10-30 | S3 | The approval CLI refuses on CLAUDECODE / CLAUDE_CODE_CHILD_SESSION; the prompt hook calls the engine in-process | CLAUDECODE=1 is also set for hook processes | |
-| 2026-10-30 | S4 | `/verify` folded into `/zouj-ai-sdlc:review`; `/sdlc` renamed `status`; `sdlc-worktree` added to bin/ | the protocol's state 5 includes verification; `bin/` is on PATH | |
-| 2026-10-30 | S5 | Consumer workflows load the plugin via claude-code-action `plugins` inputs (marked: check the input names) | CI agents need the same skills and guards | |
-| 2026-10-30 | S6 | Evals use case.yaml + fixture.sh (`--scaffold`); dev sessions use `make dev`, not enabledPlugins in settings | the plugin-eval format; a relative directory-marketplace path in settings is unverified | |
-| 2026-10-30 | S6 | Plugin CI installs Claude Code with npm, not the piped install script | supply-chain hygiene | |
-| 2026-10-30 | S3 | The approval phrase is case-insensitive, the id is optional (defaults to the active intent), and a trailing `.`/`!` is allowed; it must still be the whole prompt | usability; a phrase quoted inside a sentence is still ignored | |
-| 2026-10-30 | S3 | Verifier findings fixed: `hooks/engine.sh` fails closed if the engine can't start; the CI audit checks a single-file commit, the matching sha256 and optional signing (`require_signed_approvals`); git rm/mv/checkout/restore of artifacts is blocked; tests added for AC-5/AC-8 and state 0 | fresh-context /verify returned NOT VERIFIED | |
-| 2026-10-30 | S5 | The consumer `aiops-gates.yml` pins the engine (`ZOUJ_SDLC_REF: v0.1.0`) | supply chain: never run an unpinned main in a required check | |
-| 2026-10-30 | S3 | The bash guard tracks `cd`, inspects `bash -c`/`sh -c`/`eval` recursively, reads `git commit -F` files, blocks path-style `git checkout` while locked, and blocks `gh api …/merge`; tests added (incl. `validate --ci` through the CLI) | second /verify: a reproducible `cd src && … ../.aiops/…` bypass | |
+| 2026-10-30 | S2 | Schemas are JSON, not YAML | hooks must run on stdlib only (pyyaml may be missing) | `71f89b1` |
+| 2026-10-30 | S2 | Tests use stdlib unittest, not pytest | pytest isn't installed; there's no new dependency | `71f89b1` |
+| 2026-10-30 | S3 | No plugin-shipped permission allow-rules | plugin settings.json supports only `agent` and `subagentStatusLine`; `/init` prints the rules to add | `71f89b1` |
+| 2026-10-30 | S3 | The approval CLI refuses on CLAUDECODE / CLAUDE_CODE_CHILD_SESSION; the prompt hook calls the engine in-process | CLAUDECODE=1 is also set for hook processes | `71f89b1` |
+| 2026-10-30 | S4 | `/verify` folded into `/zouj-ai-sdlc:review`; `/sdlc` renamed `status`; `sdlc-worktree` added to bin/ | the protocol's state 5 includes verification; `bin/` is on PATH | `71f89b1` |
+| 2026-10-30 | S5 | Consumer workflows load the plugin via claude-code-action `plugins` inputs (marked: check the input names) | CI agents need the same skills and guards | `71f89b1` |
+| 2026-10-30 | S6 | Evals use case.yaml + fixture.sh (`--scaffold`); dev sessions use `make dev`, not enabledPlugins in settings | the plugin-eval format; a relative directory-marketplace path in settings is unverified | `71f89b1` |
+| 2026-10-30 | S6 | Plugin CI installs Claude Code with npm, not the piped install script | supply-chain hygiene | `71f89b1` |
+| 2026-10-30 | S3 | The approval phrase is case-insensitive, the id is optional (defaults to the active intent), and a trailing `.`/`!` is allowed; it must still be the whole prompt | usability; a phrase quoted inside a sentence is still ignored | `71f89b1` |
+| 2026-10-30 | S3 | Verifier findings fixed: `hooks/engine.sh` fails closed if the engine can't start; the CI audit checks a single-file commit, the matching sha256 and optional signing (`require_signed_approvals`); git rm/mv/checkout/restore of artifacts is blocked; tests added for AC-5/AC-8 and state 0 | fresh-context /verify returned NOT VERIFIED | `71f89b1` |
+| 2026-10-30 | S5 | The consumer `aiops-gates.yml` pins the engine (`ZOUJ_SDLC_REF: v0.1.0`) | supply chain: never run an unpinned main in a required check | `71f89b1` |
+| 2026-10-30 | S3 | The bash guard tracks `cd`, inspects `bash -c`/`sh -c`/`eval` recursively, reads `git commit -F` files, blocks path-style `git checkout` while locked, and blocks `gh api …/merge`; tests added (incl. `validate --ci` through the CLI) | second /verify: a reproducible `cd src && … ../.aiops/…` bypass | `71f89b1` |
+| 2026-10-30 | S7 | The cutover landed as commit `283bc6b`, authored by the agent from what `.update/apply.sh` staged after the human ran it. The script itself was deleted, not kept | the script was a one-shot tool and the human removed it; recorded after review 0001 | `283bc6b` |
+| 2026-10-30 | — | **Bootstrap exception:** the code was merged (#5) and `v0.1.0` tagged and released before intent, spec and plan were approved (#7) and before any state-5 review. The review then returned CHANGES_REQUESTED and was followed up by intent 0002 | the plugin didn't exist yet to gate its own creation, and the human's first approval attempts didn't reach this checkout. Not to be repeated: from 0002 on, gates come before code | `1afe6b7`, `0ae7bae`, `b013108`, `a09f5b1` |
+| 2026-10-30 | S6 | CI fixes after the PR opened: shellcheck SC1087 in `guard-deploy.sh` and an explicit `ruff.toml` rule set | CI installs current shellcheck/ruff; neither was installed locally | `fce7b53`, `f5a2f60` |

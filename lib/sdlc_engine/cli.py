@@ -7,13 +7,14 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from . import approvals, guards
 from . import artifacts as A
-from .machine import (KINDS, PLUGIN_ROOT, SCHEMAS, active_dir, evaluate, find_dir, git, initialized, intent_dirs,
-                      project_root)
+from .machine import (KINDS, PLUGIN_ROOT, SCHEMAS, active_dir, config, evaluate, find_dir, git, initialized,
+                      intent_dirs, project_root)
 from .schema import validate
 
 TEMPLATES = PLUGIN_ROOT / "templates"
@@ -30,7 +31,8 @@ Lifecycle (any user or agent)
   new <slug> [--title T]     state 1: create .aiops/NNNN-slug/intent.md (Draft) and make it active
   draft <id> spec|plan|review  create the next artifact from its template (only when its input is approved)
   use <id>                   make an intent the active one (branch names feat/NNNN-* win over this)
-  validate [id] [--all] [--ci]  check artifacts against schemas/; --ci also audits approval commits
+  validate [id] [--all] [--ci] [--base REF]  check artifacts against schemas/; --ci also audits approval
+                             commits (signers, legacy list and config read from REF when given)
   lock                       /fix: lock test files after the human approved the failing test
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
   doctor                     check tools and wiring
@@ -39,6 +41,7 @@ Human only (refused inside Claude Code)
   approve <id> intent|spec|plan   open a gate (same as typing `Plan Approved NNNN` in the prompt)
   close <id>                 close an intent without implementing it
   unlock                     release the /fix test lock
+  legacy-approvals [--write [--yes]]  list (or record, confirming each) pre-signing approvals on main as legacy
 """
 
 
@@ -166,7 +169,15 @@ def cmd_use(root, args):
 def cmd_validate(root, args):
     _need_init(root)
     ci = "--ci" in args
-    ids = [a for a in args if not a.startswith("--")]
+    base = None
+    if "--base" in args:
+        i = args.index("--base")
+        base = args[i + 1] if i + 1 < len(args) else ""
+        if not base.strip():
+            out("--base needs a commit or branch (the target branch: the trust anchor for signers)", sys.stderr)
+            return 1
+    ids = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--base")]
+    trust_warnings = []
     dirs = intent_dirs(root) if "--all" in args or not ids and not active_dir(root) else [_resolve(root, ids[0] if ids else None)]
     failed = 0
     for d in dirs:
@@ -175,14 +186,48 @@ def cmd_validate(root, args):
                 continue
             errors, warnings = validate(d, kind)
             if ci and kind != "review":
-                errors += approvals.audit(root, d, kind)
+                errors += approvals.audit(root, d, kind, base=base, warnings=trust_warnings)
             for e in errors:
                 out(f"✗ .aiops/{d.name}/{kind}.md: {e}")
             for w in warnings:
                 out(f"! .aiops/{d.name}/{kind}.md: {w}")
             failed += bool(errors)
+    for w in dict.fromkeys(trust_warnings):
+        out(f"! {w}")
     out(f"validate: {len(dirs)} intent(s), {failed} artifact(s) with errors")
     return 1 if failed else 0
+
+
+def _confirm(question):
+    print(question, end="", flush=True)
+    try:
+        return input().strip().lower() in ("y", "yes")
+    except EOFError:
+        print()
+        return False
+
+
+def cmd_legacy_approvals(root, args):
+    """Human-only migration aid: unsigned approval commits that predate signing become an explicit legacy list."""
+    if approvals.running_under_agent():
+        out(HUMAN_ONLY, sys.stderr)
+        return 1
+    _need_init(root)
+    found = approvals.unsigned_approvals(root)
+    for sha, what in found:
+        who = git(root, "log", "-1", "--format=%an <%ae> %ad", "--date=short", sha)
+        out(f"{sha}  {what}  ({who})")
+    if not found:
+        out("No unsigned approvals of open gates.")
+    if "--write" in args and found:
+        f = root / approvals.LEGACY
+        f.parent.mkdir(parents=True, exist_ok=True)
+        known = f.read_text() if f.is_file() else "# Unsigned approval commits accepted by the audit (human-owned, append-only).\n"
+        new = [f"{sha}  # {what}" for sha, what in found if sha not in known and ("--yes" in args or _confirm(
+            f"Record {sha[:10]} ({what}) as a legacy approval? [y/N] "))]
+        f.write_text(known.rstrip("\n") + "\n" + "".join(f"{ln}\n" for ln in new))
+        out(f"Recorded {len(new)} commit(s) in {approvals.LEGACY}. Commit it; CI reads it from the base branch.")
+    return 0
 
 
 def cmd_approve(root, args):
@@ -242,6 +287,13 @@ def _wire_stack(makefile, stack):
     return wired
 
 
+REF_PLACEHOLDER = "__ZOUJ_SDLC_REF__"
+
+
+def plugin_version():
+    return json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+
+
 def cmd_init(root, args):
     stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
     force = "--force" in args
@@ -258,6 +310,10 @@ def cmd_init(root, args):
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+        if dst.suffix in (".yml", ".yaml", ".md", ".json"):
+            text = dst.read_text()
+            if REF_PLACEHOLDER in text:   # pin consumer CI to this plugin's release
+                dst.write_text(text.replace(REF_PLACEHOLDER, f"v{plugin_version()}"))
         created.append(str(rel))
     for p in (root / ".aiops" / "state",):
         p.mkdir(parents=True, exist_ok=True)
@@ -281,6 +337,36 @@ zouj-ai-sdlc is now active in this repo. Next:
     return 0
 
 
+def _is_ssh_identity(private):
+    cfg = Path.home() / ".ssh" / "config"
+    return cfg.is_file() and private.name in cfg.read_text(errors="replace")
+
+
+def _doctor_signing(root, row):
+    problem = approvals.signing_problem(root)
+    row(problem is None, "approval signing configured (ssh)" if problem is None else f"approval signing: {problem}",
+        "git config --global gpg.format ssh && git config --global user.signingkey ~/.ssh/aiops_signing.pub "
+        "(a dedicated key with a passphrase; repo-local signing settings are refused)")
+    if problem:
+        return
+    key = git(root, "config", "user.signingkey") or ""
+    pub = Path(key).expanduser()
+    pubtext = pub.read_text().split() if pub.is_file() else key.split()
+    signers = root / ".aiops" / "config" / "allowed-signers"
+    listed = len(pubtext) >= 2 and signers.is_file() and pubtext[1] in signers.read_text()
+    row(listed, "signing key is in .aiops/config/allowed-signers",
+        "add `<email> namespaces=\"git\" <public key>` to .aiops/config/allowed-signers (human-owned) via a reviewed PR")
+    private = pub.with_suffix("") if pub.suffix == ".pub" else None
+    if private and private.is_file():
+        probe = subprocess.run([approvals.SSH_KEYGEN, "-y", "-P", "", "-f", str(private)], capture_output=True, text=True)
+        if probe.returncode == 0:
+            out("  ! signing key has no passphrase: anything running as you could sign approvals. "
+                "Add one (ssh-keygen -p) and keep it out of ssh-agent")
+    if private and (private.name.startswith("id_") or _is_ssh_identity(private)):
+        out("  ! signing key is also an SSH login identity: ssh (AddKeysToAgent) can load it into an agent that "
+            "signs silently. Prefer a dedicated signing key")
+
+
 def cmd_doctor(root, args):
     fail = 0
 
@@ -300,6 +386,8 @@ def cmd_doctor(root, args):
             "edit the Makefile or: sdlc init --stack python|node|go --force")
     for b in ("gh", "jq"):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")
+    if initialized(root) and config(root).get("require_signed_approvals"):
+        _doctor_signing(root, row)
     if initialized(root):
         for d in intent_dirs(root):
             for kind in KINDS:
@@ -407,7 +495,7 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
-            "unlock": cmd_unlock, "init": cmd_init, "doctor": cmd_doctor}
+            "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor}
 
 
 def main(argv=None):

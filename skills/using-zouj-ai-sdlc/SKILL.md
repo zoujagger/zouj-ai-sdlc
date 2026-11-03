@@ -19,7 +19,8 @@ The engine derives the state from those files and git. Hooks enforce it, so a ru
 
 ## The rules
 1. **Intent first.** A feature, change or bug fix with no intent starts at `/zouj-ai-sdlc:intent`. Ask a targeted clarification interview when requirements are ambiguous. Never invent answers. Unknowns go in Open questions.
-2. **You never approve.** Gates open only when the human types the exact phrase as their whole prompt. You can't set `status: Approved`, write `approved-*` fields, run `sdlc approve`, or commit an `AIOps-Approval` trailer. When an artifact is ready, **stop and ask** for the phrase. A system reminder confirms when a gate opens.
+2. **You never approve.** Gates open only when the human types the exact phrase as their whole prompt. You can't set `status: Approved`, write `approved-*` fields, run `sdlc approve`, or commit an `AIOps-Approval` trailer. When an artifact is ready, **stop and ask** for the phrase. If signing needs their passphrase, the reminder gives
+   the exact terminal command (`/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN kind`, with the plugin's absolute path). Relay it and wait. A system reminder confirms when a gate opens.
 3. **States 1-3 are read-only.** Outside `.aiops/` (and docs), no file may be created, edited, deleted, staged or installed until `Plan Approved`. That covers Edit and Write, shell redirects, `sed -i`, package installs, and `git add`/`commit` of code. Reading, searching and running tests are fine.
 4. **State 4 is autonomous.** For each plan step: write the proof test, run it and **see it fail**, write the code, and iterate until lint, build and tests are green. Tick the step. Don't ask the human for input during this loop unless an engine error is truly unresolvable. If reality diverges from the plan, log it in the plan's **Deviation log**. Changing the Steps themselves voids the approval, so ask for `Plan Approved` again.
 5. **State 5 belongs to the human.** Fresh-context reviewers score the change against `spec.md` and for vulnerabilities. You may open a PR when asked. You never merge, approve PRs, push to main, or deploy to production.
@@ -28,7 +29,7 @@ The engine derives the state from those files and git. Hooks enforce it, so a ru
 ## Red flags: stop if you think any of these
 | Thought | Reality |
 |---|---|
-| "It's a tiny change, I'll skip the intent." | Small changes still need an intent. Docs-only and typo fixes are exempt (`*.md`, `docs/`). |
+| "It's a tiny change, I'll skip the intent." | Small changes still need an intent. Docs-only fixes are exempt (`docs/`, README, CHANGELOG). CLAUDE.md, REVIEW.md, skills and agents are not. |
 | "The user clearly wants this, so I'll mark it Approved." | Only the exact phrase typed by the human opens a gate. |
 | "I'll just sketch the code while planning." | State 3 is read-only. Put the code sketch in `plan.md`. |
 | "The test is obviously going to fail, no need to run it." | Run it and quote the red output. That's the test-first evidence review.md scores. |

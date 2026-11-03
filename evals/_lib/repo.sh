@@ -8,7 +8,28 @@ SDLC="python3 $PLUGIN/bin/sdlc"
 init_repo() {
   git init -q -b main
   git config user.name "Eval Human"; git config user.email "eval@example.com"; git config commit.gpgsign false
+  # Approvals must be SSH-signed by an allow-listed key: give the fixture its own throwaway key.
+  ssh-keygen -q -t ed25519 -N "" -C eval -f "$PWD/.eval-signing-key"
+  # Signing config must be global (repo-local is refused), so the eval HOME must be a throwaway one: never touch
+  # the operator's own global git config.
+  local real_home
+  real_home=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)
+  if [[ -n "$real_home" && "$(cd "$HOME" && pwd -P)" == "$(cd "$real_home" && pwd -P)" ]]; then
+    echo "evals: HOME is the operator's home; refusing to rewrite its global git config (run evals with a temp HOME)" >&2
+    exit 1
+  fi
+  if [[ -n "${GIT_CONFIG_GLOBAL:-}" && "$GIT_CONFIG_GLOBAL" != "$HOME"/* ]]; then
+    echo "evals: GIT_CONFIG_GLOBAL points outside the eval HOME; refusing to rewrite it" >&2
+    exit 1
+  fi
+  git config --global gpg.format ssh; git config --global user.signingkey "$PWD/.eval-signing-key.pub"
   $SDLC init >/dev/null
+  mkdir -p .aiops/config
+  echo "eval@example.com namespaces=\"git\" $(cat .eval-signing-key.pub)" > .aiops/config/allowed-signers
+  printf '.eval-signing-key*\n' >> .gitignore
+  # Throwaway fixture keys can't prompt for a passphrase: opt the fixture out of the human-per-signature policy.
+  python3 -c 'import json; p=".aiops/config.json"; c=json.load(open(p)); c["approval_key_policy"]="any"; json.dump(c, open(p, "w"), indent=2)'
+
   cat > Makefile <<'MK'
 .PHONY: format lint typecheck test build check
 format:

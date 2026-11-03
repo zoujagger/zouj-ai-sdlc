@@ -11,7 +11,8 @@ This repo is the **zouj-ai-sdlc** Claude Code plugin, and it dogfoods itself: ch
 1. Follow the 5 states for anything beyond docs and typos. Never write gate statuses or `approved-*` fields yourself.
 2. **Engine and guards are test-first**: add the failing case in `tests/` before changing `lib/` or `hooks/`. Every block
    message states the reason **and** the procedure.
-3. Engine code is stdlib only (Python ≥ 3.9). Bash hooks must stay dormant without `.aiops/` (`aiops_enabled`) and keep
+3. Engine code is stdlib only (Python ≥ 3.9). SDLC gate hooks must stay dormant without `.aiops/` (`aiops_enabled`); the
+   safety guards (secrets, force-push, deploys, the installed plugin) are always on. Hooks keep
    regexes in variables, never inline in `[[ =~ ]]`.
 4. Skills call `sdlc …` (it's on PATH while the plugin is enabled). Reference plugin files as `${CLAUDE_PLUGIN_ROOT}/…`.
 5. Consumer-facing files live in `templates/scaffold/`, and `sdlc init` must never overwrite an existing file.

@@ -3,3 +3,6 @@
 /lib/               @zoujagger
 /schemas/           @zoujagger
 /.aiops/            @zoujagger
+/.aiops/config/     @zoujagger   # signers, legacy approvals, guard lists
+/.aiops/config.json @zoujagger   # signing switch
+/.github/           @zoujagger

@@ -140,6 +140,21 @@ def git(root, *args):
     return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
 
 
+_KEYS = tempfile.TemporaryDirectory()   # throwaway SSH signing keys, generated once per test run
+
+
+def signing_key(name="owner", passphrase=""):
+    """Path of an ed25519 private key (its .pub sits next to it), created on first use."""
+    key = Path(_KEYS.name) / name
+    if not key.exists():
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", passphrase, "-C", name, "-f", str(key)], check=True)
+    return key
+
+
+def allowed_signer_line(email, key):
+    return f'{email} namespaces="git" {Path(f"{key}.pub").read_text().strip()}\n'
+
+
 class RepoCase(unittest.TestCase):
     """Each test gets a fresh repo at self.root with `.aiops/` and intent 0001 on branch feat/0001-csv-export."""
 
@@ -148,7 +163,12 @@ class RepoCase(unittest.TestCase):
         self.root = Path(self._tmp.name).resolve()
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "AIOPS_INTENT", "SDLC_HOOK_PROFILE",
-                                 "CLAUDE_PROJECT_DIR")}
+                                 "CLAUDE_PROJECT_DIR", "SSH_AUTH_SOCK", "SSH_AGENT_PID")}
+        # Signing config must come from *global* git config (repo-local overrides are refused), so each test gets
+        # its own throwaway global config file.
+        self.gitconfig = self.root.parent / f"{self.root.name}.gitconfig"
+        self.gitconfig.write_text("")
+        self.env.update({"GIT_CONFIG_GLOBAL": str(self.gitconfig), "GIT_CONFIG_NOSYSTEM": "1"})
         self._saved_env = dict(os.environ)
         os.environ.clear()
         os.environ.update(self.env)
@@ -156,12 +176,20 @@ class RepoCase(unittest.TestCase):
         git(self.root, "config", "user.name", "Human Owner")
         git(self.root, "config", "user.email", "owner@example.com")
         git(self.root, "config", "commit.gpgsign", "false")
+        git(self.root, "config", "--global", "gpg.format", "ssh")
+        git(self.root, "config", "--global", "user.signingkey", f"{signing_key()}.pub")
         (self.root / "README.md").write_text("x\n")
         (self.root / "src").mkdir()
         (self.root / "src" / "app.py").write_text("x = 1\n")
         git(self.root, "add", "-A")
         git(self.root, "commit", "-qm", "init")
         (self.root / ".aiops" / "state").mkdir(parents=True)
+        (self.root / ".aiops" / "config").mkdir()
+        self.signers = self.root / ".aiops" / "config" / "allowed-signers"
+        self.signers.write_text(allowed_signer_line("owner@example.com", signing_key()))
+        # Test keys have no passphrase (nothing could type one), so fixtures opt out of the human-per-signature
+        # policy explicitly; test_key_policy_* covers the default.
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
         self.d = self.root / ".aiops" / "0001-csv-export"
         self.d.mkdir()
         git(self.root, "switch", "-qc", "feat/0001-csv-export")
@@ -170,6 +198,7 @@ class RepoCase(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._saved_env)
         self._tmp.cleanup()
+        self.gitconfig.unlink(missing_ok=True)
 
     # artifact helpers
     def write(self, kind, text):

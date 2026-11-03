@@ -11,6 +11,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
@@ -26,12 +27,18 @@ LOCKED_STATES = (1, 2, 3)
 DIR_RE = re.compile(r"^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*$")
 BRANCH_RE = re.compile(r"(?:^|/)(\d{4})-")
 DEFAULT_CONFIG = {"lock_when_idle": True, "commit_approvals": True, "main_branch": "main",
-                  "require_signed_approvals": False}
+                  "require_signed_approvals": True,
+                  "approval_key_policy": "human"}
 
 
-def git(root, *args):
+# git by absolute path: a `git` planted earlier on PATH must not run inside the engine (approvals included).
+GIT = "/usr/bin/git" if Path("/usr/bin/git").is_file() else (shutil.which("git") or "git")
+
+
+def git(root, *args, timeout=10):
+    """stdout of `git args` in root, or None on failure. timeout=None waits for a human (passphrase, touch)."""
     try:
-        r = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=10)
+        r = subprocess.run([GIT, *args], cwd=root, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return r.stdout.strip() if r.returncode == 0 else None
@@ -45,7 +52,8 @@ def project_root(start=None):
 
 
 def initialized(root):
-    return (root / ".aiops").is_dir()
+    """`.aiops/` on disk, or tracked in git (so deleting the folder can't switch the gates off)."""
+    return (root / ".aiops").is_dir() or bool(git(root, "ls-files", "--", ".aiops"))
 
 
 def config(root):
@@ -120,6 +128,8 @@ def gate(d, kind):
     want = SCHEMAS[kind]["gate"]
     if a.get("status") != want:
         return False, f"status is {a.get('status') or 'unset'}"
+    if a.get("id") != d.name[:4]:
+        return False, f"id {a.get('id') or 'unset'} does not match the folder {d.name}"
     if a.get("approved-sha256") != A.approval_hash(kind, text):
         return False, "changed since approval"
     return True, ""
@@ -216,7 +226,7 @@ def _review_state(root, d, ident):
     main = config(root)["main_branch"]
     rel = f".aiops/{d.name}/review.md"
     on_main = git(root, "show", f"{main}:{rel}")
-    if on_main and A.parse(on_main).get("verdict") == "PASS" and current_branch(root) == main:
+    if on_main and A.parse(on_main).get("verdict") == "PASS":   # merged: DONE whichever branch you're on
         return Status(ident, d, 6, f"merged into {main}", "none (Maintain: /zouj-ai-sdlc:triage on alerts)")
     if a.get("verdict") != "PASS":
         return Status(ident, d, 5, f"review verdict {a.get('verdict') or 'unset'}: fix the findings",
