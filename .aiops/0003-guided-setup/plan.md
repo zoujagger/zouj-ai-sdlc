@@ -136,7 +136,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 
     Red: the skill is missing.
   - Covers: AC-12 (the skills part)
-- [ ] **S12**: Playbook conformance test, per profile
+- [x] **S12**: Playbook conformance test, per profile
   - Files: `tests/test_playbook.py` (create); engine fixes only if a check fails
   - Test first: `tests/test_playbook.py::Playbook::test_<profile>` for solo, team and strict. Each one:
     - inits through `setup --yes`
@@ -206,3 +206,4 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 |---|---|---|---|---|
 | 2026-11-03 | S7 | `lib/sdlc_engine/cli.py` changed too (S7 listed only `setup.py`). The `.gitignore` entry moved from `cmd_init` into `apply_init`, so init and setup share it. `codeowners_cover_aiops` (S4) no longer counts the scaffold's `@your-org/...` placeholders as owners; `test_strict_requires_codeowners` pins that | otherwise setup would skip the ignore line, and `strict` would pass on a fresh scaffold with no real owner | S7 commit |
 | 2026-11-03 | S9 | The sandbox's Makefile uses its own stdlib-only recipes (`templates/sandbox/sandbox.recipes`: `py_compile`, `unittest`) instead of the python preset (ruff, mypy, pytest). `cli._wire_stack` gained an optional recipes-file argument for it. The sandbox also refuses a directory inside the calling repo | AC-10 needs `make check` green on any machine, and none of ruff, mypy or pytest is guaranteed; a sandbox inside the repo would touch it | S9 commit |
+| 2026-11-03 | S12 | A pin, with no red from the engine (agreed in the stress test): the conformance walk passed once the test's own bugs were fixed (calling bin/sdlc without python3 on the stub PATH, and not ticking plan steps before state 5). Instead, a mutation check proved it bites: with the pre-edit read-only lock disabled, all three profiles fail at `('<profile>', 'intent')`. For team/strict the test plays the human's accepted key by patching only `approvals.key_protection` (and `_signing_key_files` for strict); the approval commits are still really signed | a passphrase prompt or an sk- touch can't run in a test | S12 commit |
