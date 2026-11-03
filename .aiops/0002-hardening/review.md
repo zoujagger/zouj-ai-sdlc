@@ -1,143 +1,120 @@
 ---
 id: 0002
 verdict: CHANGES_REQUESTED
-commit: ecd8f704a3dce786796e93383a10d4084908809c
-score: 79/100
+commit: 44517a055289f7de88e81dc29651415ae158c7dc
+score: 73/100
 reviewers: verifier, code-reviewer, security-reviewer
-created: 2026-11-02
+created: 2026-11-03
 ---
 
-# Review: Harden gates and guards (review 0001 findings), round 2
+# Review: Harden gates and guards (review 0001 findings), round 3
 
-<!-- State 5 PRE-REVIEW, round 2 (after S16-S24). Compiled only from the three fresh-context persona reports
-     (base main @ c26f691, head ecd8f70). Round 1 (69/100) is in git history (fbd1da2). The human decides what happens next. -->
+<!-- State 5 PRE-REVIEW, round 3 (after S25-S32). Compiled only from the three fresh-context persona reports
+     (base main @ c26f691, head 44517a0). Round 2 (79/100) is in git history. The human decides what happens next. -->
 
 ## Summary
-Round 1's BLOCKER and HIGH are fixed and independently confirmed.
-- **Checks:** `make check` passes (91 tests), `claude plugin validate .` passes, and hooks run in 26-120 ms.
-- **ACs:** 20 of 22 are fully met, each with real-git, real-signature tests. AC-16 was tested with a real ssh-agent.
-- **Red-first:** reproduced independently for 13 steps.
-- **Signatures:** the re-approvals and the migration commit verify `G` against the allow-list.
+Every round-2 fix is in place, and the step tests went red before the code.
+- **Checks:** `make check` passes (102 tests). Locally the lint step ran only `bash -n`, because ruff and shellcheck aren't installed; CI installs both. `claude plugin validate .` passes with the existing warnings (CLAUDE.md, ICON_MISSING). Hooks run in 39-90 ms for typical commands.
+- **ACs:** the verifier found a proving test for all 29 ACs and ran each one green. AC-15 also needs this file, because it references AC-23..AC-29.
+- **Red-first:** the code reviewer reproduced red on the parent commit for all nine round-3 proof tests.
 
-Two security HIGHs remain, and they are deeper than parser gaps:
-- **[HIGH] The signing toolchain can be tampered with.** An agent running as the user can repoint `gpg.ssh.program`
-  in the repo git config, plant `.git/hooks`, or edit the installed plugin. The human's next `bin/sdlc approve`
-  then captures the passphrase or touch and signs normally. Separately, the README's signing key doubles as the SSH
-  auth key, so `AddKeysToAgent` can load it into an agent unnoticed.
-- **[HIGH] Shell secret reads stop at `.env`.** `cat ~/.aws/credentials`, `cat x.pem`, `cat secrets/x`, `paste .env`
-  and a directory Grep of `~/.ssh` are allowed, while the Read tool blocks them. `docs/architecture.md` overstates
-  the coverage.
+Two findings still block:
+- **[BLOCKER] S30 reopened disguised engine calls (AC-7, R-4).** The new command-position rule (`guards.py:159`) misses
+  `eval "$s approve …"`, `bash -c "$s approve …"`, `nice`/`timeout`/`xargs -I{}`/`!`/`{ …; }` prefixes. The code
+  reviewer reproduced an end-to-end forged approval under `approval_key_policy: "any"`, which is this repo's setting.
+- **[HIGH] Repo-local git config still runs code inside the human's approval.** `core.fsmonitor`, `filter.*.clean`,
+  `core.attributesFile` and `include.path` are neither guarded nor refused. Confirmed: a planted fsmonitor ran during
+  the pinned approval commit and could capture the passphrase or touch.
 
-Verdict: **CHANGES_REQUESTED, 79/100.**
-- **Verifier:** NOT VERIFIED. The causes were the stale round-1 review.md and unlogged deviations. This file is the fix for the first.
-- **Security reviewer:** FAIL (2 high).
-- **Code reviewer:** CHANGES_REQUESTED, with 3 MAJOR findings.
+Verdict: **CHANGES_REQUESTED, 73/100.**
+- **Verifier:** VERIFIED, on the condition that this round-3 file references AC-23..AC-29. It does.
+- **Security reviewer:** FAIL (1 HIGH, 1 MEDIUM).
+- **Code reviewer:** CHANGES_REQUESTED (1 BLOCKER, 5 MAJOR).
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
 |---|---|---|
-| AC-1 | ⚠️ partial | `tests/test_guards.py:137` (listed forms). `<<` inside arithmetic (`$((1<<EOF))`) or `$'…'` is still taken as a marker, hiding later lines (`guards.py:181`) |
+| AC-1 | ✅ met | `tests/test_guards.py:137` |
 | AC-2 | ✅ met | `tests/test_guards.py:137` (state 4) |
-| AC-3 | ✅ met | `tests/test_guards.py:157` |
-| AC-4 | ✅ met | `tests/test_guards.py:175` |
-| AC-5 | ✅ met | `tests/test_engine.py:133`, `tests/test_shell_hooks.py:171` |
+| AC-3 | ✅ met | `tests/test_guards.py:166` |
+| AC-4 | ✅ met | `tests/test_guards.py:184` |
+| AC-5 | ✅ met | `tests/test_engine.py:133`, `tests/test_shell_hooks.py:215` |
 | AC-6 | ✅ met | `tests/test_engine.py:120`, `tests/test_guards.py:79` |
-| AC-7 | ✅ met | `tests/test_guards.py:202` |
-| AC-8 | ✅ met | `tests/test_engine.py:196`, `:204` |
-| AC-9 | ✅ met | `tests/test_engine.py:272`, `:281`, `:295`; `tests/test_cli.py:84` |
-| AC-10 | ✅ met | `tests/test_shell_hooks.py:127` |
-| AC-11 | ✅ met | `tests/test_shell_hooks.py:86` (listed `.env` readers). Non-`.env` secrets via the shell: see Security |
-| AC-12 | ✅ met | `tests/test_cli.py:32`, `:14` |
+| AC-7 | ⚠️ partial | `tests/test_guards.py:234` (listed forms pass). **Regressed:** `eval`/`bash -c`/`nice`/`timeout`/`xargs -I{}`/`!`/`{` with a dynamic command word are allowed (`guards.py:159`) |
+| AC-8 | ✅ met | `tests/test_engine.py:228`, `:236` |
+| AC-9 | ✅ met | `tests/test_engine.py:313`, `:327`; `tests/test_cli.py:87` |
+| AC-10 | ✅ met | `tests/test_shell_hooks.py:171` |
+| AC-11 | ✅ met | `tests/test_shell_hooks.py:104` |
+| AC-12 | ✅ met | `tests/test_cli.py:32` |
 | AC-13 | ✅ met | `tests/test_engine.py:87` |
 | AC-14 | ✅ met | `tests/test_guards.py:37` |
-| AC-15 | ✅ met | `tests/test_shell_hooks.py:106`, `:115`. `validate --ci --base origin/main` passes once this review replaces round 1's |
-| AC-16 | ✅ met | `tests/test_engine.py:154` (real ssh-agent), `tests/test_cli.py:104`. The signing commit has a 10 s timeout (`machine.py:35`), so a slow passphrase is rolled back with a misleading message |
-| AC-17 | ⚠️ partial | `tests/test_guards.py:149` (quotes and comments). Arithmetic and ANSI-C contexts still bypass it, as in AC-1 |
-| AC-18 | ✅ met | `tests/test_guards.py:214` |
-| AC-19 | ✅ met | `tests/test_engine.py:350`, `:357`; `tests/test_cli.py:77` |
-| AC-20 | ⚠️ partial | `tests/test_guards.py:186` (listed forms). Allowed: `diff -u` patches with timestamps, `git apply -p0/--directory`, a patch from stdin, `tar -C .aiops -xf`, `tar --directory=.aiops`, `unzip -d .aiops`, `find -iname` |
-| AC-21 | ✅ met | `tests/test_shell_hooks.py:67` |
-| AC-22 | ✅ met | `tests/test_engine.py:324`, `tests/test_guards.py:166`, `tests/test_shell_hooks.py:26` |
+| AC-15 | ✅ met | `tests/test_shell_hooks.py:148`, `:157`. `validate --all --ci --base origin/main` exits 0 once this round-3 review is in place (checked in a scratch clone) |
+| AC-16 | ✅ met | `tests/test_engine.py:185`, `tests/test_cli.py:108` |
+| AC-17 | ✅ met | `tests/test_guards.py:158` |
+| AC-18 | ⚠️ partial | `tests/test_guards.py:270` (listed forms). `m=AIOps-Approval; git commit -m "$m: plan"` was blocked at ecd8f70 and is allowed now (`guards.py:428`) |
+| AC-19 | ✅ met | `tests/test_engine.py:424`, `:431`, `:442`; `tests/test_cli.py:80` |
+| AC-20 | ✅ met | `tests/test_guards.py:195` |
+| AC-21 | ✅ met | `tests/test_shell_hooks.py:85` |
+| AC-22 | ✅ met | `tests/test_engine.py:356`, `tests/test_guards.py:175`, `tests/test_shell_hooks.py:26` |
+| AC-23 | ⚠️ partial | `tests/test_engine.py:154`, `tests/test_guards.py:257`. Not covered: `core.fsmonitor`, `filter.*`, `include.path`, and the `git config --file .git/config …` / `git config set …` write forms. There's no doctor ✗ test, and the 15 s signer is checked only by a `timeout=None` spy |
+| AC-24 | ⚠️ partial | `tests/test_shell_hooks.py:67` (listed cases). Still allowed: glob words (`cat ~/.aws/cred*`), `echo $(cat …)`, `cat<file`, and Grep with an ancestor `path` (R-12 "ancestor" isn't implemented) |
+| AC-25 | ✅ met | `tests/test_guards.py:246`, `tests/test_cli.py:32`. Minor: `git checkout <rev> -- <protected path>` isn't checked |
+| AC-26 | ✅ met | `tests/test_guards.py:149` |
+| AC-27 | ✅ met | `tests/test_guards.py:211`. Residuals: `tar -C.aiops`, C-quoted patch paths, `for`/`read`/`printf -v` targets |
+| AC-28 | ✅ met | `tests/test_shell_hooks.py:124`, `tests/test_guards.py:285` |
+| AC-29 | ✅ met | `tests/test_engine.py:383`, `:411`; `tests/test_shell_hooks.py:157` |
 
 ## Security
-- **[HIGH] Signing-toolchain tampering defeats R-10.** `approvals.py:129-135` commits with repo-local git config and hooks.
-  - Not blocked: `git config gpg.ssh.program …`, `cp … .git/hooks/post-commit`, edits to the installed plugin code.
-  - Fix:
-    - Commit approvals with pinned settings: `-c gpg.ssh.program=ssh-keygen -c core.hooksPath=/dev/null --no-verify`.
-    - Read `user.signingkey` from global config only, and refuse repo-local `gpg.*`, `user.signingkey` or `core.hooksPath` (doctor flags them too).
-    - Guard `git config` of those keys and shell writes under `.git/` and the plugin root.
-    - Recommend a dedicated signing key that isn't an `IdentityFile` and isn't auto-added to an agent (doctor warns).
-    - Document approving from a separate OS user or a clean clone as the strongest setup.
-- **[HIGH] Shell secret reads cover only `.env`.** `hooks/guard-bash.sh:31-62`, `hooks/guard-read.sh:20-33`.
-  - Fix:
-    - Apply `secret-paths` to every unquoted, tilde-expanded word of reader commands (or of any command).
-    - Block a Grep/Glob `path` that equals, or is an ancestor of, a secret directory.
-    - Add `*/.aws/*`, `*/.config/gcloud/*`, `*/.docker/config.json` and `*/.kube/config`.
-    - Correct `docs/architecture.md`.
-- **[MEDIUM] A PR defines its own audit workflow.** It can neuter `aiops-gates.yml` or `.claude/settings.json`
-  through the shell (protected-paths cover only Edit/Write). Fix: enforce shell writes against protected-paths,
-  require CODEOWNER review on `/.github/` and `/.claude/`, and recommend a ruleset "required workflow" or
-  `pull_request_target`.
+- **[BLOCKER] Disguised engine calls through wrappers** (`guards.py:159`). Reproduced: `a=CLAUDE; eval "unset ${a}CODE ${a}_CODE_CHILD_SESSION"; s=sdlc; nice $s approve 0001 plan` passes pre-bash and creates a plan approval that `validate --all --ci` accepts under `"any"`.
+  - Fix: treat the word after wrappers (`eval`, `nice`, `timeout N`, `stdbuf`, `setsid`, `ionice`, `!`, `{`, `xargs [opts]`) as a command position. Recurse ENGINE_RES and ENV_RES into `eval` and `-c` strings. Add these forms to the tests.
+- **[HIGH] Code-running repo-local git config inside the approval** (`approvals.py:51-52, 106, 161-162`; `guards.py` `SIGNING_CONFIG_RE`). Allowed: `git config core.fsmonitor`, `core.attributesFile`, `filter.x.clean` and `include.path`. A planted fsmonitor ran 8 times during the pinned commit.
+  - Fix: allow-list repo-local keys (read with `--show-scope --includes`). Pin `core.fsmonitor=false core.attributesFile=/dev/null` for `git add` and `commit`, or stage with `hash-object --no-filters`. Call git by absolute path. Guard `git config set|unset` and `-f/--file` under `.git/`. Document that approval must happen in the approver's own clean clone.
+- **[MEDIUM] Shell secret reads skip glob words and substitutions** (`hooks/guard-bash.sh:70`, `:78`). Allowed: `cat ~/.aws/cred*`, `cat *.pem`, `echo $(cat ~/.aws/credentials)`, `cd ~/.aws && cat credentials`. Fix: expand globs (`compgen -G`), don't exempt segments that contain substitutions, and track `cd`.
 - **[LOW]**
-  - Brace expansion (`{.aiops,x}`), `D=.aiops; rm -rf $D` and `unset ${a}CODE` get through.
-  - `legacy-approvals --write` could still grandfather an agent-forged commit that passes the other checks. Restrict
-    it to ancestors of the base that predate signing, and confirm each entry.
-  - This repo's `ci.yml` falls back to `HEAD~1` instead of failing closed.
-- **Production gate and force-push variants:** `make deploy ENV="prod"` (quoted), `git push origin '+main'`,
-  `git push -fu`, `git push --mirror`.
+  - The per-word secret scan has false positives in every repo (`git commit -m "fix: load .env"`, `grep -rn id_rsa src`) and costs about 835 ms on a 60-line heredoc, against a 150 ms target.
+  - Writes outside the repo aren't checked against `secret-paths` (`cp x ~/.gitconfig`).
+  - This repo runs `"approval_key_policy": "any"`, and `origin/main` has no signer list (bootstrap). The merge needs explicit CODEOWNERS review of `.aiops/config/`.
 
 Spec flags:
 
 | Flag | Mitigated? |
 |---|---|
-| Signing-key access | **partially**: the precheck is undermined by toolchain tampering and agent auto-add |
-| Self-trust | **yes** for data; **no** for the workflow file |
-| Legacy loophole | **mostly** |
-| Secret reads | **partially** |
+| Signing-key access | **partially**: defeated by repo-local fsmonitor/filter code (HIGH); this repo uses `any` |
+| Self-trust | **yes**: base-ref trust, fail-closed CI; the PR's own workflow is the documented residual |
+| Legacy loophole | **yes**: main ancestors predating signing, full shas, confirmed per entry |
+| Secret reads | **partially**: Read/Grep/Glob and literal shell words are covered; globs and substitutions aren't |
 | Supply chain | **yes**, mutable-tag residual |
 
 ## Plan conformance
-- All 24 steps are ticked, and the diff matches the file lists.
-- R-9 is met.
-- Nothing out of scope ships.
+- S25-S32 are ticked, and the code matches the file lists. The S29, S31 and S32 deviations are logged.
 - **Unlogged (MINOR):**
-  - S17 touched `evals/_lib/repo.sh` and `tests/test_cli.py`, but not the planned `cli.py`.
-  - S19 added `test_scaffold_gate_verifies_base`.
-  - S21 touched `hooks/lib.sh`.
-  - S24 changed `approve()` behaviour, plus `skills/init` and `skills/using-zouj-ai-sdlc`.
-  - Extra tests are missing from the test table.
+  - S26 implements "equals" for Grep/Glob, not R-12's "or is an ancestor of".
+  - S25 also touched `tests/helpers.py`, `tests/test_cli.py` and `evals/_lib/repo.sh`.
+  - S27 also applies `secret-paths` to shell writes.
+  - S28 changed the tokenizer fallback.
+- **MAJOR:** the setup help still says `git config gpg.format ssh` and `git config user.signingkey …` without `--global`, which S25 now refuses. Affected: `approvals.py:34-35`, `cli.py:348`, `README.md:76-77`, `templates/scaffold/.aiops/README.md:10`, `CHANGELOG.md:76`.
+- **MINOR:** `evals/_lib/repo.sh:13` runs `git config --global` without isolating `GIT_CONFIG_GLOBAL`.
+- Nothing out of scope ships.
 
 ## Test-first evidence
-- Every step S1-S24 carries `Red:`/`Green:`, and the counts climb from 59 to 91.
-- The code reviewer ran each step's proof test against the parent commit for 13 steps: all fail with assertions and
-  pass at HEAD.
-- S14's pinned test (logged) and S15's human step (by design) have no red.
-- Not covered: the signing-timeout path and the `-iname` predicate.
+- Every S25-S32 commit carries `Red:`/`Green:`, and the test count climbs from 93 to 102.
+- The code reviewer ran each round-3 proof test against its step's parent commit. All nine fail with assertions there and pass at the step.
+- The S25 recorded red text differs slightly from the parent's real message (same assertion). The S27 CODEOWNERS part was a pin, as its commit says.
+- Not covered: doctor ✗ for repo-local overrides, a real slow signer, regressions for the forms S30 reopened.
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 33 | AC-1, AC-17 and AC-20 partial |
-| Security | 25 | 15 | 2 HIGH (toolchain tampering, shell secret reads), 1 MEDIUM, LOWs |
-| Test quality & test-first | 20 | 18 | real behavioural tests; red independently confirmed for 13 steps; a few untested paths |
-| Plan conformance | 10 | 9 | small unlogged deviations |
-| Maintainability | 5 | 4 | the regex lists grow and show false positives (`echo $HOME close …`, `[ "$CLAUDECODE" = 1 ]`) |
-| **Total** | 100 | **79** | **CHANGES_REQUESTED**: below 80 and two HIGH findings |
+| Spec conformance | 40 | 30 | AC-7 regressed; AC-18, AC-23 and AC-24 partial |
+| Security | 25 | 14 | 1 BLOCKER (wrapper engine calls), 1 HIGH (fsmonitor/filter/include), 1 MEDIUM |
+| Test quality & test-first | 20 | 17 | red reproduced for all 9 round-3 tests; a few untested paths |
+| Plan conformance | 10 | 8 | small unlogged extras; S26 narrowing |
+| Maintainability | 5 | 4 | command-position allow-list is brittle; the secret scan adds false positives and latency |
+| **Total** | 100 | **73** | **CHANGES_REQUESTED**: a BLOCKER, a HIGH, and below 80 |
 
 ### Fixes requested
-1. **HIGH:** pinned, hook-less approval commits; global-only signing config, with repo overrides refused; guard
-   `git config`, `.git/` and the plugin root; a dedicated signing key; document the approval-isolation options.
-2. **HIGH:** `secret-paths` on all shell words; directory Grep/Glob; more secret globs; correct the docs.
-3. **MEDIUM:** protected-paths for shell writes; CODEOWNERS for `/.github/` and `/.claude/`; a required-workflow recommendation.
-4. **MAJOR:**
-   - heredoc arithmetic and ANSI-C contexts
-   - the remaining AC-20 forms (timestamped patches, `-p0`/`--directory`, stdin, tar arg order, `unzip -d`, `-iname`)
-   - no timeout on the signing commit, with an accurate message
-5. **LOW/MINOR:**
-   - brace expansion and variable targets
-   - `--write` restricted to pre-signing ancestors
-   - `ci.yml` fails closed
-   - quoted `ENV="prod"`, `'+main'`, `-fu`, `--mirror`
-   - false positives in the dynamic-word and trailer rules
-   - `sk-` keys with `no-touch-required`
-   - the Deviation log and test table
+1. **BLOCKER:** command position after wrappers; recurse engine/env checks into `eval` and `-c`; regression tests.
+2. **HIGH:** an allow-list for repo-local git config (with includes); pin fsmonitor and attributes for `add` and `commit`; absolute git; guard `git config set|unset` and `--file`.
+3. **MAJOR:** `--global` and a dedicated key in every setup hint (with a test).
+4. **MEDIUM/MAJOR:** secret reads through globs, substitutions and `cd`; Grep ancestor paths (or amend R-12); fewer false positives and less latency in the per-word scan.
+5. **MINOR:** the variable-built trailer; `git checkout/restore` against protected-paths; AC-27 residuals in the docs; `GIT_CONFIG_GLOBAL` in the evals; the Deviation log extras.
