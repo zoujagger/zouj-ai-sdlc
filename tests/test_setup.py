@@ -1,8 +1,9 @@
 """`sdlc setup`: guided, rerunnable onboarding that keeps the playbook workflow in every profile."""
 import shutil
 import unittest
+from pathlib import Path
 
-from helpers import RepoCase
+from helpers import RepoCase, git
 
 from sdlc_engine import cli
 
@@ -34,23 +35,39 @@ def stub(bindir, name, body):
     f.chmod(0o755)
 
 
-class Preflight(RepoCase):
-    def bin_with(self, claude="2.1.40 (Claude Code)", gh_scopes="'gist', 'read:org', 'repo'", git=True):
-        """A PATH with stub tools; gh logs every argument list it gets to gh.log."""
+class SetupCase(RepoCase):
+    """A fresh, uninitialized repo, and a PATH of stub tools so setup's output doesn't depend on the machine."""
+
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+
+    def bin_with(self, claude="2.1.40 (Claude Code)", gh_scopes="'gist', 'read:org', 'repo', 'workflow'", git=True):
+        """Stub tools; gh logs every argument list it gets to gh.log."""
         bindir = self.root.parent / f"{self.root.name}.bin"
         bindir.mkdir(exist_ok=True)
         if claude:
             stub(bindir, "claude", f"echo '{claude}'")
-        stub(bindir, "make", "exit 0")
+        stub(bindir, "make", 'exec /usr/bin/make "$@"' if Path("/usr/bin/make").exists() else "exit 0")
         stub(bindir, "gh", f'echo "$@" >> "{bindir}/gh.log"\n'
                            f'[ "$1 $2" = "auth status" ] && echo "  - Token scopes: {gh_scopes}"\nexit 0')
-        if git:
+        if git and not (bindir / "git").exists():
             (bindir / "git").symlink_to(shutil.which("git"))
         return bindir
 
+    def setup_run(self, *args, stdin="", env=None):
+        return self.run_sdlc("setup", *args, stdin=stdin, env={"PATH": str(self.bin_with()), **(env or {})})
+
+    def snapshot(self):
+        files = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*")
+                       if p.is_file() and p.relative_to(self.root).parts[0] != ".git")
+        return files, git(self.root, "status", "--porcelain")
+
+
+class Preflight(SetupCase):
     def test_rows_and_blocking(self):
         from sdlc_engine import setup
-        bindir = self.bin_with(claude="2.0.9 (Claude Code)")
+        bindir = self.bin_with(claude="2.0.9 (Claude Code)", gh_scopes="'gist', 'read:org', 'repo'")
         r = self.run_sdlc("setup", "--profile", "solo", "--dry-run", env={"PATH": str(bindir)})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("Preflight", r.stdout)
@@ -79,6 +96,34 @@ class Preflight(RepoCase):
         rows = setup.preflight(self.root, "solo", path=str(bindir), timeout=1)
         self.assertTrue(any(st == "!" and "claude" in label for st, label, _ in rows), rows)
         self.assertFalse(setup.blocking(rows))
+
+
+class Plan(SetupCase):
+    def test_dry_run_writes_nothing(self):
+        before = self.snapshot()
+        r = self.setup_run("--profile", "team", "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for section in ("Preflight", "Inventory", "Plan", "Gates"):
+            self.assertRegex(r.stdout, rf"(?m)^{section}$", section)
+        self.assertIn("+ .aiops/config.json", r.stdout)
+        self.assertIn("+ .claude/settings.json", r.stdout)
+        self.assertIn("not initialized", r.stdout)
+        for gate in ("Intent Approved", "Spec Approved", "Plan Approved", "read-only", "make check", "merge"):
+            self.assertIn(gate, r.stdout, gate)
+        self.assertIn("dry run: nothing was written", r.stdout)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_no_tty_needs_yes(self):
+        before = self.snapshot()
+        r = self.setup_run()                                          # no profile, no --yes, stdin is not a tty
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("--profile solo|team|strict", r.stdout)
+        self.assertIn("--yes", r.stdout)
+        r = self.setup_run("--profile", "solo")                       # a profile, but nobody confirmed
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("--yes", r.stdout)
+        self.assertIn("nothing was written", r.stdout)
+        self.assertEqual(self.snapshot(), before)
 
 
 if __name__ == "__main__":

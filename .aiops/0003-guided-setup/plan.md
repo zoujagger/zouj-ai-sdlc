@@ -83,7 +83,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 
     Red: there's no `setup` command.
   - Covers: AC-11
-- [ ] **S6**: Inventory, plan, gate summary, `--dry-run`, and non-tty without `--yes`
+- [x] **S6**: Inventory, plan, gate summary, `--dry-run`, and non-tty without `--yes`
   - Files: `lib/sdlc_engine/setup.py` (modify)
   - Test first: `tests/test_setup.py::Plan::test_dry_run_writes_nothing` and `::test_no_tty_needs_yes`:
     - `--profile team --dry-run` prints Preflight, Inventory, Plan (`+` lines) and Gates sections, and leaves
