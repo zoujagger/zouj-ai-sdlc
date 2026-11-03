@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 from . import artifacts as A
-from .machine import DEFAULT_CONFIG, PLUGIN_ROOT, SCHEMAS, config, evaluate, gate, git, intent_dirs, read
+from .machine import DEFAULT_CONFIG, GIT, PLUGIN_ROOT, SCHEMAS, config, evaluate, gate, git, intent_dirs, read
 from .schema import validate
 
 TRAILER = "AIOps-Approval"
@@ -60,7 +60,6 @@ KEY_HELP = (
 # The approval commit always signs with the system's ssh-keygen and without hooks, whatever the repo's config says:
 # anything an agent can write (repo git config, .git/hooks) must not sit between the human and the signature.
 SSH_KEYGEN = "/usr/bin/ssh-keygen" if Path("/usr/bin/ssh-keygen").is_file() else (shutil.which("ssh-keygen") or "ssh-keygen")
-GIT = "/usr/bin/git" if Path("/usr/bin/git").is_file() else (shutil.which("git") or "git")   # not via an agent's PATH
 SSH_ADD = "/usr/bin/ssh-add" if Path("/usr/bin/ssh-add").is_file() else (shutil.which("ssh-add") or "ssh-add")
 PINNED = ("-c", "gpg.format=ssh", "-c", f"gpg.ssh.program={SSH_KEYGEN}", "-c", "core.hooksPath=/dev/null",
           "-c", "core.fsmonitor=false", "-c", "core.attributesFile=/dev/null")

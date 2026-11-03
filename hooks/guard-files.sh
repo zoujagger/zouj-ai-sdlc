@@ -29,8 +29,18 @@ if [[ "$plugin_real" != "$root_real" && "$path_real/" == "$plugin_real/"* ]]; th
 fi
 
 # Outside the repo: shell startup, git's global config, user PATH and installed plugins run inside the human's approval.
-if [[ "$path_real" != "$root_real"/* ]] && { hit=$(config_match "$path_real" "$root" toolchain-paths) || [[ "$path_real" == "$HOME/bin/"* ]]; }; then
-  block "'$path' is part of what runs when the human approves (${hit#* }); ask the human to change it"
+if [[ "$path_real" != "$root_real"/* ]]; then
+  home_real=$(realpath -m -- "$HOME")
+  toolchain=""
+  if hit=$(config_match "$path_real" "$root" toolchain-paths); then toolchain=${hit#* }
+  elif [[ "$path_real" == "$home_real/bin/"* ]]; then toolchain="~/bin"
+  else
+    IFS=: read -ra path_dirs <<<"${PATH:-}"
+    for d in "${path_dirs[@]}"; do   # every user-writable PATH directory
+      [[ "$d" == /* && -w "$d" && "$path_real" == "$(realpath -m -- "$d")"/* ]] && { toolchain="PATH: $d"; break; }
+    done
+  fi
+  [[ -n "$toolchain" ]] && block "'$path' is part of what runs when the human approves ($toolchain); ask the human to change it"
 fi
 
 # Credential patterns: scan the raw payload so content, new_string, and MultiEdit edits are all covered.

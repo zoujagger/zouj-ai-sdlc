@@ -12,7 +12,7 @@ The `sdlc` engine derives each intent's state from these files and git. Run `sdl
   signing settings are refused). Add the key to `config/allowed-signers` (`<email> namespaces="git" <public key>`) and
   land it through a reviewed PR. `sdlc doctor` checks the setup.
 - **A human for each signature** (`approval_key_policy: "human"`, the default): use a passphrase-protected key that
-  isn't loaded in ssh-agent, or an `sk-` key. Approve in your terminal with the command the refusal prints (`<plugin>/bin/sdlc approve NNNN intent|spec|plan`).
+  isn't loaded in ssh-agent, or an `sk-` key. Approve in your terminal with the command the refusal prints (`/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan`).
 - **Stale approvals:** editing an approved body re-closes its gate. Plans keep their approval when steps are ticked
   and the Deviation log grows.
 - `config/`: human-owned guard lists that extend the plugin defaults (`protected-paths`, `test-paths`, `readonly-exempt`).

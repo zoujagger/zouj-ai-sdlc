@@ -8,6 +8,7 @@ Rules (only in repos initialized with `.aiops/`):
   * Always: no shell writes to artifacts or `.aiops/config|state`, no forged approvals, no merging into main.
 """
 import glob
+import os
 import re
 import shlex
 from fnmatch import fnmatchcase
@@ -170,7 +171,7 @@ SHELL_C = r"((busybox|su)\s+)?(\S*/)?(ba|z|da|k|fi)?sh\s+(-\S+\s+)*?-\w*c|script
 CMD_POS = (rf"(^|[;&|()`\n{{!]|\b(then|do|else|while|until|if|elif|coproc)\s)\s*"
            rf"(((\S*/)?{WRAPPERS}|{SHELL_C})(\s+[^\s$`;&|]+)*?\s+|\w+=\S*\s+)*")
 SHELL_FED_RE = re.compile(r"\|\s*(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\b|\b(source|\.)\s+(<\(|/dev/stdin|/dev/fd|/proc/)")
-HUMAN_WORD_RE = re.compile(rf"(^|[\s=;&|(]){HUMAN_SUBS}(\s|$|[;&|)])")
+HUMAN_WORD_RE = re.compile(rf"(^|[\s=;&|(]|:-){HUMAN_SUBS}(\s|$|[;&|)}}])")   # also a `${x:-approve}` default
 ENGINE_RES = (   # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
     re.compile(rf"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*{HUMAN_SUBS}\b"),
     re.compile(rf"{CMD_POS}[^\s;&|]*[$`][^\s;&|]*\s+{HUMAN_SUBS}\b"),     # dynamic command word: $s, ${s}lc, $(…)
@@ -219,12 +220,14 @@ def _dynamic_engine_call(cmd, plain):
                                   or re.match(r"^python[\d.]*$", Path(words[i]).name)
                                   or (i and words[i - 1] in WRAPPER_WORDS and words[i].startswith("-"))):
             i += 1
-        head = words[i].split() if i < len(words) else []
+        if i + 1 < len(words) and Path(words[i]).name in SHELLS and re.search(r"[$`?*\[{]", words[i + 1]):
+            i += 1                                           # `sh "$(command -v sdlc)" approve`
+        head = [] if i >= len(words) else [words[i]] if re.match(r"^(\$\(|`)", words[i]) else words[i].split()
         if not head or not re.search(r"[$`?*\[{]", head[0]):
             continue
         rest = head[1:] + words[i + 1:]                      # `eval "$s approve …"` keeps its words in one token
         first = next((w for w in rest if not w.startswith("-")), "")
-        if human.match(first) or (assigned and re.search(r"[$`]", first)):
+        if human.match(first) or (assigned and re.search(r"[$`]", first)) or re.search(r"\$[@*]|\$\{\w+:?[-=]", first):
             return True
     return False
 
@@ -571,11 +574,24 @@ def _secret_template(rel):
     return name in (".env.example", ".env.sample", ".env.template") or name.endswith(".pub")
 
 
+def _writable_path_dirs():
+    out = []
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        if d and os.path.isabs(d) and os.access(d, os.W_OK):
+            out.append(os.path.realpath(d))
+    return out
+
+
 def _toolchain_path(p, root):
-    """Shell startup files, git's global config, user PATH directories and installed plugins (defaults/toolchain-paths,
-    plus ~/bin): an agent's write there runs inside the human's next approval."""
-    s = str(p)
-    return bool(glob_hit(s, globs(root, "toolchain-paths"))) or s.startswith(str(Path.home() / "bin") + "/")
+    """Shell startup files, git's global config, installed plugins (defaults/toolchain-paths), ~/bin and every
+    user-writable PATH directory: an agent's write there runs inside the human's next approval. The target is
+    resolved (symlinks, `..`) and also probed as a directory (`cp x ~/.local/bin/`, `cp x ~/.config/fish`)."""
+    real = os.path.realpath(str(p))
+    probes = [real, real + "/x"]                           # a directory target, existing or not, counts as inside
+    homebin = os.path.realpath(str(Path.home() / "bin"))
+    dirs = _writable_path_dirs() + [homebin]
+    return any(glob_hit(q, globs(root, "toolchain-paths")) or any(q == d or q.startswith(d + "/") for d in dirs)
+               for q in probes)
 
 
 WHOLE_TREE_RE = re.compile(r"^(\.|\./|:/.*|:\(.*|.*[*?\[].*)$")
@@ -588,6 +604,9 @@ def _rewrites_tree_from_rev(sub, rest):
                   for a in rest)
     elif sub == "checkout" and "--" in rest:
         rev = any(not a.startswith("-") for a in rest[:rest.index("--")])
+    elif sub == "checkout":                                  # `git checkout HEAD~1 .`: a rev, then paths
+        operands = [a for a in rest if not a.startswith("-")]
+        return len(operands) >= 2 and any(WHOLE_TREE_RE.match(p) for p in operands[1:])
     else:
         return False
     paths = rest[rest.index("--") + 1:] if "--" in rest else [a for a in rest if not a.startswith("-")]

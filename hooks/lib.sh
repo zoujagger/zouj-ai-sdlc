@@ -94,7 +94,8 @@ is_test_path() {
 # 1 after printing the block to stderr; fails closed if python3 can't run it. -I: no cwd, PYTHONPATH or user site.
 secret_scan() {
   local rc=0
-  printf '%s' "$1" | python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1])
+  local py=/usr/bin/python3; [[ -x "$py" ]] || py=python3   # not the first python3 on PATH
+  printf '%s' "$1" | "$py" -I -c 'import sys; sys.path.insert(0, sys.argv[1])
 from sdlc_engine.secret_scan import main; sys.exit(main())' "$PLUGIN_ROOT/lib" || rc=$?
   case $rc in
     0) return 0 ;;

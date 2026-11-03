@@ -378,6 +378,29 @@ class BashGuard(RepoCase):
         finally:
             shutil.rmtree(other)
 
+    def test_review_round6_forms(self):
+        import os
+        self.to_execution()
+        for cmd in ("cp /tmp/python3 ~/.local/bin/", "cp -t ~/.local/bin /tmp/python3", "mv /tmp/x ~/.local/bin",
+                    "rsync /tmp/x ~/.local/bin/", "mv /tmp/x ~/bin", "cp x ~/.config/fish",
+                    "echo x >> ~/.bash_aliases", "git checkout HEAD~1 .", 'sh "$(command -v sdlc)" approve 1 intent',
+                    'set -- approve 0002 intent; $s "$@"', "$s ${a:-approve} 0001 plan"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        # any user-writable directory on PATH outside the repo is part of the toolchain
+        pathdir = self.root.parent / f"{self.root.name}.pathbin"
+        pathdir.mkdir()
+        saved = self.env["PATH"]
+        self.env["PATH"] = f"{pathdir}{os.pathsep}{saved}"          # the hook subprocess sees this PATH
+        try:
+            self.assertTrue(self.blocked(f"cp /tmp/x {pathdir}/git"))
+            link = self.root.parent / f"{self.root.name}.link"
+            link.symlink_to(pathdir)
+            self.assertTrue(self.blocked(f"cp /tmp/x {link}/python3"))
+        finally:
+            self.env["PATH"] = saved
+        for cmd in ("cp x /tmp/y", "git checkout -- .", "git restore .", "git checkout feat/x", "mkdir -p build/bin"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",

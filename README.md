@@ -88,7 +88,7 @@ sign approvals ([approval isolation](docs/architecture.md#approval-isolation)).
 
 `sdlc doctor` checks the setup. Under the default `approval_key_policy: "human"`, `sdlc approve` refuses before
 stamping anything unless each signature needs you: a passphrase key not loaded in ssh-agent, or an `sk-` key (touch).
-Approve in your own terminal with `<plugin>/bin/sdlc approve NNNN intent|spec|plan` (Claude prints the exact path), which asks for the passphrase. Typing
+Approve in your own terminal with `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan` (Claude prints the exact path), which asks for the passphrase. Typing
 `Plan Approved NNNN` in Claude works with an `sk-` key. With a passphrase key, Claude is told the exact terminal
 command instead.
 

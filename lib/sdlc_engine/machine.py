@@ -11,6 +11,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
@@ -30,10 +31,14 @@ DEFAULT_CONFIG = {"lock_when_idle": True, "commit_approvals": True, "main_branch
                   "approval_key_policy": "human"}
 
 
+# git by absolute path: a `git` planted earlier on PATH must not run inside the engine (approvals included).
+GIT = "/usr/bin/git" if Path("/usr/bin/git").is_file() else (shutil.which("git") or "git")
+
+
 def git(root, *args, timeout=10):
     """stdout of `git args` in root, or None on failure. timeout=None waits for a human (passphrase, touch)."""
     try:
-        r = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run([GIT, *args], cwd=root, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return r.stdout.strip() if r.returncode == 0 else None

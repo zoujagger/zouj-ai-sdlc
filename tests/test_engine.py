@@ -232,6 +232,21 @@ class Approvals(RepoCase):
         self.assertFalse(ok)
         self.assertIn("symlink", msg)
 
+    def test_engine_runs_git_by_absolute_path(self):
+        from sdlc_engine import machine
+        self.assertTrue(machine.GIT.startswith("/"), machine.GIT)
+        calls, real = [], machine.subprocess.run
+
+        def spy(cmd, *a, **kw):
+            calls.append(cmd)
+            return real(cmd, *a, **kw)
+        machine.subprocess.run = spy
+        try:
+            machine.git(self.root, "status")
+        finally:
+            machine.subprocess.run = real
+        self.assertEqual(calls[0][0], machine.GIT)
+
     def test_key_policy_requires_a_human_per_signature(self):
         import os
         import subprocess

@@ -81,8 +81,8 @@ def _expand(word, cwd):
     w = word[1:] if word[:1] in "<>" else word
     if w.startswith("--") and "=" in w:
         w = w.split("=", 1)[1]
-    w = re.sub(r"^[\w.-]+=(?=@)", "", w)                    # curl -F file=@.env, gh api -F body=@.env
-    w = w[1:] if w.startswith("@") else w                   # curl --data-binary @.env
+    w = re.sub(r"^[\w.-]+=(?=[@<])", "", w)                 # curl -F file=@.env / f=<.env, gh api -F body=@.env
+    w = w[1:] if w[:1] in "@<" else w                       # curl --data-binary @.env
     w = os.path.expanduser(HOME_RE.sub(os.path.expanduser("~"), w.rstrip(")")))
     if not w or "$" in w:
         return []
@@ -138,7 +138,7 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
         recursive = name in RECURSIVE or (name in RECURSIVE_FLAG and any(
             re.match(r"^-[a-zA-Z]*[rR]", a) or a == "--recursive" for a in args)) or (name == "find" and (
                 depth or any(a in FIND_READS for a in args)))
-        hidden = name in ("rg", "ag") and any(re.match(r"^(--hidden|--no-ignore\S*|-u+|-\w*u)$", a) for a in args)
+        hidden = name in ("rg", "ag") and any(re.match(r"^(--hidden|--no-ignore\S*|-u+|-\w*u|-\.)$", a) for a in args)
         if hidden and not [a for j, a in enumerate(args) if not a.startswith("-") and j not in skip]:
             if (hit := ancestor_hit(cwd, root, pats, files=True)):   # no path operand: the cwd, hidden files included
                 return f"`{name}` with hidden files searches '{cwd}', which holds secret material ({hit})"

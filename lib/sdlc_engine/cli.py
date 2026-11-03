@@ -358,7 +358,7 @@ def _doctor_signing(root, row):
         "add `<email> namespaces=\"git\" <public key>` to .aiops/config/allowed-signers (human-owned) via a reviewed PR")
     private = pub.with_suffix("") if pub.suffix == ".pub" else None
     if private and private.is_file():
-        probe = subprocess.run(["ssh-keygen", "-y", "-P", "", "-f", str(private)], capture_output=True, text=True)
+        probe = subprocess.run([approvals.SSH_KEYGEN, "-y", "-P", "", "-f", str(private)], capture_output=True, text=True)
         if probe.returncode == 0:
             out("  ! signing key has no passphrase: anything running as you could sign approvals. "
                 "Add one (ssh-keygen -p) and keep it out of ssh-agent")

@@ -16,7 +16,8 @@ if [[ ! -d "$root/.aiops" ]] && [[ -z "$(git -C "$root" ls-files -- .aiops 2>/de
 fi
 
 errf=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/zouj-ai-sdlc-hook.$$")
-out=$(printf '%s' "$input" | python3 -I "$plugin/bin/sdlc" hook "$event" 2>"$errf")   # -I: no cwd/PYTHONPATH/user site
+py=/usr/bin/python3; [[ -x "$py" ]] || py=python3   # not the first python3 on PATH, which an agent could plant
+out=$(printf '%s' "$input" | "$py" -I "$plugin/bin/sdlc" hook "$event" 2>"$errf")   # -I: no cwd/PYTHONPATH/user site
 rc=$?
 err=$(cat "$errf" 2>/dev/null); rm -f "$errf"
 [[ -n "$out" ]] && printf '%s\n' "$out"

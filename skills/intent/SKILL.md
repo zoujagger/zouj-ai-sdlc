@@ -23,7 +23,7 @@ You are in a **read-only** state. Only `.aiops/` and docs can be written.
 4. **Create.** Run `sdlc new <kebab-slug> --title "<Title>"`, then `git switch -c feat/NNNN-<slug>` (the branch makes the intent active). Delegate the writing to the **product-analyst** subagent with the interview answers.
 5. **Validate.** Run `sdlc validate NNNN` and fix every error.
 6. **Stop at the gate.** Show a short summary of the intent and its open questions, then say exactly:
-   > Review `.aiops/NNNN-slug/intent.md`. Reply with corrections, or type **`Intent Approved NNNN`** (or, if signing needs your passphrase, run the printed `<plugin>/bin/sdlc approve NNNN intent` command in your terminal) to move to SPECIFICATION.
+   > Review `.aiops/NNNN-slug/intent.md`. Reply with corrections, or type **`Intent Approved NNNN`** (or, if signing needs your passphrase, run the printed `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent` command in your terminal) to move to SPECIFICATION.
 
    **Don't continue until the approval context appears.** If the human asks for changes, edit and validate again.
 
