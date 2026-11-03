@@ -84,6 +84,10 @@ delivered as intent `.aiops/0002-hardening/`.
   are blocked. `git checkout <rev> -- .` and `git restore -s <rev> ':/'` are refused. Git's global config, shell
   startup files, `~/.local/bin`, `~/bin` and `~/.claude/plugins` can't be written by the agent
   (`defaults/toolchain-paths`). `bin/sdlc` starts through a POSIX `sh` line that runs `python3 -I`.
+- **Round 6.** Toolchain targets are resolved (symlinks, directory destinations such as `cp x ~/.local/bin/`), and
+  every user-writable PATH directory counts. The engine runs git, ssh-keygen and python by absolute path, and the
+  documented approve command is `/usr/bin/python3 -I <plugin>/bin/sdlc approve …`. More credential printers
+  (`git -C . credential fill`, `kubectl config view --raw`, `aws configure export-credentials`, …) are blocked.
 
 ### Added
 - `sdlc legacy-approvals [--write [--yes]]` (human-only): records pre-signing approval commits as an explicit legacy list.
