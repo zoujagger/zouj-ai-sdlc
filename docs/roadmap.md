@@ -48,6 +48,7 @@ ceremony comes with it. They never change *whether* a gate exists or *who* decid
 ## Roadmap
 
 ### Phase 1: 0.2.0-alpha.2, "first approved plan in 10 minutes"
+**Status:** in progress as intent `.aiops/0003-guided-setup/`; ships as 0.2.0-alpha.2.
 1. **Guided setup: `sdlc setup`.** Stdlib Python, shipped in the plugin, rerunnable, with `--dry-run` and `--yes`.
    - **Preflight:** git, make, python ≥ 3.9, `claude` ≥ 2.1, optional `gh` (auth plus `workflow` scope), and a git
      credential helper.

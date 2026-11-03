@@ -1,0 +1,44 @@
+name: Install or runtime problem
+description: Setup, a block you didn't expect, approvals, signing, CI, or anything that stopped you
+labels: ["type:install", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Run `sdlc feedback` in the repo and paste its output below. It prints only local
+        information, and zouj-ai-sdlc never uploads diagnostics. Remove anything you don't want to share.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it happen?
+      options:
+        - sdlc setup / init
+        - An approval (Intent/Spec/Plan Approved)
+        - Signing / doctor
+        - A blocked command (BLOCKED by …)
+        - CI (aiops-gates)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Profile
+      options: [solo, team, strict, not set up yet]
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you run, and what happened?
+      description: The exact command or prompt, and the full message (block messages include the reason).
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Output of `sdlc feedback`
+      render: text
+  - type: input
+    id: os
+    attributes:
+      label: OS and versions
+      placeholder: "Ubuntu 24.04, Claude Code 2.1.x, python 3.12, git 2.4x"

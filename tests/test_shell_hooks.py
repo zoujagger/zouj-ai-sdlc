@@ -267,6 +267,38 @@ class ShellHooks(RepoCase):
         self.assertIn("/zouj-ai-sdlc:setup", init)
         self.assertNotIn("every plugin hook here is a no-op", init)              # safety guards run in every repo
 
+    def test_onboarding_docs(self):
+        import re
+        readme = (ROOT / "README.md").read_text()
+        self.assertEqual(re.findall(r"(?m)^## (.+)$", readme)[0], "Start using")      # task-first
+        start = readme.split("## Start using", 1)[1].split("\n## ", 1)[0]
+        for cmd in ("/zouj-ai-sdlc:intent", "/zouj-ai-sdlc:triage", "/zouj-ai-sdlc:fix", "/zouj-ai-sdlc:review",
+                    "/zouj-ai-sdlc:status", "/zouj-ai-sdlc:setup"):
+            self.assertIn(cmd, start, cmd)
+        self.assertIn("Playbook stage", start)
+        install = readme.split("## Install", 1)[1].split("\n## ", 1)[0]
+        for piece in ("/zouj-ai-sdlc:setup", "/plugin marketplace add zoujagger/zouj-ai-sdlc",
+                      "/plugin install zouj-ai-sdlc@zouj", '"extraKnownMarketplaces"', "--sandbox", "Official sources"):
+            self.assertIn(piece, install, piece)
+        for rel in ("TROUBLESHOOTING.md", "COMMANDS-QUICK-REF.md", ".github/ISSUE_TEMPLATE/install-problem.yml",
+                    ".github/ISSUE_TEMPLATE/quick-feedback.yml", ".github/ISSUE_TEMPLATE/config.yml"):
+            self.assertTrue((ROOT / rel).is_file(), rel)
+        quick = (ROOT / "COMMANDS-QUICK-REF.md").read_text()
+        listed = set(re.findall(r"/zouj-ai-sdlc:([a-z-]+)", quick))
+        for name in listed:
+            self.assertTrue((ROOT / "skills" / name / "SKILL.md").is_file(), f"quick ref lists a missing skill: {name}")
+        user_skills = {d.name for d in (ROOT / "skills").iterdir() if (d / "SKILL.md").is_file()
+                       and not d.name.startswith(("policy-", "using-"))}
+        self.assertEqual(user_skills - listed, set(), "skills missing from the quick reference")
+        trouble = (ROOT / "TROUBLESHOOTING.md").read_text()
+        for topic in ("Approved", "signing", "workflow` scope", "credential helper", "BLOCKED", "sdlc feedback"):
+            self.assertIn(topic, trouble, topic)
+        for name in ("install-problem.yml", "quick-feedback.yml"):
+            form = (ROOT / ".github" / "ISSUE_TEMPLATE" / name).read_text()
+            self.assertRegex(form, r"(?m)^name: .+\n^description: .+")
+            self.assertIn("body:", form)
+        self.assertIn("sdlc feedback", (ROOT / ".github" / "ISSUE_TEMPLATE" / "install-problem.yml").read_text())
+
     def test_version_matches_changelog(self):
         import re
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
