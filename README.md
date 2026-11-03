@@ -81,6 +81,11 @@ echo "$(git config user.email) namespaces=\"git\" $(cat ~/.ssh/id_ed25519.pub)" 
 sdlc legacy-approvals --write                           # once, when upgrading: records older unsigned approvals
 git add .aiops/config && git commit -m "chore(aiops): approver keys"   # lands via PR; CI trusts the target branch's list
 ```
+Signing-key options, from strongest to weakest: approve from a separate OS user or a clean clone; an `sk-` key (touch,
+without `no-touch-required`); a dedicated passphrase key kept out of ssh-agent. The escape hatch
+`"approval_key_policy": "any"` (in `.aiops/config.json`) accepts any key, at a cost: anything running as you can then
+sign approvals ([approval isolation](docs/architecture.md#approval-isolation)).
+
 `sdlc doctor` checks the setup. Under the default `approval_key_policy: "human"`, `sdlc approve` refuses before
 stamping anything unless each signature needs you: a passphrase key not loaded in ssh-agent, or an `sk-` key (touch).
 Approve in your own terminal with `bin/sdlc approve NNNN intent|spec|plan`, which asks for the passphrase. Typing

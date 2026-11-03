@@ -23,6 +23,11 @@ We aim to acknowledge reports within 3 business days.
     accept only an `sk-` key (touch) or a passphrase-protected key that isn't loaded in ssh-agent. An agent running
     as you can't sign without you, whatever the shell guards miss.
   - CI can't see how a key is protected. Keep the key protected, and keep `.aiops/config/` under CODEOWNERS.
+  - Options, strongest first: a separate OS user or clean clone for approving, an `sk-` key (without
+    `no-touch-required`), a dedicated passphrase key kept out of ssh-agent. `"approval_key_policy": "any"` is the
+    human-owned escape hatch; its cost is that anything running as you can sign approvals
+    ([approval isolation](docs/architecture.md#approval-isolation)).
+  - Approval commits are made with a pinned `ssh-keygen`, no hooks and no repo-local signing config.
 - **Consumer scaffolding:**
   - `templates/scaffold/.claude/settings.json` ships Read/Edit deny rules for `.env*`, `secrets/`, `*.pem` and `*.key`.
   - The scaffold's CI loads this plugin from a pinned ref.

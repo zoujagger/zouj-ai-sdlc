@@ -44,9 +44,25 @@ delivered as intent `.aiops/0002-hardening/`.
 - Secret reads: quoting, glob words, symlinks and `~/.ssh` / `~/.aws` / `.netrc` / `.npmrc` are covered. The
   `.env.example` exemption is per word.
 - Force-push through a `+refspec`, `git --work-tree`, and `curl -o` / `wget -O` are caught.
+- **Signing toolchain.** Approval commits run with a pinned `gpg.ssh.program`, `core.hooksPath=/dev/null` and no
+  timeout. Repo-local `gpg.*`, `user.signingkey` and `core.hooksPath` are refused, and the agent can't set them or
+  write under `.git/` or the installed plugin.
+- **Secrets and protected paths.** `secret-paths` apply to every shell argument and to directory Grep/Glob, with
+  cloud, registry and cluster credentials added. `protected-paths` apply to shell writes, and the scaffold CODEOWNERS
+  covers `/.github/` and `/.claude/`.
+- **Parser.** Heredoc markers inside arithmetic and `$'…'` don't hide later lines. Targets are brace-expanded and
+  `VAR=value` set earlier in the command is substituted. Patches are read at every `-pN` level and under
+  `--directory`; piped patches (`git apply`, `git am`, `patch`) are refused. `tar -x`/`unzip -d` destinations and
+  `find -iname`/`-ipath` count.
+- **Variants and false positives.** Quoted `ENV="prod"`, `'+main'`, `git push -fu` and `git push --mirror` are
+  blocked. `echo $HOME close …`, `[ "$CLAUDECODE" = 1 ]` and commit messages that merely mention `AIOps-…Approval`
+  are no longer blocked.
+- **Legacy and keys.** `legacy-approvals --write` records only unsigned approvals on main that predate the commit
+  introducing `allowed-signers`, and confirms each one (`--yes` skips the question). An `sk-` key allow-listed with
+  `no-touch-required` fails the key policy. This repo's CI fails closed on an unresolvable base.
 
 ### Added
-- `sdlc legacy-approvals [--write]` (human-only): records pre-signing approval commits as an explicit legacy list.
+- `sdlc legacy-approvals [--write [--yes]]` (human-only): records pre-signing approval commits as an explicit legacy list.
 - `sdlc validate --base REF`, and `sdlc doctor` signing checks (configured key, key in `allowed-signers`, passphrase warning).
 - Scaffold: `.claude/settings.json` (Read/Edit deny rules for secrets), `.aiops/config/{allowed-signers,legacy-approvals,secret-paths}`.
 

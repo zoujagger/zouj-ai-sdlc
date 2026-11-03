@@ -259,7 +259,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `.github/workflows/ci.yml`: fail closed on an unresolvable base.
   - Test first: `tests/test_engine.py::Approvals::test_legacy_write_only_pre_signing_on_main` and `::test_sk_key_without_touch_rejected`, plus `tests/test_shell_hooks.py::ShellHooks::test_ci_pins_tools` (adding fail-closed) → red today
   - Covers: AC-29
-- [ ] **S32**: Docs and plan hygiene
+- [x] **S32**: Docs and plan hygiene
   - Files: `docs/architecture.md` (toolchain row, approval isolation, required workflow, residuals), `README.md` and `SECURITY.md` (signing-key options incl. the `"any"` escape hatch and its cost), `CHANGELOG.md` `[0.2.0]`, `tests/test_engine.py` (blank-line nit), plan Test definitions (the extra round-2 tests)
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_docs_state_the_residuals`, a static check that architecture.md lists the toolchain row and the approval-isolation advice → missing today
   - Covers: AC-23
@@ -284,7 +284,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | AC-2 | `tests/test_guards.py::BashGuard::test_heredoc_redirect_after_marker` | hook | heredoc writes to artifacts/state/config are blocked in state 4 |
 | AC-3 | `tests/test_guards.py::BashGuard::test_more_write_forms_while_locked` | hook | the six write forms are blocked |
 | AC-4 | `tests/test_guards.py::BashGuard::test_aiops_tree_is_protected` | hook | rm/mv/cp/rmdir on the `.aiops` tree are blocked in every state |
-| AC-5 | `tests/test_engine.py::States::test_initialized_when_tracked_but_missing` | unit | tracked-but-missing `.aiops` still counts as initialized and locked |
+| AC-5 | `tests/test_engine.py::States::test_initialized_when_tracked_but_missing`, `tests/test_shell_hooks.py::ShellHooks::test_engine_wrapper_stays_on_when_aiops_is_tracked_but_deleted` | unit, hook | tracked-but-missing `.aiops` still counts as initialized and locked, in the engine and the hook wrapper |
 | AC-6 | `tests/test_engine.py::States::test_copied_folder_does_not_open_gates`, `tests/test_guards.py::EditGuard::test_id_is_immutable` | unit, hook | id binding |
 | AC-7 | `tests/test_guards.py::BashGuard::test_engine_cannot_be_disguised` | hook | quoted, escaped, dynamic and env-cleared engine calls are blocked |
 | AC-8 | `tests/test_engine.py::Approvals::test_refuses_without_signing_key_before_stamping`, `::test_approval_commit_is_signed` | unit | precheck before stamping; signed commit |
@@ -299,7 +299,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | AC-16 | `tests/test_engine.py::Approvals::test_key_policy_requires_a_human_per_signature`, `tests/test_cli.py::Lifecycle::test_doctor_checks_signing`, `::test_prompt_approval_explains_terminal_fallback` | unit, cli | unprotected or agent-loaded keys refused; an encrypted key not in the agent, or `sk-`, accepted |
 | AC-17 | `tests/test_guards.py::BashGuard::test_heredoc_marker_in_quotes_or_comment` | hook | markers inside quotes or comments don't hide later lines |
 | AC-18 | `tests/test_guards.py::BashGuard::test_engine_cannot_be_disguised_further` | hook | export -n, declare +x, env -, wrappers, dynamic args, xargs, copies, split trailer |
-| AC-19 | `tests/test_engine.py::Approvals::test_audit_fails_closed_on_unresolvable_base`, `::test_audit_accepts_allow_listed_signer_against_base`, `tests/test_cli.py::Lifecycle::test_validate_rejects_empty_base` | unit, cli | fail closed; positive base path |
+| AC-19 | `tests/test_engine.py::Approvals::test_audit_fails_closed_on_unresolvable_base`, `::test_audit_accepts_allow_listed_signer_against_base`, `tests/test_cli.py::Lifecycle::test_validate_rejects_empty_base`, `tests/test_engine.py::Approvals::test_audit_bootstraps_when_base_has_no_signer_list` | unit, cli | fail closed; positive base path; the warned bootstrap |
 | AC-20 | `tests/test_guards.py::BashGuard::test_aiops_tree_is_protected_from_globs_and_find` | hook | globs, $PWD, find, tar -C, git apply |
 | AC-21 | `tests/test_shell_hooks.py::ShellHooks::test_secret_reads_blocked_further` | hook | compound .env.example, quotes, globs, symlinks, ~/.ssh, nested secrets |
 | AC-23 | `tests/test_engine.py::Approvals::test_signing_toolchain_is_pinned`, `tests/test_guards.py::BashGuard::test_signing_toolchain_is_guarded`, `tests/test_shell_hooks.py::ShellHooks::test_docs_state_the_residuals` | unit, hook, static | pinned and hook-less signing without a timeout; repo-local overrides refused; toolchain writes blocked |

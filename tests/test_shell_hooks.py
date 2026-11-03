@@ -133,6 +133,18 @@ class ShellHooks(RepoCase):
                     "git push -u origin feat/x && rm -f /tmp/y"):
             self.assertEqual(self.bash(cmd), 0, cmd)
 
+    def test_docs_state_the_residuals(self):
+        arch = (ROOT / "docs" / "architecture.md").read_text()
+        self.assertRegex(arch, r"\n\| The agent tampers with the signing toolchain[^\n]*gpg\.ssh\.program")
+        self.assertIn("## Approval isolation", arch)
+        self.assertRegex(arch, r"separate OS user[^\n]*clean clone")
+        self.assertIn("required workflow", arch)
+        for doc in ("README.md", "SECURITY.md", "docs/architecture.md"):
+            self.assertRegex((ROOT / doc).read_text(), r'"approval_key_policy": "any"[\s\S]{0,200}?(cost|reopens)', doc)
+        log = (ROOT / "CHANGELOG.md").read_text().split("\n## [0.1.0]")[0]
+        for needle in ("no-touch-required", "brace", "--mirror", "fails closed", "--yes"):
+            self.assertIn(needle, log)
+
     def test_version_matches_changelog(self):
         import re
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]

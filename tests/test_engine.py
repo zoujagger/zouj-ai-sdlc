@@ -224,6 +224,7 @@ class Approvals(RepoCase):
         git(self.root, "config", "--global", "user.signingkey", f"{signing_key()}.pub")
         cfg.write_text('{"approval_key_policy": "any"}')
         self.assertIsNone(ap.signing_problem(self.root))
+
     def test_refuses_without_signing_key_before_stamping(self):
         git(self.root, "config", "--global", "--unset", "user.signingkey")
         self.write("intent", INTENT)
