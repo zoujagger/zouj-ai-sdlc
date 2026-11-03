@@ -21,6 +21,13 @@ if ! secret_template "$rel"; then
   fi
 fi
 
+# The installed plugin is the code the human runs to approve: never edited from a session in another repo.
+plugin_real=$(realpath -m -- "$PLUGIN_ROOT"); root_real=$(realpath -m -- "$root")
+path_real=$( (cd "$root" 2>/dev/null && realpath -m -- "$path") || printf '%s' "$path")
+if [[ "$plugin_real" != "$root_real" && "$path_real/" == "$plugin_real/"* ]]; then
+  block "'$path' is inside the installed plugin, which the human runs to approve; change it through its own repo"
+fi
+
 # Credential patterns: scan the raw payload so content, new_string, and MultiEdit edits are all covered.
 if grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{36}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}' <<<"$input"; then
   block "content looks like a credential; use env vars / the secret manager instead"

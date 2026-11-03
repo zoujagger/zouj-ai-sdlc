@@ -18,6 +18,10 @@ init_repo() {
     echo "evals: HOME is the operator's home; refusing to rewrite its global git config (run evals with a temp HOME)" >&2
     exit 1
   fi
+  if [[ -n "${GIT_CONFIG_GLOBAL:-}" && "$GIT_CONFIG_GLOBAL" != "$HOME"/* ]]; then
+    echo "evals: GIT_CONFIG_GLOBAL points outside the eval HOME; refusing to rewrite it" >&2
+    exit 1
+  fi
   git config --global gpg.format ssh; git config --global user.signingkey "$PWD/.eval-signing-key.pub"
   $SDLC init >/dev/null
   mkdir -p .aiops/config

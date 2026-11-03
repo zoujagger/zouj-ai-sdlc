@@ -153,8 +153,9 @@ def _commit_alone(root, rel, title, body, sign):
     sha = run("commit-tree", tree, *(["-p", head] if head else []), *sign, "-m", title, "-m", body)
     if not sha or run("update-ref", "-m", title, "HEAD", sha, *([head] if head else [])) is None:
         return None
-    run("update-index", "--add", "--cacheinfo", entry)          # the real index follows the commit
-    return sha
+    if run("update-index", "--add", "--cacheinfo", entry) is None:   # the real index follows the commit
+        return sha, f"git reset -q -- {rel}"
+    return sha, None
 
 
 def signing_problem(root):
@@ -194,6 +195,8 @@ def approve(root, d, kind, via, who=None):
         ok, why = gate(d, schema["requires"])
         if not ok:
             return False, f"{schema['requires']}.md for {ident} is not approved ({why}); approve it first."
+    if (d / f"{kind}.md").is_symlink():
+        return False, f"{kind}.md for {ident} is a symlink; approvals are committed only for regular files."
     errors, _ = validate(d, kind)
     if errors:
         return False, f"{kind}.md for {ident} does not validate, so it was NOT approved:\n- " + "\n- ".join(errors)
@@ -219,7 +222,8 @@ def approve(root, d, kind, via, who=None):
         title = f"chore(aiops): {schema['approval_phrase']} {ident}"
         body = f"{TRAILER}: {kind} {ident} sha256={digest}\nApproved-By: {who}"
         sign = ["-S"] if signed else []
-        if _commit_alone(root, rel, title, body, sign) is None:
+        sha, fix = _commit_alone(root, rel, title, body, sign) or (None, None)
+        if sha is None:
             if signed:   # an unsigned stamp would never pass the audit: roll it back
                 path.write_text(text)
                 return False, (f"{kind}.md for {ident} was NOT approved: the signed commit failed (signing needs "
@@ -227,7 +231,8 @@ def approve(root, d, kind, via, who=None):
                                f"`{approve_command(ident, kind)}`.")
             note = "\n(The approval is in the working tree, but committing it failed. Commit it yourself.)"
         else:
-            note = f"\nCommitted as `{title}`."
+            note = f"\nCommitted as `{title}`." + (f" The index was busy and still holds the old {kind}.md: run "
+                                                f"`{fix}` before your next commit." if fix else "")
     st = evaluate(root, d)
     return True, (f"{schema['approval_phrase']}: {kind}.md for {ident} approved by {who}.{note}\n"
                   f"Intent {ident} is now in state {st.state} {st.name}. Next: {st.next}")

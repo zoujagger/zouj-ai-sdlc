@@ -213,6 +213,25 @@ class Approvals(RepoCase):
         self.assertEqual(git(self.root, "show", "--name-only", "--format=", sha), ".aiops/0001-csv-export/intent.md")
         self.assertEqual(git(self.root, "diff", "--cached", "--name-only"), "")    # the index follows the commit
 
+    def test_approval_reports_a_stuck_index_and_refuses_symlinks(self):
+        import os
+        self.write("intent", INTENT)
+        lock = self.root / ".git" / "index.lock"
+        lock.write_text("")                                          # an IDE holds the index
+        try:
+            ok, msg = approvals.approve(self.root, self.d, "intent", via="test")
+        finally:
+            lock.unlink()
+        self.assertTrue(ok, msg)
+        self.assertIn("git reset -q -- .aiops/0001-csv-export/intent.md", msg)
+        self.write("spec", SPEC)
+        real = self.root / "spec-real.md"
+        (self.d / "spec.md").rename(real)
+        os.symlink(real, self.d / "spec.md")
+        ok, msg = approvals.approve(self.root, self.d, "spec", via="test")
+        self.assertFalse(ok)
+        self.assertIn("symlink", msg)
+
     def test_key_policy_requires_a_human_per_signature(self):
         import os
         import subprocess

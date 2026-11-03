@@ -76,6 +76,9 @@ def check_edit(data):
     root = project_root(cwd)
     if not initialized(root):
         return None
+    if _in_plugin(path, cwd, root):
+        return _block("toolchain", f"'{path}' is inside the installed plugin, which the human runs to approve.",
+                      "change the plugin through its own repo.")
     rel = _rel(root, path, cwd)
     if rel is None:
         return None
@@ -155,10 +158,19 @@ GIT_MAIN_FORBIDDEN = {"merge", "rebase", "cherry-pick", "am"}
 GIT_TREE_WRITERS = {"rm", "mv", "checkout", "restore", "reset", "clean", "stash"}
 MAKE_WRITERS = {"format", "fmt", "fix", "generate", "gen", "migrate", "codegen"}
 HUMAN_SUBS = r"(approve|close|unlock|hook|legacy-approvals)"
-# Commands that run their arguments as a command; any literal words (options, durations) may follow them.
-WRAPPERS = (r"(sudo|doas|command|exec|env|nohup|time|builtin|xargs|eval|nice|timeout|stdbuf|setsid|ionice|chrt|"
-            r"taskset|unbuffer|watch|flock|bash|sh|zsh|dash|ksh)")
-CMD_POS = rf"(^|[;&|(`\n{{!]|\b(then|do|else)\s)\s*({WRAPPERS}(\s+[^\s$`;&|]+)*?\s+|\w+=\S*\s+)*"
+# Commands that run their arguments as a command; any literal words (options, durations) may follow them. Shells
+# count only with -c (`sh script.sh $x hook` runs a script, not $x).
+WRAPPER_WORDS = {"sudo", "doas", "command", "exec", "env", "nohup", "time", "builtin", "xargs", "eval", "nice",
+                 "timeout", "stdbuf", "setsid", "ionice", "chrt", "taskset", "unbuffer", "watch", "flock", "trap",
+                 "coproc", "strace", "ltrace", "parallel", "busybox", "then", "do", "else", "while", "until", "if",
+                 "elif", "!", "{"}
+WRAPPERS = r"(sudo|doas|command|exec|env|nohup|time|builtin|xargs|eval|nice|timeout|stdbuf|setsid|ionice|chrt|" \
+           r"taskset|unbuffer|watch|flock|trap|coproc|strace|ltrace|parallel|python[\d.]*)"
+SHELL_C = r"((busybox|su)\s+)?(\S*/)?(ba|z|da|k|fi)?sh\s+(-\S+\s+)*?-\w*c|script\s+(-\S+\s+)*?-\w*c|su\s+(-\S+\s+)*?-c"
+CMD_POS = (rf"(^|[;&|()`\n{{!]|\b(then|do|else|while|until|if|elif|coproc)\s)\s*"
+           rf"(((\S*/)?{WRAPPERS}|{SHELL_C})(\s+[^\s$`;&|]+)*?\s+|\w+=\S*\s+)*")
+SHELL_FED_RE = re.compile(r"\|\s*(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\b|\b(source|\.)\s+(<\(|/dev/stdin|/dev/fd|/proc/)")
+HUMAN_WORD_RE = re.compile(rf"(^|[\s=;&|(]){HUMAN_SUBS}(\s|$|[;&|)])")
 ENGINE_RES = (   # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
     re.compile(rf"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*{HUMAN_SUBS}\b"),
     re.compile(rf"{CMD_POS}[^\s;&|]*[$`][^\s;&|]*\s+{HUMAN_SUBS}\b"),     # dynamic command word: $s, ${s}lc, $(…)
@@ -180,11 +192,33 @@ ENV_RES = (
     re.compile(rf"(\s-u\s*|--unset[=\s]+){MARKERS}\b"),
     re.compile(r"\benv\s+(-\S+\s+)*(-i|--ignore-environment|-)(\s|$)"),
     re.compile(rf"\b(export|declare|typeset|readonly|local)\b[^;&|\n]*\b{MARKERS}\b"),   # export -n, declare +x, …
-    re.compile(r"(\bunset\b|\s-u\s*|--unset[=\s]+|\b(export|declare|typeset)\s+[-+]\w+\s)[^;&|\n]*\$"),  # computed names
+    # computed marker names: `unset ${a}CODE`, `unset CLAUDE{CODE,}`, `unset CLAUDE*`, printf-built `CLAUDE%s`
+    re.compile(r"\bunset\b[^;&|\n]*\s(\$|[^\s$\[]*[{*?%])"),
+    re.compile(r"\benv\b[^;&|\n]*\s(-u\s*|--unset[=\s]+)(\$|[^\s$]*[{*?%])"),
+    re.compile(r"\b(export|declare|typeset)\b[^;&|\n]*\s(-n|\+x)\b[^;&|\n]*\s(\$|[^\s$]*[{*?%])"),
+    re.compile(r"\bexec\s+-\w*c"),                                    # bash's own empty-environment exec
 )
 
 
 SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
+
+
+def _dynamic_engine_call(cmd, plain):
+    """A human-only subcommand word anywhere, with a command word the parser can't read: `$s`, `${s}lc`, `$(…)`, or a
+    glob/brace (`bin/sdl?`, `sdl{c,}`) after any wrappers and assignments; or text piped or sourced into a shell."""
+    if not HUMAN_WORD_RE.search(plain):
+        return False
+    if SHELL_FED_RE.search(plain) and re.search(rf"([$`?*\[{{]\S*|sdl\S*)\s+{HUMAN_SUBS}\b", plain):
+        return True
+    for words, _ in segments(tokenize(cmd)):
+        i = 0
+        while i < len(words) and (words[i] in WRAPPER_WORDS or re.match(r"^[A-Za-z_]\w*=", words[i])
+                                  or re.match(r"^python[\d.]*$", Path(words[i]).name)
+                                  or (i and words[i - 1] in WRAPPER_WORDS and words[i].startswith("-"))):
+            i += 1
+        if i < len(words) and re.search(r"[$`?*\[{]", words[i].split()[0] if words[i].split() else ""):
+            return True
+    return False
 
 
 def _nested_command(words):
@@ -332,7 +366,8 @@ def check_bash(data):
     if not initialized(root) or not cmd.strip():
         return None
     plain = re.sub(r"[\\'\"]", "", cmd)
-    if TRAILER_RE.search(plain) or (FORMAT_TRAILER_RE.search(plain) and "Approval" in plain):   # also printf-built
+    if TRAILER_RE.search(plain) or (FORMAT_TRAILER_RE.search(plain) and "Approval" in plain
+                                    and re.search(r"\bgit\b", plain)):   # also printf- or variable-built
         return _block("human gate", "approval commits are created only by a human approval.",
                       "ask the human to approve in their terminal (`<plugin>/bin/sdlc approve NNNN intent|spec|plan`, "
                       "the exact path is in the refusal message).")
@@ -340,7 +375,7 @@ def check_bash(data):
         return _block("human gate", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
                       "would let human-only commands run as the agent.",
                       "leave the environment alone; human-only steps are run by the human.")
-    if any(r.search(plain) for r in ENGINE_RES):
+    if any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain):
         return _block("human gate", "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
                       "stop and ask the human: they type `Intent|Spec|Plan Approved NNNN` in the prompt, "
                       "or run the command in their own terminal.")
@@ -484,10 +519,9 @@ def _extract_dirs(name, args):
     return []
 
 
-SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.(hookspath|fsmonitor|attributesfile|sshcommand)|"
+SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.(hookspath|fsmonitor|attributesfile|sshcommand|editor|pager)|sequence\.editor|"
                                r"include\..+|includeif\..+|filter\..+|alias\..+|diff\..+)$", re.I)
-GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list", "--show-origin",
-                    "--show-scope", "--name-only", "--null", "-z", "--bool", "--int", "--path"}
+GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list"}   # not --path/-z: formats
 GIT_CONFIG_WRITES = {"--unset", "--unset-all", "--replace-all", "--add", "--rename-section", "--remove-section",
                      "-e", "--edit"}
 GIT_CONFIG_VALUE_OPTS = {"-f", "--file", "--blob", "--type", "--default", "--comment", "--value"}
@@ -626,7 +660,9 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                 if hit:
                     return _block("artifacts", f"`git {sub}` on '{hit}' would delete or rewrite an artifact outside the "
                                   "gate guard.", "edit artifacts with the Edit/Write tools; ask the human to remove one.")
-                prot = next((r for r in rels if glob_hit(r, globs(root, "protected-paths"))), None)
+                pglobs = globs(root, "protected-paths")
+                prot = next((r for r in rels if glob_hit(r, pglobs)
+                             or any(g.startswith(r.rstrip("/") + "/") for g, _ in pglobs)), None)   # a directory
                 if prot:
                     return _block("protected", f"`git {sub}` would rewrite '{prot}', a protected path.",
                                   "propose the change in chat; a human edits protected files.")

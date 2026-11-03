@@ -240,6 +240,9 @@ class BashGuard(RepoCase):
                     "tar -xf x.tar -C.aiops", "git apply cq.patch", "echo x >> /tmp/someone/.ssh/config",
                     "cp key /tmp/someone/.aws/credentials"):
             self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("git checkout HEAD~1 .github", "git config --path core.fsmonitor /tmp/x",
+                    "git config -z core.editor /tmp/x"):
+            self.assertTrue(self.blocked(cmd), cmd)
         for cmd in ("git checkout main -- src/app.py", "git restore src/app.py", "tar -xf x.tar -Cbuild",
                     "echo x >> /tmp/notes.txt"):
             self.assertFalse(self.blocked(cmd), cmd)
@@ -323,6 +326,27 @@ class BashGuard(RepoCase):
             self.assertTrue(self.blocked(cmd), cmd)
         for cmd in ("echo $HOME close the door", "nice make test", "timeout 5 make check",
                     "export PATH=$PATH:/opt/bin", "unset FOO"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
+    def test_engine_call_forms_round4(self):
+        self.to_execution()
+        for cmd in ("unset CLAUDE{CODE,_CODE_CHILD_SESSION}", "unset CLAUDE*", "export -n CLAUDE{CODE,}",
+                    "env -u CLAUDE{CODE,} make test", "exec -c bash",
+                    "eval \"$(printf 'unset CLAUDE%s CLAUDE_%s_CHILD_SESSION' CODE CODE)\"",
+                    "s=sdlc; while $s approve 0001 plan; do break; done", "until $s approve 0001 plan; do :; done",
+                    "coproc $s approve 0001 plan", "case x in x) $s approve 0001 plan;; esac",
+                    "trap '$s approve 0001 plan' EXIT", "/bin/bash -c '$s approve 0001 plan'",
+                    "busybox sh -c '$s approve 0001 plan'", "script -qc '$s approve 0001 plan' /dev/null",
+                    "echo '$s approve 0001 plan' | bash", "source <(echo $s approve 0001 plan)",
+                    "x=approve; $s $x 0001 plan", 'FOO="a b" $s approve 0001 plan', "bin/sdl? approve 0001 plan",
+                    "bin/sdl[c] approve 0001 plan", "bin/sdl{c,} approve 0001 plan",
+                    "python3 bin/sdl? approve 0001 plan"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ('git push -u origin "$(git branch --show-current)"', "git push -u origin $BRANCH", "sort -u $f",
+                    "docker run -u $(id -u) img", "ps -u $USER", "python3 -u script.py $ARG",
+                    "curl -u $USER:$TOKEN https://example.com", "declare -r X=$Y", "unset arr[$i]",
+                    "sh scripts/x.sh $X hook", 'm=AIOps-x; echo "Approval"', "while true; do make test; break; done",
+                    'for f in *.py; do echo "$f"; done', "$EDITOR notes.md"):
             self.assertFalse(self.blocked(cmd), cmd)
 
     def test_cd_is_tracked_when_resolving_targets(self):

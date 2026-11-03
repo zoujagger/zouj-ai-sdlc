@@ -21,10 +21,12 @@ SUBST_RE = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 HOME_RE = re.compile(r"\$\{HOME\}|\$HOME\b")
 HARMLESS = {"echo", "printf", "ls", "test", "[", "[[", "mkdir", "which", "type", "true", "false", ":"}
 MESSAGE_OPTS = {"-m", "--message", "--body", "-b", "--title", "--notes", "--subject"}   # values are prose, not paths
+MESSAGE_TOOLS = {"git", "gh", "glab", "hub", "hg", "svn", "jj"}                          # …for these tools only
 PATTERN_FIRST = {"grep", "egrep", "fgrep", "rg", "ag", "ack"}                             # first operand is a regex
 RECURSIVE = {"rg", "ag", "ack", "tar", "zip", "rsync"}                                   # always read whole trees
 RECURSIVE_FLAG = {"grep", "egrep", "fgrep", "cp", "scp", "chmod", "du"}                  # with -r/-R
 TEMPLATES = (".env.example", ".env.sample", ".env.template")
+FIND_READS = {"-exec", "-execdir", "-ok", "-okdir", "-print0", "-fprint", "-fprint0", "-fprintf", "-fls"}
 
 
 def patterns(root):
@@ -94,7 +96,7 @@ def _skip_indexes(name, args):
     """Argument positions that are prose or a search pattern, not paths."""
     skip, operands = set(), 0
     for i, a in enumerate(args):
-        if a in MESSAGE_OPTS or (name in PATTERN_FIRST and a in ("-e", "--regexp")):
+        if (name in MESSAGE_TOOLS and a in MESSAGE_OPTS) or (name in PATTERN_FIRST and a in ("-e", "--regexp")):
             skip.add(i + 1)
         elif name in PATTERN_FIRST and not a.startswith("-") and i not in skip:
             operands += 1
@@ -104,7 +106,8 @@ def _skip_indexes(name, args):
 
 
 def check_shell(cmd, cwd, root, pats=None, depth=0):
-    """A block reason if the command reads secret material, else None."""
+    """A block reason if the command reads secret material, else None. Inside `$(…)` the output feeds another
+    command, so nothing counts as harmless and `find` is a recursive reader."""
     pats = patterns(root) if pats is None else pats
     for m in SUBST_RE.finditer(cmd):                       # $(…) and `…`, also inside quotes: commands of their own
         inner = m.group(1) if m.group(1) is not None else m.group(2)
@@ -125,11 +128,12 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
             dest = os.path.expanduser(HOME_RE.sub(os.path.expanduser("~"), dest))
             cwd = dest if os.path.isabs(dest) else os.path.join(cwd, dest)
             continue
-        if name in HARMLESS:
+        if name in HARMLESS and not depth:
             continue
         skip = _skip_indexes(name, args)
         recursive = name in RECURSIVE or (name in RECURSIVE_FLAG and any(
-            re.match(r"^-[a-zA-Z]*[rR]", a) or a == "--recursive" for a in args))
+            re.match(r"^-[a-zA-Z]*[rR]", a) or a == "--recursive" for a in args)) or (name == "find" and (
+                depth or any(a in FIND_READS for a in args)))
         for i, word in enumerate(words):
             if i and (i - 1) in skip:
                 continue
@@ -143,7 +147,9 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
 
 
 def check_search(ti, root, pats=None):
-    """Grep/Glob: a `path` that directly contains a secret directory, or a `glob` that reaches one from it."""
+    """Grep/Glob: a `glob` that reaches secret material from `path`, or a `path` outside the repo that directly holds a
+    secret directory (`~`). Inside the repo, Grep (ripgrep) honours .gitignore, and secret paths themselves are
+    refused by guard-read.sh, so `path: "."` and no path behave the same."""
     pats = patterns(root) if pats is None else pats
     path = ti.get("path")
     if not path:
@@ -155,7 +161,7 @@ def check_search(ti, root, pats=None):
         for probe in (os.path.join(base, g), os.path.join(base, g.split("**")[0].rstrip("/*") or ".", "x")):
             if secret_hit(probe, root, pats):
                 return f"'{path}' with glob '{g}' reaches secret material"
-    if os.path.isdir(base) and (hit := ancestor_hit(base, root, pats)):
+    if os.path.isdir(base) and _rel(base, root).startswith("/") and (hit := ancestor_hit(base, root, pats)):
         return f"'{path}' contains secret material ({hit}); search a narrower path"
     return None
 

@@ -95,7 +95,8 @@ class ShellHooks(RepoCase):
         for cmd in ("cat ~/.aws/cred*", "cat ~/.ssh/id_ed2551?", "cat ~/.ss?/id_ed25519", "cat ~/.ssh/id_[e]d25519",
                     "cat *.pem", "cd ~/.aws && cat credentials", "echo $(cat ~/.aws/credentials)",
                     "printf '%s' \"$(cat secrets/x)\"", 'echo "$(<~/.aws/credentials)"', "cat<~/.aws/credentials",
-                    "grep -r KEY ~", "grep -rn KEY .", "cat $HOME/.aws/credentials"):
+                    "grep -r KEY ~", "grep -rn KEY .", "cat $HOME/.aws/credentials", "cat -b .env", "od -b .env",
+                    "xxd -b .env", "diff -b .env /dev/null", "grep -b K .env", "sort -m .env"):
             self.assertEqual(self.bash(cmd), 2, cmd)
         for cmd in ('git commit -m "fix: load .env in dev"', "grep -rn id_rsa src", "grep -rn '\\.pem' src",
                     "rg -n 'secrets/' docs", "gh pr create --body 'reads ~/.aws/config'", "ls ~/.aws/*", "cat *.md",
@@ -104,12 +105,46 @@ class ShellHooks(RepoCase):
         grep = lambda **ti: self.run_hook("guard-read.sh", {"tool_name": "Grep", "tool_input": ti})  # noqa: E731
         self.assertEqual(grep(pattern="KEY", path=str(home), glob=".aws/**"), 2)
         self.assertEqual(grep(pattern="KEY", path=str(home)), 2)                  # an ancestor of ~/.ssh and ~/.aws
-        self.assertEqual(grep(pattern="KEY", path=str(self.root)), 2)             # an ancestor of secrets/
+        # Grep (ripgrep) honours .gitignore; inside the repo only a secret path itself is refused, so `path: "."` and
+        # no path behave the same. Outside the repo (~) a directory holding a secret directory is refused.
+        self.assertEqual(grep(pattern="KEY", path=str(self.root)), 0)
+        self.assertEqual(grep(pattern="KEY"), 0)
+        self.assertEqual(grep(pattern="KEY", path=str(self.root / "secrets")), 2)
         self.assertEqual(grep(pattern="KEY", path=str(self.root / "src")), 0)
         heredoc = "cat <<'EOF' > notes.md\n" + "".join(f"line {i} with words a b c d e f\n" for i in range(60)) + "EOF"
         start = time.monotonic()
         self.assertEqual(self.bash(heredoc), 0)
         self.assertLess(time.monotonic() - start, 0.5)                          # was ~835 ms with a subshell per word
+
+    def test_toolchain_and_secret_residuals_round4(self):
+        import shutil
+        import tempfile
+        # Edit/Write into the installed plugin (here: a copy installed outside the project), in every repo
+        plugin = pathlib.Path(tempfile.mkdtemp(dir=self.root.parent))
+        try:
+            shutil.copytree(HOOKS, plugin / "hooks")
+            shutil.copytree(ROOT / "lib", plugin / "lib")
+            shutil.copytree(ROOT / "defaults", plugin / "defaults")
+            env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(plugin)}
+            run = lambda p: subprocess.run([str(plugin / "hooks" / "guard-files.sh")], env=env, cwd=self.root,  # noqa: E731
+                                           input=json.dumps({"tool_input": {"file_path": p, "content": "x"}}),
+                                           capture_output=True, text=True).returncode
+            self.assertEqual(run(str(plugin / "lib" / "sdlc_engine" / "approvals.py")), 2)
+            self.assertEqual(run(str(self.root / "src" / "app.py")), 0)
+        finally:
+            shutil.rmtree(plugin)
+        self.assertIn("python3 -I", (HOOKS / "engine.sh").read_text())               # no cwd, PYTHONPATH or user site
+        self.assertTrue((ROOT / "bin" / "sdlc").read_text().startswith("#!/usr/bin/env -S python3 -I"))
+        home = self.root.parent / f"{self.root.name}.home"
+        for rel in (".aws/credentials", ".config/gh/hosts.yml", ".git-credentials"):
+            (home / rel).parent.mkdir(parents=True, exist_ok=True)
+            (home / rel).write_text("secret\n")
+        self.env["HOME"] = str(home)
+        for cmd in ('find ~ -path "*aws/cred*" -exec cat {} +', "cat $(find ~ -name credentials)",
+                    "awk 1 $(ls ~/.aws/*)", "cat ~/.config/gh/hosts.yml", "cat ~/.git-credentials"):
+            self.assertEqual(self.bash(cmd), 2, cmd)
+        for cmd in ("find src -name '*.py'", "ls ~/.aws", "find . -name '*.pyc' -delete"):
+            self.assertEqual(self.bash(cmd), 0, cmd)
 
     def test_secret_reads_blocked_further(self):
         import os
