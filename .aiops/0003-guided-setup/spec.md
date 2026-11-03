@@ -153,6 +153,9 @@ The playbook workflow is the same in every profile, and a conformance test prove
   and exits 0.
 - **AC-14:** `plugin.json` is `0.2.0-alpha.2`, the CHANGELOG has the matching section and links, and `make check`
   and `claude plugin validate .` pass.
+- **AC-15:** Given the `strict` profile and a `.github/CODEOWNERS` that doesn't cover `/.aiops/`, when `doctor` runs,
+  then that row is ✗ (exit 1) and setup lists the CODEOWNERS line as a human step. Under `solo` or `team`, the same
+  repo shows only `!`.
 
 ## Data model
 No database. File contracts:
@@ -256,5 +259,6 @@ Skill: `/zouj-ai-sdlc:setup [profile]`.
 - **Watch:** issues filed with `install-problem.yml`, and the doctor rows people paste through `sdlc feedback`.
 
 ## Open questions
-- [ ] Should `strict` also require CODEOWNERS on `.aiops/` to be configured (doctor ✗ if it's missing), or is that
-  only a recommendation? (zoujagger)
+- [x] Does `strict` require CODEOWNERS on `.aiops/`? → **Yes.** Under `strict`, doctor shows ✗ and setup lists it as
+  a human step when `.github/CODEOWNERS` doesn't cover `/.aiops/`. `solo` and `team` only get a warning
+  (zoujagger, 2026-11-03). Covered by AC-15.
