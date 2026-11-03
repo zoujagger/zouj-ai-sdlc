@@ -119,7 +119,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
     - a non-empty dir gives exit 1
     - a symlinked target is refused
   - Covers: AC-10
-- [ ] **S10**: `sdlc feedback`
+- [x] **S10**: `sdlc feedback`
   - Files: `lib/sdlc_engine/cli.py` (modify)
   - Test first: `tests/test_setup.py::Feedback::test_prints_links_offline`. It prints the issue-template URLs and the
     doctor summary, exits 0, and `socket.socket` is patched to raise, proving there's no network use. Red: there's

@@ -271,5 +271,31 @@ class Sandbox(SetupCase):
         self.assertFalse((self.root / "box").exists())
 
 
+class Feedback(RepoCase):
+    def test_prints_links_offline(self):
+        import contextlib
+        import io
+        import os
+        import socket
+        from unittest import mock
+        buf, cwd = io.StringIO(), os.getcwd()
+        os.chdir(self.root)
+        try:
+            with mock.patch.object(socket, "socket", side_effect=AssertionError("feedback opened a socket")), \
+                    mock.patch.object(socket, "create_connection", side_effect=AssertionError("network")), \
+                    contextlib.redirect_stdout(buf):
+                code = cli.main(["feedback"])
+        finally:
+            os.chdir(cwd)
+        text = buf.getvalue()
+        self.assertEqual(code, 0, text)
+        base = "https://github.com/zoujagger/zouj-ai-sdlc/issues/new"
+        self.assertIn(f"{base}?template=install-problem.yml", text)
+        self.assertIn(f"{base}?template=quick-feedback.yml", text)
+        self.assertIn("doctor:", text)                                   # the summary to paste
+        self.assertIn("nothing was sent", text.lower())
+        self.assertNotIn(str(self.root.parent), text)                    # no local paths beyond the repo name
+
+
 if __name__ == "__main__":
     unittest.main()

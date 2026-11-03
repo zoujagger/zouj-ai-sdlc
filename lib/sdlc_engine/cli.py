@@ -36,6 +36,8 @@ Lifecycle (any user or agent)
   lock                       /fix: lock test files after the human approved the failing test
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
   setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
+  setup --sandbox <dir>      a throwaway repo with a sample intent, to try the workflow
+  feedback                   issue links and a doctor summary to paste (sends nothing)
   doctor                     check tools and wiring
 
 Human only (refused inside Claude Code)
@@ -46,8 +48,8 @@ Human only (refused inside Claude Code)
 """
 
 
-def out(msg, stream=sys.stdout):
-    print(msg, file=stream)
+def out(msg, stream=None):
+    print(msg, file=stream or sys.stdout)   # looked up at call time, so redirect_stdout can capture it
 
 
 def _root():
@@ -396,6 +398,31 @@ def codeowners_cover_aiops(root):
     return owned
 
 
+ISSUES = "https://github.com/zoujagger/zouj-ai-sdlc/issues/new"
+
+
+def cmd_feedback(root, args):
+    """Where to report a problem or an idea, plus a doctor summary to paste. Prints only: nothing is sent anywhere."""
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        cmd_doctor(root, [])
+    summary = buf.getvalue().replace(str(root), root.name).replace(str(Path.home()), "~")
+    out(f"""zouj-ai-sdlc {plugin_version()}: feedback
+
+  Install or runtime problem:  {ISSUES}?template=install-problem.yml
+  Quick feedback (20 seconds): {ISSUES}?template=quick-feedback.yml
+  Anything else:               {ISSUES}/choose
+
+Paste this doctor summary into the issue (paths are reduced to the repo name):
+
+{summary.rstrip()}
+
+Nothing was sent: zouj-ai-sdlc never uploads diagnostics.""")
+    return 0
+
+
 def cmd_setup(root, args):
     from . import setup   # imported here: setup builds on init_actions/apply_init in this module
     return setup.main(root, args)
@@ -540,7 +567,7 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
             "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
-            "setup": cmd_setup}
+            "setup": cmd_setup, "feedback": cmd_feedback}
 
 
 def main(argv=None):
