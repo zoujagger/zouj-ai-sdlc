@@ -91,6 +91,25 @@ delivered as intent `.aiops/0002-hardening/`.
   every user-writable PATH directory counts. The engine runs git, ssh-keygen and python by absolute path, and the
   documented approve command is `/usr/bin/python3 -I <plugin>/bin/sdlc approve …`. More credential printers
   (`git -C . credential fill`, `kubectl config view --raw`, `aws configure export-credentials`, …) are blocked.
+- **Round 7.** `$HOME`, `${HOME}`, `$XDG_CONFIG_HOME` and `~` in shell write targets reach the out-of-repo guards.
+
+### Known issues (alpha; planned for 0.2.0-alpha.2)
+- This repo itself runs `"approval_key_policy": "any"` with a passphrase-less key (a logged human decision), so a
+  shell-parser bypass can forge an approval here. Consumer repos default to `"human"`.
+- Shell writes to toolchain files (`~/.bashrc`, PATH directories) are guarded only in initialized repos; Edit/Write
+  is guarded everywhere. Symlinked toolchain *files* (nvm/pipx shims, stow-managed dotfiles) are checked by their
+  resolved target only, and a PATH directory created in the same command isn't covered.
+- Missing: `~/.zlogin`, `~/.inputrc` in toolchain-paths; `op item get`, `op inject`, `vault read`,
+  `aws sts get-session-token`, `kubectl get secret -o yaml`, `security find-generic-password -w`, `pass show` as
+  credential printers; `curl -d@.env` (attached) and `--data-urlencode name@.env`; `rg -uu KEY .` and `grep -r KEY`
+  over a cwd holding `.env`.
+- Approve calls built after a variable assignment (`s=sdlc; $s $'approve'`, `"${a-approve}"`, `"${a[@]}"`,
+  `$(echo approve)`) are not caught; under `"human"` they still need the human's passphrase or touch.
+- `git checkout <rev> -- ..` from a subdirectory or with an absolute path isn't treated as a whole-tree rewrite, and
+  the whole-tree rule also fires in other repos under `/tmp`.
+- False positives: `mkdir -p ~/.local/bin`; prose that mentions a credential printer (`git commit -m "never run gh
+  auth token"`); `timeout 30 $X close` (on purpose: the shape of `timeout 5 $s approve`).
+- The toolchain check exists in both bash (guard-files.sh) and Python (guards.py).
 
 ### Added
 - `sdlc legacy-approvals [--write [--yes]]` (human-only): records pre-signing approval commits as an explicit legacy list.
