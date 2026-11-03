@@ -5,7 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-11-02
+## [0.2.0-alpha.1] - 2026-11-03
+
+> **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas. Pin a full
+> commit sha (`ZOUJ_SDLC_REF`) if you depend on exact behaviour.
 
 Hardening release from the state-5 review of 0001 (`.aiops/0001-zouj-ai-sdlc-plugin/review.md`, CHANGES_REQUESTED 66/100),
 delivered as intent `.aiops/0002-hardening/`.
@@ -146,6 +149,6 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...HEAD
+[0.2.0-alpha.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v0.2.0-alpha.1
 [0.1.0]: https://github.com/zoujagger/zouj-ai-sdlc/releases/tag/v0.1.0

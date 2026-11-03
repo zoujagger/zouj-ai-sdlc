@@ -1,5 +1,8 @@
 # zouj-ai-sdlc
 
+> **Status: alpha (0.2.0-alpha.1), experimental.** Gates and guards may change between alphas; don't rely on it
+> for production governance yet. Feedback welcome.
+
 A [Claude Code](https://code.claude.com) plugin that runs your software lifecycle as a **state machine over Markdown
 artifacts versioned in Git**. It's inspired by [Superpowers](https://github.com/obra/superpowers) (a bootstrap skill,
 trigger-style skills, red-flag tables, subagent-driven execution) and strictly modeled on Anthropic's *AI-Native SDLC
