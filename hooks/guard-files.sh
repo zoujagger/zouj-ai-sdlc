@@ -33,7 +33,7 @@ if [[ "$path_real" != "$root_real"/* ]]; then
   home_real=$(realpath -m -- "$HOME")
   toolchain=""
   if hit=$(config_match "$path_real" "$root" toolchain-paths); then toolchain=${hit#* }
-  elif [[ "$path_real" == "$home_real/bin/"* ]]; then toolchain="~/bin"
+  elif [[ "$path_real" == "$home_real/bin/"* ]]; then toolchain="$home_real/bin"
   else
     IFS=: read -ra path_dirs <<<"${PATH:-}"
     for d in "${path_dirs[@]}"; do   # every user-writable PATH directory
