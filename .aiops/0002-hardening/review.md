@@ -1,7 +1,7 @@
 ---
 id: 0002
 verdict: PASS
-commit: 49487b2a987336d9fed0d3b5194123372854f6eb
+commit: 4a1f5db9df25b6f2509405440274e8c6d120b6c4
 score: 90/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-03
@@ -14,7 +14,7 @@ created: 2026-11-03
      Round 3 (73/100, CHANGES_REQUESTED) is in git history. Two commits landed after the reports: 5bfec52 (the
      $HOME write-target MEDIUM both reviewers raised, with its proof test red on the parent) and 49a8d7b (CHANGELOG
      known issues and the Deviation log). The pin moved to 49487b2 after CI's shellcheck flagged a quoted "~/bin"
-     label and E402 in bin/sdlc: a lint-only change (two lines), make check green. The human decides the merge. -->
+     label, E402 in bin/sdlc and an unused import (F401): lint-only changes, make check green. The human decides the merge. -->
 
 ## Summary
 The hardening release ships as **0.2.0-alpha.1** (experimental), as the human asked. Every round-3 and later BLOCKER,

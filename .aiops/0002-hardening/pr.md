@@ -2,7 +2,7 @@
 ## Hardening release: zouj-ai-sdlc 0.2.0-alpha.1 (experimental)
 
 **Intent:** `.aiops/0002-hardening/` ([intent](intent.md) · [spec](spec.md) · [plan](plan.md) · [review](review.md))
-**Review:** PASS, 90/100, at `49487b2a987336d9fed0d3b5194123372854f6eb` (lint-only change after the reviews)
+**Review:** PASS, 90/100, at `4a1f5db9df25b6f2509405440274e8c6d120b6c4` (lint-only change after the reviews)
 
 ### What and why
 This closes every finding from 0001's review and from review rounds 2-7 of this intent, and ships it as an
