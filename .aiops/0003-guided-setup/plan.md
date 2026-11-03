@@ -99,7 +99,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
       commands
     - a second run plans 0 writes, and the file mtimes are unchanged
   - Covers: AC-2, AC-3
-- [ ] **S8**: Human-owned files: the agent vs the human
+- [x] **S8**: Human-owned files: the agent vs the human
   - Files: `lib/sdlc_engine/setup.py` (modify)
   - Test first: `tests/test_setup.py::Owned::test_agent_never_writes_existing_owned_files` and
     `::test_human_merges_only_marketplace_keys`, on a repo initialized like 0.2.0-alpha.1 with a custom settings

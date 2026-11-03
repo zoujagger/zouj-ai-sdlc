@@ -4,6 +4,7 @@ Profiles change only how strongly a human approval is proven; every profile runs
 (docs/sdlc.md). External tools are looked up on PATH and run with a short timeout: a missing or hung `claude`/`gh`
 becomes a warning, while missing git, make or python >= 3.9 stops setup before anything is written.
 """
+import difflib
 import json
 import os
 import re
@@ -155,17 +156,34 @@ def plan(root, profile):
             out.append(("+", rel, note))
         else:
             out.append(("=", rel, "kept"))
-    cfg = _json(root / ".aiops" / "config.json")
+    for rel, (_old, _new, keys) in owned_changes(root, profile).items():
+        out = [o for o in out if o[1] != rel]
+        note = ("add extraKnownMarketplaces.zouj and enabledPlugins (nothing else)" if rel.endswith("settings.json")
+                else "set " + ", ".join(f"{k}={json.dumps(v)}" for k, v in keys.items()))
+        out.append(("~", rel, note))
+    return out
+
+
+def owned_changes(root, profile):
+    """{rel: (old_text, new_text, keys)} for existing human-owned files the plan changes: only the profile's keys in
+    .aiops/config.json, and only the two marketplace keys in .claude/settings.json (permissions, hooks and every
+    other key keep their values)."""
+    changes = {}
+    f = root / ".aiops" / "config.json"
+    cfg = _json(f)
     if cfg is not None:
         want = {k: v for k, v in PROFILE_CONFIG[profile].items() if cfg.get(k, config(root).get(k)) != v}
         if want:
-            out = [o for o in out if o[1] != ".aiops/config.json"]
-            out.append(("~", ".aiops/config.json", "set " + ", ".join(f"{k}={json.dumps(v)}" for k, v in want.items())))
-    settings = _json(root / ".claude" / "settings.json")
-    if settings is not None and not all(k in settings for k in MARKETPLACE):
-        out = [o for o in out if o[1] != ".claude/settings.json"]
-        out.append(("~", ".claude/settings.json", "add extraKnownMarketplaces.zouj and enabledPlugins (nothing else)"))
-    return out
+            changes[".aiops/config.json"] = (f.read_text(), json.dumps({**cfg, **want}, indent=2) + "\n", want)
+    f = root / ".claude" / "settings.json"
+    settings = _json(f)
+    if settings is not None and not all(k in settings and all(kk in settings[k] for kk in v)
+                                        for k, v in MARKETPLACE.items()):
+        merged = dict(settings)
+        for key, value in MARKETPLACE.items():
+            merged[key] = {**(merged.get(key) or {}), **value}
+        changes[".claude/settings.json"] = (f.read_text(), json.dumps(merged, indent=2) + "\n", MARKETPLACE)
+    return changes
 
 
 def _choices(args):
@@ -201,7 +219,7 @@ def main(root, args):
         return 0
     if not any(mark in "+~" for mark, _, _ in actions):
         print("Already set up: nothing to write.")
-        human_steps(root, profile, [])
+        human_steps(root, profile, {})
         return 0
     if not yes and not (tty and _confirm()):
         print("not confirmed: nothing was written. Re-run with --yes to apply without the question."
@@ -241,7 +259,14 @@ def apply(root, profile, actions, args):
     print("Applied")
     for rel in sorted(created):
         print(f"  + {rel}")
-    human_steps(root, profile, [a for a in actions if a[0] == "~"])
+    pending = owned_changes(root, profile)
+    if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it, showing each diff
+        for rel, (old, new, _keys) in pending.items():
+            print("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}", f"b/{rel}")))
+            (root / rel).write_text(new)
+            print(f"  ~ {rel}")
+        pending = {}
+    human_steps(root, profile, pending)
     print("Doctor")
     cli.cmd_doctor(root, [])
     return 0
@@ -266,8 +291,10 @@ def human_steps(root, profile, pending):
     if profile == "strict" and not cli.codeowners_cover_aiops(root):
         steps.append("Give /.aiops/ a real owner (strict requires it): in .github/CODEOWNERS replace the @your-org/... "
                      "placeholders, at least:\n       /.aiops/ @<approver>")
-    for _mark, rel, note in pending:
-        steps.append(f"Change {rel} yourself (human-owned): {note}")
+    for rel, (_old, _new, keys) in pending.items():   # under the agent: the human applies these
+        snippet = json.dumps(keys, indent=2).replace("\n", "\n       ")
+        steps.append(f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
+                     f"       {snippet}")
     steps.append(f'Commit: git add -A && git commit -m "chore: adopt zouj-ai-sdlc (profile {profile})"')
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     print("Human steps")

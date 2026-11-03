@@ -186,5 +186,54 @@ class Apply(SetupCase):
                          stamp)
 
 
+class Owned(SetupCase):
+    CUSTOM = {"permissions": {"deny": ["Read(./.env)"], "allow": ["Bash(make *)"]},
+              "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]},
+              "model": "opus"}
+
+    def alpha1_repo(self):
+        """A repo set up by 0.2.0-alpha.1: no profile in config.json, a customised .claude/settings.json."""
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        cfg, settings = self.root / ".aiops" / "config.json", self.root / ".claude" / "settings.json"
+        cfg.write_text('{"lock_when_idle": true, "commit_approvals": true, "main_branch": "main",\n'
+                       ' "require_signed_approvals": true}\n')
+        settings.write_text(json.dumps(self.CUSTOM) + "\n")
+        return cfg, settings
+
+    def test_agent_never_writes_existing_owned_files(self):
+        cfg, settings = self.alpha1_repo()
+        before = (cfg.read_bytes(), settings.read_bytes())
+        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((cfg.read_bytes(), settings.read_bytes()), before)          # untouched under the agent
+        steps = r.stdout.split("Human steps\n", 1)[1]
+        self.assertIn("Change .claude/settings.json yourself", steps)
+        self.assertIn('"zouj-ai-sdlc@zouj": true', steps)                           # the exact keys to add
+        self.assertIn("Change .aiops/config.json yourself", steps)
+        self.assertIn('"profile": "solo"', steps)
+        self.assertIn('"require_signed_approvals": false', steps)
+
+    def test_human_merges_only_marketplace_keys(self):
+        cfg, settings = self.alpha1_repo()
+        r = self.setup_run("--profile", "solo", "--yes")                            # a human, in a terminal
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        merged = json.loads(settings.read_text())
+        self.assertEqual(merged["extraKnownMarketplaces"]["zouj"]["source"],
+                         {"source": "github", "repo": "zoujagger/zouj-ai-sdlc"})
+        self.assertIs(merged["enabledPlugins"]["zouj-ai-sdlc@zouj"], True)
+        for key, value in self.CUSTOM.items():                                      # permissions, hooks, the rest
+            self.assertEqual(merged[key], value, key)
+        self.assertEqual(set(merged) - set(self.CUSTOM), {"extraKnownMarketplaces", "enabledPlugins"})
+        conf = json.loads(cfg.read_text())
+        self.assertEqual((conf["profile"], conf["require_signed_approvals"], conf["approval_key_policy"]),
+                         ("solo", False, "any"))
+        self.assertEqual(conf["main_branch"], "main")                               # other keys kept
+        self.assertIn("--- a/.aiops/config.json", r.stdout)                         # the change is shown as a diff
+        self.assertRegex(r.stdout, r'(?m)^-.*"require_signed_approvals": true')
+        self.assertIn("--- a/.claude/settings.json", r.stdout)
+        rerun = self.setup_run("--profile", "solo", "--yes")
+        self.assertIn("nothing to write", rerun.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
