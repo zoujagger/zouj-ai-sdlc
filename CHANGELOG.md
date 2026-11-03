@@ -73,6 +73,12 @@ delivered as intent `.aiops/0002-hardening/`.
 - **Setup hints** use `git config --global` and a dedicated `~/.ssh/aiops_signing` key, and refusals print the
   plugin's absolute `bin/sdlc approve` command (consumer repos have no `bin/sdlc`).
 - `git checkout/restore` respect `protected-paths`; `tar -C<dir>` and git's C-quoted patch names count.
+- **Round 4.** Engine calls behind loops, `trap`, `coproc`, glob/brace command words (`bin/sdl?`), absolute shell
+  paths and text piped into a shell are blocked, and so are brace-, glob- and printf-built marker names and
+  `exec -c`. Edit/Write into the installed plugin is blocked in every repo, and the engine runs as `python3 -I`.
+  `find` feeding a reader counts as a recursive read. GitHub CLI and git-credential files are secret paths.
+  Approvals refuse symlinked artifacts and report a busy index. The round-3 `-b`/`-u` false negatives and false
+  positives are fixed.
 
 ### Added
 - `sdlc legacy-approvals [--write [--yes]]` (human-only): records pre-signing approval commits as an explicit legacy list.

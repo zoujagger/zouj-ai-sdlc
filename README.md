@@ -20,7 +20,7 @@ gate**. Here those gates are enforced by hooks instead of being left to the mode
 Or in one step (Claude Code 2.1.275+): `/plugin install zouj-ai-sdlc --marketplace zoujagger/zouj-ai-sdlc`.
 Then, in each repo that should follow the workflow: `/zouj-ai-sdlc:init` (or `sdlc init --stack python|node|go`).
 
-The plugin is **dormant in repos without `.aiops/`**: no hook blocks anything until you run init.
+Without `.aiops/` the plugin's **SDLC gates are dormant** until you run init. Its safety guards (secret reads and writes, force-push, history rewrites, production deploys, edits to the installed plugin) are on in every repo.
 Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only). `gh` and `jq` are optional.
 
 ## How it works

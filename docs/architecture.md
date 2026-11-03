@@ -23,7 +23,8 @@ lib/sdlc_engine/
   Git versions both the artifacts and the approvals.
 - **Skills advise, hooks decide.** The skills (Superpowers-style: trigger descriptions, checklists, red-flag tables)
   make violations rare. The hooks make the important ones close to impossible.
-- **Dormant by default.** Every hook exits 0 when the repo has no `.aiops/`, so installing the plugin user-wide is safe.
+- **Gates dormant by default.** The SDLC gate hooks exit 0 when the repo has no `.aiops/`, so installing the plugin
+  user-wide is safe. The safety guards (secrets, force-push, history, production, the installed plugin) are always on.
 - **Fail closed.** If the gate guard crashes, it blocks the call and says so, because a guard that errors must never silently allow.
 - **Stdlib only.** Hooks run on every tool call, so the engine needs no `pip install` and starts fast.
 - **Approval through the prompt.** A tool call can't author a user prompt, so a phrase typed as the whole prompt is the
@@ -43,7 +44,7 @@ lib/sdlc_engine/
 | The agent removes or rewrites `.aiops/` | `.aiops`, intent folders and their contents can't be a shell target (`rm`, `mv`, `cp`, git rm/mv/checkout/restore, `tar -x`/`unzip` into them, `find -delete` with `-name`/`-iname`/`-path`/`-ipath`) in any state. Targets are brace-expanded, and `VAR=value` set earlier in the command is substituted. Patches (`git apply`/`am`, `patch`) are read at every `-pN` strip level and under `--directory`/`-d`; piped patches are refused. A git-tracked `.aiops/` counts as initialized even if deleted | none for the parsed forms |
 | A copied approved folder opens a gate for another intent | gates require front-matter `id` == folder id, and `id` is immutable | none |
 | The engine can't start (python missing, a broken schema) | `hooks/engine.sh` maps any non-0/2 exit of a `pre-*` guard to a block (fail closed) | none |
-| Secrets read into the session | `guard-read.sh` (Read/Grep/Glob) and `secret_scan.py` (every word of every shell command, `$(…)` included, after `~`/`$HOME`/glob expansion and `cd` tracking) block `defaults/secret-paths` in **every** repo. Recursive readers and Grep/Glob are refused on a directory that directly holds a secret directory. Writes outside the repo are checked against `secret-paths` too. The scaffold ships `.claude/settings.json` deny rules | interpreter reads aren't parsed; a secret directory two or more levels below a recursive read's root; variables other than `$HOME` |
+| Secrets read into the session | `guard-read.sh` (Read/Grep/Glob) and `secret_scan.py` (every word of every shell command, `$(…)` included, after `~`/`$HOME`/glob expansion and `cd` tracking) block `defaults/secret-paths` in **every** repo. Recursive readers and Grep/Glob are refused on a directory that directly holds a secret directory. Writes outside the repo are checked against `secret-paths` too. The scaffold ships `.claude/settings.json` deny rules | interpreter reads aren't parsed; a secret directory two or more levels below a recursive read's root, and secret *files* (a root `.env`) under a recursive `grep -r .`; Grep inside the repo relies on `.gitignore`; variables other than `$HOME` |
 | Safety off in unrelated repos | secrets, force-push, history rewrite and prod-deploy guards are always on. Only the SDLC gates wait for `sdlc init` | none |
 | The agent edits its own instructions in states 1-3 | the read-only exemption covers docs, README, CHANGELOG, CONTRIBUTING and SECURITY only. CLAUDE.md, REVIEW.md, `skills/` and `agents/` are locked | per-repo `readonly-exempt` can widen it. It's human-owned |
 | An unpinned plugin in privileged CI jobs | the scaffold fetches the plugin at `ZOUJ_SDLC_REF` (`v<version>` from `sdlc init`) and loads it with `--plugin-dir` | a mutable tag. Pin a full sha |
@@ -65,6 +66,12 @@ An approval is only as strong as the human-only step behind its signature. From 
    `doctor` refuse that.
 3. **A dedicated signing key with a passphrase**, not used as an SSH `IdentityFile` and never added to an agent
    (`AddKeysToAgent no`). `approve` and `doctor` refuse a key that has no passphrase or is loaded in ssh-agent.
+
+Levels 2 and 3 make every signature need you, but they run as the same user as the agent. The approval runs
+`/usr/bin/git` and `python3 -I`, guards the installed plugin, and builds the commit with plumbing. Even so, anything
+running as you can still change your global git config, put a program earlier on your PATH, or change `~/.ssh`, and
+then capture a passphrase or redirect a touch. Against a hostile agent running as the same user, only level 1
+holds.
 4. **The escape hatch** `"approval_key_policy": "any"` in `.aiops/config.json` (human-owned) accepts any key. Its cost:
    anything running as you, including an agent, can sign approvals. It reopens the forged-approval risk, and the
    audit can't tell.
