@@ -261,10 +261,16 @@ class BashGuard(RepoCase):
         for cmd in ("git config gpg.ssh.program /tmp/s", "git config --local user.signingkey /tmp/k.pub",
                     "git config --global gpg.format openpgp", "git config core.hooksPath /tmp/h",
                     "git config --replace-all gpg.ssh.allowedSignersFile x", "cp /tmp/h .git/hooks/post-commit",
-                    "echo x >> .git/config", f"sed -i s/G/U/ {engine}", f"cp /tmp/x {ROOT}/hooks/guard-bash.sh"):
+                    "echo x >> .git/config", f"sed -i s/G/U/ {engine}", f"cp /tmp/x {ROOT}/hooks/guard-bash.sh",
+                    "git config core.fsmonitor /tmp/x.sh", "git config core.attributesFile /tmp/a",
+                    "git config filter.x.clean /tmp/x.sh", "git config include.path /tmp/inc",
+                    "git config includeIf.gitdir:/x.path /tmp/inc", "git config set gpg.ssh.program /tmp/s",
+                    "git config --file .git/config user.name x", "git config -f .git/config core.hooksPath /tmp/h",
+                    "git config --type bool core.fsmonitor true", "git config -e", "git config edit"):
             self.assertTrue(self.blocked(cmd), cmd)
         for cmd in ("git config user.name", "git config --get gpg.format", "git config --list", "cat .git/config",
-                    "git config user.email me@example.com"):
+                    "git config user.email me@example.com", "git config get core.fsmonitor",
+                    "git config -f /tmp/x.cfg a.b c", "git config --type bool --get core.filemode"):
             self.assertFalse(self.blocked(cmd), cmd)
 
     def test_engine_cannot_be_disguised_further(self):

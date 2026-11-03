@@ -577,24 +577,43 @@ def _extract_dirs(name, args):
     return []
 
 
-SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.hookspath)$", re.I)
+SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.(hookspath|fsmonitor|attributesfile|sshcommand)|"
+                               r"include\..+|includeif\..+|filter\..+|alias\..+|diff\..+)$", re.I)
 GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list", "--show-origin",
-                    "--show-scope", "--name-only", "--null", "-z", "--type", "--bool", "--int", "--path"}
+                    "--show-scope", "--name-only", "--null", "-z", "--bool", "--int", "--path"}
 GIT_CONFIG_WRITES = {"--unset", "--unset-all", "--replace-all", "--add", "--rename-section", "--remove-section",
                      "-e", "--edit"}
+GIT_CONFIG_VALUE_OPTS = {"-f", "--file", "--blob", "--type", "--default", "--comment", "--value"}
+GIT_CONFIG_SUB_WRITES = {"set", "unset", "rename-section", "remove-section", "edit"}
 
 
-def _git_config_writes_signing(rest):
-    """`git config …` that sets or removes a signing/hook key (reads stay allowed)."""
-    opts = [a for a in rest if a.startswith("-")]
-    words = [a for a in rest if not a.startswith("-")]
-    if not words or not SIGNING_CONFIG_RE.match(words[0]):
-        return any(o in ("-e", "--edit") for o in opts)
-    if any(o in GIT_CONFIG_WRITES for o in opts):
-        return True
-    if any(o in GIT_CONFIG_READS for o in opts):
+def _git_config_writes_signing(rest, cwd, root):
+    """`git config …` that sets or removes a key able to run code or change signing, or writes a file under
+    `.git/` (`-f .git/config`). Reads stay allowed. Knows the `git config set|unset|get` subcommand form."""
+    opts, words, files, i = [], [], [], 0
+    while i < len(rest):
+        a = rest[i]
+        if a in GIT_CONFIG_VALUE_OPTS and i + 1 < len(rest):
+            files += [rest[i + 1]] if a in ("-f", "--file") else []
+            opts.append(a)
+            i += 2
+            continue
+        if a.startswith("--file="):
+            files.append(a.split("=", 1)[1])
+        (opts if a.startswith("-") else words).append(a)
+        i += 1
+    write = any(o in GIT_CONFIG_WRITES for o in opts)
+    if words and words[0] in GIT_CONFIG_SUB_WRITES:
+        write, words = True, words[1:]
+    elif words and words[0] in ("get", "list"):
         return False
-    return len(words) >= 2                      # `git config key value`
+    if not write and any(o in GIT_CONFIG_READS for o in opts):
+        return False
+    write = write or len(words) >= 2                       # `git config key value`
+    in_git_dir = any((r := _rel(root, f, cwd)) is not None and (r == ".git" or r.startswith(".git/")) for f in files)
+    if write and (in_git_dir or (not words and not files)):   # `git config -e` / `git config edit` opens .git/config
+        return True
+    return write and bool(words) and bool(SIGNING_CONFIG_RE.match(words[0]))
 
 
 def _secret_template(rel):
@@ -680,8 +699,9 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                           "leave the PR for a CODEOWNER to review and merge.")
         if name == "git":
             sub, rest, gcwd = _git_sub(args, cwd)
-            if sub == "config" and _git_config_writes_signing(rest):
-                return _block("toolchain", "git signing / hook settings are human-owned (they decide who signs approvals).",
+            if sub == "config" and _git_config_writes_signing(rest, gcwd, root):
+                return _block("toolchain", "git signing, hook, monitor, filter and include settings are human-owned "
+                              "(they decide who signs approvals, and what runs inside an approval).",
                               "ask the human to change git config themselves (globally).")
             why = _patch_check(rest, gcwd, root, git_am=sub == "am") if sub in ("apply", "am") else None
             if why:

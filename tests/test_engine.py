@@ -164,23 +164,54 @@ class Approvals(RepoCase):
         hook = self.root / ".git" / "hooks" / "post-commit"            # a planted hook must not run
         hook.write_text(f"#!/bin/sh\ntouch {self.root}/hook-ran\n")
         hook.chmod(0o755)
-        calls, real = [], ap.git
+        calls, real = [], ap.subprocess.run
 
-        def spy(root, *args, **kw):
-            calls.append((args, kw))
-            return real(root, *args, **kw)
-        ap.git = spy
+        def spy(cmd, *args, **kw):
+            calls.append((cmd, kw))
+            return real(cmd, *args, **kw)
+        ap.subprocess.run = spy
         try:
             self.approve("intent")
         finally:
-            ap.git = real
-        args, kw = next(c for c in calls if "commit" in c[0])
-        self.assertIn("core.hooksPath=/dev/null", args)
-        self.assertIn("--no-verify", args)
+            ap.subprocess.run = real
+        args, kw = next(c for c in calls if "commit-tree" in c[0])     # plumbing: commit-tree runs no hooks at all
+        self.assertTrue(args[0].startswith("/"), args[0])               # git by absolute path, not via PATH
+        for pinned in ("core.hooksPath=/dev/null", "core.fsmonitor=false", "core.attributesFile=/dev/null"):
+            self.assertIn(pinned, args)
         self.assertTrue(any(a.startswith("gpg.ssh.program=/") and a.endswith("ssh-keygen") for a in args), args)
-        self.assertIn("timeout", kw)
-        self.assertIsNone(kw["timeout"])                               # a slow passphrase or touch isn't killed
+        self.assertIsNone(kw.get("timeout"))                           # a slow passphrase or touch isn't killed
         self.assertFalse((self.root / "hook-ran").exists())
+
+    def test_repo_local_config_is_allow_listed(self):
+        from sdlc_engine import approvals as ap
+        self.write("intent", INTENT)
+        inc = self.root.parent / f"{self.root.name}.inc"
+        inc.write_text('[gpg "ssh"]\n\tprogram = /tmp/evil-signer\n')
+        for key, value in (("core.fsmonitor", "/tmp/x.sh"), ("core.attributesFile", "/tmp/attrs"),
+                           ("filter.x.clean", "/tmp/x.sh"), ("include.path", str(inc)), ("alias.ci", "!sh")):
+            git(self.root, "config", "--local", key, value)
+            problem = ap.signing_problem(self.root)
+            self.assertTrue(problem and "repo-local" in problem, (key, problem))
+            git(self.root, "config", "--local", "--unset", key)
+        self.assertIsNone(ap.signing_problem(self.root))           # name, email, core.* basics stay allowed
+
+    def test_approval_runs_no_monitor_or_filter(self):
+        marker = self.root.parent / f"{self.root.name}.ran"
+        monitor, clean = (self.root.parent / f"{self.root.name}.{n}" for n in ("monitor", "clean"))
+        monitor.write_text(f"#!/bin/sh\nps -o args= $PPID >> {marker}\n")
+        clean.write_text(f"#!/bin/sh\nps -o args= $PPID >> {marker}\ncat\n")
+        monitor.chmod(0o755)
+        clean.chmod(0o755)
+        # global config is out of the repo-local allow-list's reach, so the commit itself must not run them
+        git(self.root, "config", "--global", "core.fsmonitor", str(monitor))
+        git(self.root, "config", "--global", "filter.x.clean", str(clean))
+        (self.root / ".gitattributes").write_text("* filter=x\n")
+        self.write("intent", INTENT)
+        self.approve("intent")
+        self.assertFalse(marker.exists(), marker.read_text() if marker.exists() else "")
+        sha = git(self.root, "log", "-1", "--format=%H")
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", sha), ".aiops/0001-csv-export/intent.md")
+        self.assertEqual(git(self.root, "diff", "--cached", "--name-only"), "")    # the index follows the commit
 
     def test_key_policy_requires_a_human_per_signature(self):
         import os

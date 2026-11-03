@@ -48,8 +48,15 @@ KEY_HELP = (
 # The approval commit always signs with the system's ssh-keygen and without hooks, whatever the repo's config says:
 # anything an agent can write (repo git config, .git/hooks) must not sit between the human and the signature.
 SSH_KEYGEN = "/usr/bin/ssh-keygen" if Path("/usr/bin/ssh-keygen").is_file() else (shutil.which("ssh-keygen") or "ssh-keygen")
-PINNED = ("-c", "gpg.format=ssh", "-c", f"gpg.ssh.program={SSH_KEYGEN}", "-c", "core.hooksPath=/dev/null")
-LOCAL_SIGNING_RE = r"^(user\.signingkey|gpg\..*|core\.hookspath)$"
+GIT = "/usr/bin/git" if Path("/usr/bin/git").is_file() else (shutil.which("git") or "git")   # not via an agent's PATH
+PINNED = ("-c", "gpg.format=ssh", "-c", f"gpg.ssh.program={SSH_KEYGEN}", "-c", "core.hooksPath=/dev/null",
+          "-c", "core.fsmonitor=false", "-c", "core.attributesFile=/dev/null")
+# Repo-local (and worktree) config may only hold keys that can't run code or redirect signing; read with includes.
+LOCAL_ALLOWED_RE = re.compile(
+    r"^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks|"
+    r"autocrlf|eol|safecrlf|quotepath|sparsecheckout|worktree)|extensions\..+|remote\..+|branch\..+|"
+    r"user\.(name|email)|commit\.gpgsign|tag\.gpgsign|pull\.\w+|push\.\w+|fetch\.\w+|init\.defaultbranch|"
+    r"submodule\.[^.]+\.(url|active|branch)|gc\.\w+|maintenance\..+)$", re.I)
 
 
 def _signing_key_files(root):
@@ -96,6 +103,52 @@ def key_protection(root):
     return None
 
 
+def local_config_keys(root):
+    """Repo-local or worktree config keys (includes followed) outside the allow-list."""
+    listing = git(root, "config", "--list", "--show-scope", "--includes") or ""
+    keys = set()
+    for line in listing.splitlines():
+        scope, _, entry = line.partition("\t")
+        key = entry.split("=", 1)[0]
+        if scope in ("local", "worktree") and not LOCAL_ALLOWED_RE.match(key):
+            keys.add(key)
+    return sorted(keys)
+
+
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def _commit_alone(root, rel, title, body, sign):
+    """Commit `rel` as it is in the working tree, alone, with plumbing: the blob is hashed without filters, the
+    tree is built in a throwaway index, and `commit-tree` signs it. Attributes come from the empty tree, so no hook,
+    fsmonitor, filter or worktree scan runs in the human's approval. Returns the commit sha or None."""
+    base_env = {**os.environ, "GIT_ATTR_SOURCE": EMPTY_TREE}
+
+    def run(*args, index=None):
+        env = {**base_env, "GIT_INDEX_FILE": index} if index else base_env
+        r = subprocess.run([GIT, *PINNED, *args], cwd=root, env=env, capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else None
+
+    blob = run("hash-object", "-w", "--no-filters", "--", rel)
+    head = run("rev-parse", "-q", "--verify", "HEAD^{commit}")
+    if not blob:
+        return None
+    entry = f"{'100755' if os.access(root / rel, os.X_OK) else '100644'},{blob},{rel}"
+    with tempfile.TemporaryDirectory() as tmp:
+        index = str(Path(tmp) / "index")
+        if (head and run("read-tree", head, index=index) is None) or \
+                run("update-index", "--add", "--cacheinfo", entry, index=index) is None:
+            return None
+        tree = run("write-tree", index=index)
+    if not tree:
+        return None
+    sha = run("commit-tree", tree, *(["-p", head] if head else []), *sign, "-m", title, "-m", body)
+    if not sha or run("update-ref", "-m", title, "HEAD", sha, *([head] if head else [])) is None:
+        return None
+    run("update-index", "--add", "--cacheinfo", entry)          # the real index follows the commit
+    return sha
+
+
 def signing_problem(root):
     """Why a signed approval commit can't be made here, or None."""
     cfg = config(root)
@@ -103,11 +156,11 @@ def signing_problem(root):
         return None
     if not cfg["commit_approvals"]:
         return "require_signed_approvals needs commit_approvals: true in .aiops/config.json"
-    local = git(root, "config", "--local", "--get-regexp", LOCAL_SIGNING_RE)
-    if local:
-        keys = ", ".join(sorted({ln.split()[0] for ln in local.splitlines()}))
-        return (f"repo-local git config sets {keys}: signing settings must come from your global git config "
-                f"(`git config --global …`), and the repo's own config must not override them "
+    keys = local_config_keys(root)
+    if keys:
+        return (f"repo-local git config sets {', '.join(keys)}: signing settings must come from your global git "
+                f"config (`git config --global …`), and the repo's own config may only hold basics (user.name/email, "
+                f"remote.*, branch.*, core file settings), never keys that run code or change signing "
                 f"(remove with `git config --local --unset <key>`)")
     if not git(root, "config", "user.signingkey"):
         return "git has no signing key configured (user.signingkey)"
@@ -158,12 +211,9 @@ def approve(root, d, kind, via, who=None):
         title = f"chore(aiops): {schema['approval_phrase']} {ident}"
         body = f"{TRAILER}: {kind} {ident} sha256={digest}\nApproved-By: {who}"
         sign = ["-S"] if signed else []
-        if git(root, "add", "--", rel) is None or \
-                git(root, *PINNED, "commit", "--no-verify", "-q", *sign, "-m", title, "-m", body, "--", rel,
-                    timeout=None) is None:
+        if _commit_alone(root, rel, title, body, sign) is None:
             if signed:   # an unsigned stamp would never pass the audit: roll it back
                 path.write_text(text)
-                git(root, "reset", "-q", "--", rel)
                 return False, (f"{kind}.md for {ident} was NOT approved: the signed commit failed (signing needs "
                                f"you: a passphrase or touch, which needs a terminal). Approve in your own terminal: "
                                f"`bin/sdlc approve {ident} {kind}`.")
