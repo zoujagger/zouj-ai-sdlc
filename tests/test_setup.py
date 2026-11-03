@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from helpers import SDLC, RepoCase, git
 
@@ -269,6 +270,40 @@ class Sandbox(SetupCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("inside this repo", r.stdout + r.stderr)
         self.assertFalse((self.root / "box").exists())
+
+
+class SandboxRace(SetupCase):
+    def test_target_swapped_for_a_symlink_mid_build(self):
+        """The agent swaps the (empty) target for a symlink to the real repo while the sandbox is being built."""
+        import os
+        from sdlc_engine import setup
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", "base")
+        head, before = git(self.root, "rev-parse", "HEAD"), self.snapshot()
+        box = self.root.parent / f"{self.root.name}.racebox"
+        box.mkdir()                                                              # an empty target is allowed
+        real = shutil.copytree
+
+        def swap_then_copy(*args, **kw):                                         # the first write into the build
+            if box.is_dir() and not box.is_symlink():
+                shutil.rmtree(box)
+                os.symlink(self.root, box)                                       # now points at the real repo
+            return real(*args, **kw)
+        with mock.patch.object(setup.shutil, "copytree", swap_then_copy):
+            code = setup.sandbox(self.root, str(box))
+        self.assertEqual(code, 1)                                                # refused, not built through it
+        self.assertEqual(self.snapshot(), before)                                # the real repo is untouched
+        self.assertEqual(git(self.root, "rev-parse", "HEAD"), head)              # and nothing was committed
+        self.assertFalse(any(p.name.startswith(".sdlc-sandbox-") for p in box.parent.iterdir()))   # no leftovers
+
+
+    def test_outside_any_repo(self):
+        """Run from a directory that isn't a git repo, a target below it is fine ("inside this repo" was wrong)."""
+        from sdlc_engine import setup
+        plain = self.root.parent / f"{self.root.name}.plain"
+        plain.mkdir()
+        self.assertEqual(setup.sandbox(plain, str(plain / "try")), 0)
+        self.assertEqual(git(plain / "try", "branch", "--show-current"), "main")
 
 
 class Feedback(RepoCase):

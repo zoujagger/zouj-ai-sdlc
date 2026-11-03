@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from . import approvals, cli
@@ -195,37 +196,42 @@ def _choices(args):
 SANDBOX = cli.TEMPLATES / "sandbox"
 
 
+def _in_git_work_tree(path):
+    r = subprocess.run([approvals.GIT, "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True, text=True)
+    return r.returncode == 0 and r.stdout.strip() == "true"
+
+
 def sandbox(root, target):
-    """A throwaway, committed repo with the solo scaffold and a Draft sample intent, outside the calling repo."""
+    """A throwaway, committed repo with the solo scaffold and a Draft sample intent, outside the calling repo.
+
+    Race-free: everything is built in a fresh private directory (mkdtemp: 0700, unpredictable name) next to the
+    target, then moved into place with one os.rename. rename never follows a symlink: if the target was swapped
+    for one meanwhile, it fails, and nothing was written through it. The commit adds an explicit file list after
+    checking that git's toplevel is the build directory."""
     raw = Path(target).expanduser()
     if raw.is_symlink():
         print(f"refusing {raw}: it is a symlink; give a plain path for the sandbox.", file=sys.stderr)
         return 1
     box = raw.resolve()
-    if box == root.resolve() or root.resolve() in box.parents:
+    if _in_git_work_tree(root) and (box == root.resolve() or root.resolve() in box.parents):
         print(f"refusing {box}: it is inside this repo; put the sandbox elsewhere, e.g. /tmp/sdlc-sandbox.",
               file=sys.stderr)
         return 1
     if box.exists() and (not box.is_dir() or any(box.iterdir())):
         print(f"refusing {box}: it exists and is not empty; nothing was written.", file=sys.stderr)
         return 1
-    box.mkdir(parents=True, exist_ok=True)
-    run = lambda *a: subprocess.run([approvals.GIT, *a], cwd=box, capture_output=True, text=True, check=True)  # noqa: E731
-    run("init", "-q", "-b", "main")
-    shutil.copytree(SANDBOX / "files", box, dirs_exist_ok=True)
-    cli.apply_init(box, cli.init_actions(box))
-    cfg = box / ".aiops" / "config.json"
-    cfg.write_text(json.dumps({**(_json(cfg) or {}), **PROFILE_CONFIG["solo"]}, indent=2) + "\n")
-    cli._wire_stack(box / "Makefile", "sandbox", SANDBOX / "sandbox.recipes")
-    intent = box / ".aiops" / "0001-greet-in-languages"
-    intent.mkdir()
-    (intent / "intent.md").write_text((SANDBOX / "intent-0001.md").read_text()
-                                      .replace("__DATE__", datetime.date.today().isoformat()))
-    (box / ".aiops" / "state" / "active").write_text("0001\n")
-    who = [] if subprocess.run([approvals.GIT, "config", "user.email"], cwd=box, capture_output=True).returncode == 0 \
-        else ["-c", "user.name=zouj-ai-sdlc sandbox", "-c", "user.email=sandbox@localhost"]
-    run("add", "-A")
-    run(*who, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "chore: zouj-ai-sdlc sandbox (solo profile)")
+    box.parent.mkdir(parents=True, exist_ok=True)
+    build = Path(tempfile.mkdtemp(prefix=".sdlc-sandbox-", dir=box.parent))
+    try:
+        _build_sandbox(build)
+        if box.exists() and not box.is_symlink():
+            os.rmdir(box)                                  # an empty directory; fails if anything appeared in it
+        os.rename(build, box)                              # never follows a symlink planted at the target
+    except (OSError, subprocess.CalledProcessError) as exc:
+        shutil.rmtree(build, ignore_errors=True)
+        print(f"sandbox not created ({exc}); nothing was written outside a temporary directory, which was removed.",
+              file=sys.stderr)
+        return 1
     print(f"""Sandbox ready: {box}
   A committed repo on main with the solo scaffold, a tiny app (src/greet.py) and a Draft sample intent 0001.
   Walk the playbook there:
@@ -235,6 +241,31 @@ def sandbox(root, target):
     `Plan Approved 0001`, watch the TDD execution, then /zouj-ai-sdlc:review.
   Delete the directory when you're done; nothing outside it was touched.""")
     return 0
+
+
+def _build_sandbox(build):
+    run = lambda *a: subprocess.run([approvals.GIT, *a], cwd=build, capture_output=True, text=True, check=True)  # noqa: E731
+    run("init", "-q", "-b", "main")
+    shutil.copytree(SANDBOX / "files", build, dirs_exist_ok=True)
+    cli.apply_init(build, cli.init_actions(build))
+    cfg = build / ".aiops" / "config.json"
+    cfg.write_text(json.dumps({**(_json(cfg) or {}), **PROFILE_CONFIG["solo"]}, indent=2) + "\n")
+    cli._wire_stack(build / "Makefile", "sandbox", SANDBOX / "sandbox.recipes")
+    intent = build / ".aiops" / "0001-greet-in-languages"
+    intent.mkdir()
+    (intent / "intent.md").write_text((SANDBOX / "intent-0001.md").read_text()
+                                      .replace("__DATE__", datetime.date.today().isoformat()))
+    (build / ".aiops" / "state" / "active").write_text("0001\n")
+    top = run("rev-parse", "--show-toplevel").stdout.strip()
+    if Path(top).resolve() != build.resolve():
+        raise OSError(f"git toplevel is {top}, not the sandbox build directory")
+    files = sorted(str(f.relative_to(build)) for f in build.rglob("*")
+                   if f.is_file() and not f.is_symlink() and f.relative_to(build).parts[0] != ".git"
+                   and f.relative_to(build).parts[:2] != (".aiops", "state"))
+    who = [] if subprocess.run([approvals.GIT, "config", "user.email"], cwd=build, capture_output=True).returncode == 0 \
+        else ["-c", "user.name=zouj-ai-sdlc sandbox", "-c", "user.email=sandbox@localhost"]
+    run("add", "--", *files)
+    run(*who, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "chore: zouj-ai-sdlc sandbox (solo profile)")
 
 
 def main(root, args):
