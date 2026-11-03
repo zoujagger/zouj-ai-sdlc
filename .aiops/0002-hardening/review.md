@@ -1,120 +1,133 @@
 ---
 id: 0002
-verdict: CHANGES_REQUESTED
-commit: 44517a055289f7de88e81dc29651415ae158c7dc
-score: 73/100
+verdict: PASS
+commit: 49a8d7b48613dfe5d3d8dceda10b9fbd56f8eca9
+score: 90/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-03
 ---
 
-# Review: Harden gates and guards (review 0001 findings), round 3
+# Review: Harden gates and guards (review 0001 findings), final (rounds 4-7)
 
-<!-- State 5 PRE-REVIEW, round 3 (after S25-S32). Compiled only from the three fresh-context persona reports
-     (base main @ c26f691, head 44517a0). Round 2 (79/100) is in git history. The human decides what happens next. -->
+<!-- State 5 PRE-REVIEW. Compiled only from the fresh-context persona reports of rounds 4-7 (base main @ c26f691):
+     verifier round 6 (VERIFIED at 927fcab), code reviewer round 6 (at 68ee504), security reviewer round 7 (at 68ee504).
+     Round 3 (73/100, CHANGES_REQUESTED) is in git history. Two commits landed after the reports: 5bfec52 (the
+     $HOME write-target MEDIUM both reviewers raised, with its proof test red on the parent) and 49a8d7b (CHANGELOG
+     known issues and the Deviation log). The human decides the merge. -->
 
 ## Summary
-Every round-2 fix is in place, and the step tests went red before the code.
-- **Checks:** `make check` passes (102 tests). Locally the lint step ran only `bash -n`, because ruff and shellcheck aren't installed; CI installs both. `claude plugin validate .` passes with the existing warnings (CLAUDE.md, ICON_MISSING). Hooks run in 39-90 ms for typical commands.
-- **ACs:** the verifier found a proving test for all 29 ACs and ran each one green. AC-15 also needs this file, because it references AC-23..AC-29.
-- **Red-first:** the code reviewer reproduced red on the parent commit for all nine round-3 proof tests.
+The hardening release ships as **0.2.0-alpha.1** (experimental), as the human asked. Every round-3 and later BLOCKER,
+HIGH and MAJOR is fixed and was confirmed independently.
+- **Checks:** `make check` passes (115 tests), and `make build` (`claude plugin validate .`) passes with the known
+  warnings: CLAUDE.md at the root, no icon.
+  - `validate --all --ci --base origin/main` exits 0. It prints the bootstrap warning: `origin/main` has no
+    `allowed-signers`, so this PR's signer list needs CODEOWNERS review.
+  - Hooks run in about 60 ms (guard-bash) and about 97 ms (engine pre-bash).
+- **ACs:** all 29 are met with passing tests. AC-15 is met through the logged alpha decision.
+- **Red-first:** every review-fix commit carries `Red:`/`Green:` lines. The reviewers reproduced red on the parent
+  commit for each proof test.
+- **Security:** PASS, 0 critical/high.
+  - The approval commit is built with plumbing, by absolute git, ssh-keygen and python, and no hook, fsmonitor or
+    filter runs inside it.
+  - Repo-local config is limited to an allow-list.
+  - The agent can't write the toolchain: global git config, shell startup files, PATH directories, installed plugins.
+  - Shell secret reads are checked word by word in one Python pass.
+- **Accepted residuals (human decisions, Deviation log):**
+  - This repo keeps `"approval_key_policy": "any"`, so a shell-parser bypass can forge an approval *here*. Under the
+    plugin default `"human"`, a forgery still needs the human's passphrase or touch.
+  - The remaining MINOR and LOW forms are listed as known issues in CHANGELOG for 0.2.0-alpha.2.
 
-Two findings still block:
-- **[BLOCKER] S30 reopened disguised engine calls (AC-7, R-4).** The new command-position rule (`guards.py:159`) misses
-  `eval "$s approve …"`, `bash -c "$s approve …"`, `nice`/`timeout`/`xargs -I{}`/`!`/`{ …; }` prefixes. The code
-  reviewer reproduced an end-to-end forged approval under `approval_key_policy: "any"`, which is this repo's setting.
-- **[HIGH] Repo-local git config still runs code inside the human's approval.** `core.fsmonitor`, `filter.*.clean`,
-  `core.attributesFile` and `include.path` are neither guarded nor refused. Confirmed: a planted fsmonitor ran during
-  the pinned approval commit and could capture the passphrase or touch.
-
-Verdict: **CHANGES_REQUESTED, 73/100.**
-- **Verifier:** VERIFIED, on the condition that this round-3 file references AC-23..AC-29. It does.
-- **Security reviewer:** FAIL (1 HIGH, 1 MEDIUM).
-- **Code reviewer:** CHANGES_REQUESTED (1 BLOCKER, 5 MAJOR).
+Verdict: **PASS, 90/100.**
+- Verifier: VERIFIED.
+- Security reviewer: PASS (21/25).
+- Code reviewer: no BLOCKER or MAJOR (36 + 19 + 10 + 4).
 
 ## Spec conformance
-| AC | Verdict | Evidence (test, path:line) |
+| AC | Verdict | Evidence (test) |
 |---|---|---|
-| AC-1 | ✅ met | `tests/test_guards.py:137` |
-| AC-2 | ✅ met | `tests/test_guards.py:137` (state 4) |
-| AC-3 | ✅ met | `tests/test_guards.py:166` |
-| AC-4 | ✅ met | `tests/test_guards.py:184` |
-| AC-5 | ✅ met | `tests/test_engine.py:133`, `tests/test_shell_hooks.py:215` |
-| AC-6 | ✅ met | `tests/test_engine.py:120`, `tests/test_guards.py:79` |
-| AC-7 | ⚠️ partial | `tests/test_guards.py:234` (listed forms pass). **Regressed:** `eval`/`bash -c`/`nice`/`timeout`/`xargs -I{}`/`!`/`{` with a dynamic command word are allowed (`guards.py:159`) |
-| AC-8 | ✅ met | `tests/test_engine.py:228`, `:236` |
-| AC-9 | ✅ met | `tests/test_engine.py:313`, `:327`; `tests/test_cli.py:87` |
-| AC-10 | ✅ met | `tests/test_shell_hooks.py:171` |
-| AC-11 | ✅ met | `tests/test_shell_hooks.py:104` |
-| AC-12 | ✅ met | `tests/test_cli.py:32` |
-| AC-13 | ✅ met | `tests/test_engine.py:87` |
-| AC-14 | ✅ met | `tests/test_guards.py:37` |
-| AC-15 | ✅ met | `tests/test_shell_hooks.py:148`, `:157`. `validate --all --ci --base origin/main` exits 0 once this round-3 review is in place (checked in a scratch clone) |
-| AC-16 | ✅ met | `tests/test_engine.py:185`, `tests/test_cli.py:108` |
-| AC-17 | ✅ met | `tests/test_guards.py:158` |
-| AC-18 | ⚠️ partial | `tests/test_guards.py:270` (listed forms). `m=AIOps-Approval; git commit -m "$m: plan"` was blocked at ecd8f70 and is allowed now (`guards.py:428`) |
-| AC-19 | ✅ met | `tests/test_engine.py:424`, `:431`, `:442`; `tests/test_cli.py:80` |
-| AC-20 | ✅ met | `tests/test_guards.py:195` |
-| AC-21 | ✅ met | `tests/test_shell_hooks.py:85` |
-| AC-22 | ✅ met | `tests/test_engine.py:356`, `tests/test_guards.py:175`, `tests/test_shell_hooks.py:26` |
-| AC-23 | ⚠️ partial | `tests/test_engine.py:154`, `tests/test_guards.py:257`. Not covered: `core.fsmonitor`, `filter.*`, `include.path`, and the `git config --file .git/config …` / `git config set …` write forms. There's no doctor ✗ test, and the 15 s signer is checked only by a `timeout=None` spy |
-| AC-24 | ⚠️ partial | `tests/test_shell_hooks.py:67` (listed cases). Still allowed: glob words (`cat ~/.aws/cred*`), `echo $(cat …)`, `cat<file`, and Grep with an ancestor `path` (R-12 "ancestor" isn't implemented) |
-| AC-25 | ✅ met | `tests/test_guards.py:246`, `tests/test_cli.py:32`. Minor: `git checkout <rev> -- <protected path>` isn't checked |
-| AC-26 | ✅ met | `tests/test_guards.py:149` |
-| AC-27 | ✅ met | `tests/test_guards.py:211`. Residuals: `tar -C.aiops`, C-quoted patch paths, `for`/`read`/`printf -v` targets |
-| AC-28 | ✅ met | `tests/test_shell_hooks.py:124`, `tests/test_guards.py:285` |
-| AC-29 | ✅ met | `tests/test_engine.py:383`, `:411`; `tests/test_shell_hooks.py:157` |
+| AC-1 | ✅ met | `tests/test_guards.py::BashGuard::test_heredoc_redirect_after_marker` |
+| AC-2 | ✅ met | `test_heredoc_redirect_after_marker` (state 4: artifact, `state/active`, `config.json`) |
+| AC-3 | ✅ met | `test_more_write_forms_while_locked` |
+| AC-4 | ✅ met | `test_aiops_tree_is_protected` |
+| AC-5 | ✅ met | `tests/test_engine.py::States::test_initialized_when_tracked_but_missing`, `tests/test_shell_hooks.py::ShellHooks::test_engine_wrapper_stays_on_when_aiops_is_tracked_but_deleted` |
+| AC-6 | ✅ met | `test_copied_folder_does_not_open_gates`, `test_id_is_immutable` |
+| AC-7 | ✅ met | `test_engine_cannot_be_disguised`, `test_wrapped_engine_calls`, `test_engine_call_forms_round4`, `test_review_round5_forms`, `test_review_round6_forms` |
+| AC-8 | ✅ met | `test_refuses_without_signing_key_before_stamping`, `test_approval_commit_is_signed` |
+| AC-9 | ✅ met | `test_audit_requires_allow_listed_signer`, `test_audit_rejects_multi_file_approval_commit`, `tests/test_cli.py::Lifecycle::test_legacy_approvals_is_human_only` |
+| AC-10 | ✅ met | `test_safety_guards_always_on` |
+| AC-11 | ✅ met | `test_secret_reads_blocked`, `test_secret_reads_through_globs_and_substitutions` (`cat -b .env` etc.) |
+| AC-12 | ✅ met | `tests/test_cli.py::Init::test_scaffold_pins_and_protects` |
+| AC-13 | ✅ met | `test_done_reported_on_feature_branch_after_merge` |
+| AC-14 | ✅ met | `test_policy_files_not_exempt` |
+| AC-15 | ✅ met | `test_ci_pins_tools`, `test_version_matches_changelog` (0.2.0-alpha.1, logged human decision), strict `validate --all --ci --base origin/main` exits 0 |
+| AC-16 | ✅ met | `test_key_policy_requires_a_human_per_signature`, `test_doctor_checks_signing`, `test_prompt_approval_explains_terminal_fallback` |
+| AC-17 | ✅ met | `test_heredoc_marker_in_quotes_or_comment` |
+| AC-18 | ✅ met | `test_engine_cannot_be_disguised_further`, `test_wrapped_engine_calls` (variable-built trailer) |
+| AC-19 | ✅ met | `test_audit_fails_closed_on_unresolvable_base`, `test_audit_accepts_allow_listed_signer_against_base`, `test_validate_rejects_empty_base`, `test_audit_bootstraps_when_base_has_no_signer_list` |
+| AC-20 | ✅ met | `test_aiops_tree_is_protected_from_globs_and_find` |
+| AC-21 | ✅ met | `test_secret_reads_blocked_further` |
+| AC-22 | ✅ met | `test_legacy_needs_full_sha_and_clean_commit`, `test_minor_write_forms`, `test_guard_bash` |
+| AC-23 | ✅ met | `test_signing_toolchain_is_pinned`, `test_signing_toolchain_is_guarded`, `test_repo_local_config_is_allow_listed`, `test_approval_runs_no_monitor_or_filter`, `test_engine_runs_git_by_absolute_path`, `test_docs_state_the_residuals` |
+| AC-24 | ✅ met | `test_secret_reads_beyond_env`, `test_secret_reads_through_globs_and_substitutions`, `test_secret_uploads_and_credential_printers` |
+| AC-25 | ✅ met | `test_shell_writes_respect_protected_paths`, `test_review_round3_minor_forms` (checkout/restore), `test_scaffold_pins_and_protects` |
+| AC-26 | ✅ met | `test_heredoc_marker_in_arithmetic_or_ansi_c` |
+| AC-27 | ✅ met | `test_aiops_integrity_remaining_forms`, `test_review_round3_minor_forms` |
+| AC-28 | ✅ met | `test_safety_variants`, `test_no_false_positives`, `test_engine_call_forms_round4` (false positives) |
+| AC-29 | ✅ met | `test_legacy_write_only_pre_signing_on_main`, `test_sk_key_without_touch_rejected`, `test_ci_pins_tools` |
 
 ## Security
-- **[BLOCKER] Disguised engine calls through wrappers** (`guards.py:159`). Reproduced: `a=CLAUDE; eval "unset ${a}CODE ${a}_CODE_CHILD_SESSION"; s=sdlc; nice $s approve 0001 plan` passes pre-bash and creates a plan approval that `validate --all --ci` accepts under `"any"`.
-  - Fix: treat the word after wrappers (`eval`, `nice`, `timeout N`, `stdbuf`, `setsid`, `ionice`, `!`, `{`, `xargs [opts]`) as a command position. Recurse ENGINE_RES and ENV_RES into `eval` and `-c` strings. Add these forms to the tests.
-- **[HIGH] Code-running repo-local git config inside the approval** (`approvals.py:51-52, 106, 161-162`; `guards.py` `SIGNING_CONFIG_RE`). Allowed: `git config core.fsmonitor`, `core.attributesFile`, `filter.x.clean` and `include.path`. A planted fsmonitor ran 8 times during the pinned commit.
-  - Fix: allow-list repo-local keys (read with `--show-scope --includes`). Pin `core.fsmonitor=false core.attributesFile=/dev/null` for `git add` and `commit`, or stage with `hash-object --no-filters`. Call git by absolute path. Guard `git config set|unset` and `-f/--file` under `.git/`. Document that approval must happen in the approver's own clean clone.
-- **[MEDIUM] Shell secret reads skip glob words and substitutions** (`hooks/guard-bash.sh:70`, `:78`). Allowed: `cat ~/.aws/cred*`, `cat *.pem`, `echo $(cat ~/.aws/credentials)`, `cd ~/.aws && cat credentials`. Fix: expand globs (`compgen -G`), don't exempt segments that contain substitutions, and track `cd`.
-- **[LOW]**
-  - The per-word secret scan has false positives in every repo (`git commit -m "fix: load .env"`, `grep -rn id_rsa src`) and costs about 835 ms on a 60-line heredoc, against a 150 ms target.
-  - Writes outside the repo aren't checked against `secret-paths` (`cp x ~/.gitconfig`).
-  - This repo runs `"approval_key_policy": "any"`, and `origin/main` has no signer list (bootstrap). The merge needs explicit CODEOWNERS review of `.aiops/config/`.
+- **Verdict:** PASS (0 critical/high), 21/25.
+- **Re-tests:** every round-6 finding was re-tested against the live hooks and is fixed. That covers directory
+  and symlinked toolchain targets, PATH directories, absolute git/python/ssh-keygen, the approve command, credential
+  printers, `rg -.` and curl `<`/`@` uploads.
+- **[MEDIUM, fixed in `5bfec52`]** `$HOME`/`${HOME}` in shell write targets bypassed the out-of-repo guards.
+  `test_review_round6_forms` goes red on the parent and green at HEAD.
+- **[LOW] Known issues for alpha.2 (CHANGELOG):**
+  - A PATH directory created in the same command.
+  - Approve calls assembled after a variable assignment (they still need the human under `"human"`).
+  - `~/.zlogin` and `~/.inputrc`.
+  - More credential printers: `op item get`, `vault read`, `kubectl get secret -o yaml`, and others.
+  - `--data-urlencode name@file`.
+- **Accepted residual:** this repo's `"approval_key_policy": "any"`, by human decision.
 
 Spec flags:
 
 | Flag | Mitigated? |
 |---|---|
-| Signing-key access | **partially**: defeated by repo-local fsmonitor/filter code (HIGH); this repo uses `any` |
-| Self-trust | **yes**: base-ref trust, fail-closed CI; the PR's own workflow is the documented residual |
-| Legacy loophole | **yes**: main ancestors predating signing, full shas, confirmed per entry |
-| Secret reads | **partially**: Read/Grep/Glob and literal shell words are covered; globs and substitutions aren't |
-| Supply chain | **yes**, mutable-tag residual |
+| Signing-key access | **yes** for the documented scope. The key policy refuses passphrase-less, agent-loaded and `no-touch-required` keys. The commit is built with plumbing, by absolute tools. The same-user residual is documented ("Approval isolation"). This repo uses `any` by human decision. |
+| Self-trust | **yes**: signers, legacy list and config are read from the base ref, and the audit fails closed. The PR's own workflow running is a documented residual. |
+| Legacy loophole | **yes**: only main ancestors that predate signing, full shas, confirmed per entry, read from the base. |
+| Secret reads | **yes, with LOW gaps** (known issues) |
+| Supply chain | **yes**; a mutable tag is the documented residual |
 
 ## Plan conformance
-- S25-S32 are ticked, and the code matches the file lists. The S29, S31 and S32 deviations are logged.
-- **Unlogged (MINOR):**
-  - S26 implements "equals" for Grep/Glob, not R-12's "or is an ancestor of".
-  - S25 also touched `tests/helpers.py`, `tests/test_cli.py` and `evals/_lib/repo.sh`.
-  - S27 also applies `secret-paths` to shell writes.
-  - S28 changed the tokenizer fallback.
-- **MAJOR:** the setup help still says `git config gpg.format ssh` and `git config user.signingkey …` without `--global`, which S25 now refuses. Affected: `approvals.py:34-35`, `cli.py:348`, `README.md:76-77`, `templates/scaffold/.aiops/README.md:10`, `CHANGELOG.md:76`.
-- **MINOR:** `evals/_lib/repo.sh:13` runs `git config --global` without isolating `GIT_CONFIG_GLOBAL`.
+- All 32 steps are ticked, and the diff matches the file lists.
+- The review fixes (rounds 3-7) were made in state 5 as review-fix commits by human decision, so the plan approval
+  holds.
+- Every deviation is in the Deviation log with its commit, including:
+  - the plumbing approval commit
+  - the `shell.py` and `secret_scan.py` modules
+  - R-12's ancestor rule (one level, outside the repo for Grep/Glob)
+  - `timeout 30 $X close` kept blocked
+  - the alpha version
 - Nothing out of scope ships.
 
 ## Test-first evidence
-- Every S25-S32 commit carries `Red:`/`Green:`, and the test count climbs from 93 to 102.
-- The code reviewer ran each round-3 proof test against its step's parent commit. All nine fail with assertions there and pass at the step.
-- The S25 recorded red text differs slightly from the parent's real message (same assertion). The S27 CODEOWNERS part was a pin, as its commit says.
-- Not covered: doctor ✗ for repo-local overrides, a real slow signer, regressions for the forms S30 reopened.
+- Every S1-S32 step and every review-fix commit carries `Red:`/`Green:` lines. The test count climbs from 59 to 115.
+- In rounds 4-7, the reviewers ran each review-fix proof test against its parent commit in a temporary worktree.
+  All of them failed with the recorded assertions and pass at HEAD.
+- `5bfec52`'s proof test was confirmed red on its parent before the commit.
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 30 | AC-7 regressed; AC-18, AC-23 and AC-24 partial |
-| Security | 25 | 14 | 1 BLOCKER (wrapper engine calls), 1 HIGH (fsmonitor/filter/include), 1 MEDIUM |
-| Test quality & test-first | 20 | 17 | red reproduced for all 9 round-3 tests; a few untested paths |
-| Plan conformance | 10 | 8 | small unlogged extras; S26 narrowing |
-| Maintainability | 5 | 4 | command-position allow-list is brittle; the secret scan adds false positives and latency |
-| **Total** | 100 | **73** | **CHANGES_REQUESTED**: a BLOCKER, a HIGH, and below 80 |
+| Spec conformance | 40 | 36 | All ACs met. A few round-5 forms are only partly closed (known issues). |
+| Security | 25 | 21 | 0 critical/high; the MEDIUM is fixed; LOW gaps are known issues |
+| Test quality & test-first | 20 | 19 | Red on the parent for every proof test. Symlinked files and uninitialized repos aren't covered for toolchain shell writes. |
+| Plan conformance | 10 | 10 | Every deviation logged with commits |
+| Maintainability | 5 | 4 | The toolchain check exists in both bash and Python; the credential-printer list is regex-heavy |
+| **Total** | 100 | **90** | **PASS**: ≥ 80, no BLOCKER, no CRITICAL/HIGH, every AC met |
 
-### Fixes requested
-1. **BLOCKER:** command position after wrappers; recurse engine/env checks into `eval` and `-c`; regression tests.
-2. **HIGH:** an allow-list for repo-local git config (with includes); pin fsmonitor and attributes for `add` and `commit`; absolute git; guard `git config set|unset` and `--file`.
-3. **MAJOR:** `--global` and a dedicated key in every setup hint (with a test).
-4. **MEDIUM/MAJOR:** secret reads through globs, substitutions and `cd`; Grep ancestor paths (or amend R-12); fewer false positives and less latency in the per-word scan.
-5. **MINOR:** the variable-built trailer; `git checkout/restore` against protected-paths; AC-27 residuals in the docs; `GIT_CONFIG_GLOBAL` in the evals; the Deviation log extras.
+### Before merging (human)
+1. CODEOWNERS review of `.aiops/config/`. This is the bootstrap PR, so CI trusts its signer list.
+2. Accept the documented alpha known issues, or ask for alpha.2 first.
