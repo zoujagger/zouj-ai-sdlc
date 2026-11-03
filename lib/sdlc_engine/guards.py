@@ -15,7 +15,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 from . import artifacts as A
-from .shell import SEPARATORS, segments, tokenize
+from .shell import segments, tokenize
 from .machine import (PLUGIN_ROOT, SCHEMAS, active_dir, config, current_branch, evaluate, gate, git, glob_hit, globs,
                       initialized, lock, phrase, project_root)
 
