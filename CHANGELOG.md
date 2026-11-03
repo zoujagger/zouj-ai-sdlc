@@ -60,6 +60,19 @@ delivered as intent `.aiops/0002-hardening/`.
 - **Legacy and keys.** `legacy-approvals --write` records only unsigned approvals on main that predate the commit
   introducing `allowed-signers`, and confirms each one (`--yes` skips the question). An `sk-` key allow-listed with
   `no-touch-required` fails the key policy. This repo's CI fails closed on an unresolvable base.
+- **Approval commit by plumbing.** The approval is hashed without filters, built in a throwaway index and signed with
+  `commit-tree`, by git's absolute path, with `core.fsmonitor=false` and attributes from the empty tree: nothing
+  configured in the repo (or globally) runs inside it. Repo-local config is limited to an allow-list (includes
+  followed), and the guard blocks `git config` of fsmonitor, attributes, filter, include, alias and diff keys, the
+  `git config set|unset|edit` form and `-f` under `.git/`.
+- **Wrapped engine calls.** `eval`, `sh -c`, `nice`, `timeout`, `xargs`, `!` and `{ …; }` in front of a dynamic command
+  word, computed marker names (`unset ${a}CODE`) and `m=AIOps-Approval; … "$m:"` are blocked.
+- **Secret reads, one pass.** `lib/sdlc_engine/secret_scan.py` replaces the per-word bash loop (about 60 ms instead of
+  up to 835 ms): globs, `$(…)`, `cd`, `$HOME` and ancestor directories are covered, and commit/PR messages, grep
+  patterns and heredoc bodies no longer cause false blocks. Writes outside the repo are checked against `secret-paths`.
+- **Setup hints** use `git config --global` and a dedicated `~/.ssh/aiops_signing` key, and refusals print the
+  plugin's absolute `bin/sdlc approve` command (consumer repos have no `bin/sdlc`).
+- `git checkout/restore` respect `protected-paths`; `tar -C<dir>` and git's C-quoted patch names count.
 
 ### Added
 - `sdlc legacy-approvals [--write [--yes]]` (human-only): records pre-signing approval commits as an explicit legacy list.
@@ -73,7 +86,8 @@ delivered as intent `.aiops/0002-hardening/`.
 - Secret globs moved from `defaults/protected-paths` to `defaults/secret-paths`.
 
 ### Upgrading
-Each approver runs `git config gpg.format ssh` and `git config user.signingkey ~/.ssh/id_ed25519.pub`, then adds
+Each approver creates a dedicated key and runs `git config --global gpg.format ssh` and
+`git config --global user.signingkey ~/.ssh/aiops_signing.pub` (repo-local signing settings are refused), then adds
 their key to `.aiops/config/allowed-signers`. Run `sdlc legacy-approvals --write` once, and re-run `sdlc init` to add
 the new scaffold files (existing files are kept). See README → "Approver setup".
 
