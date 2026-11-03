@@ -5,6 +5,48 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.2.0-alpha.2] - 2026-11-03
+
+> **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
+
+Roadmap Phase 1 (`docs/roadmap.md`), delivered as intent `.aiops/0003-guided-setup/`: a newcomer gets from nothing to a
+first approved intent with one guided, rerunnable command, and the playbook workflow is the same in every profile.
+
+### Added
+- **`sdlc setup` and `/zouj-ai-sdlc:setup`.**
+  - Steps: preflight → inventory → plan → gate summary → one confirmation → apply → the human steps → doctor.
+  - Preflight blocks on missing git, make or python ≥ 3.9. It warns, with the fix, about Claude Code < 2.1, `gh`
+    login and the `workflow` scope, and a missing git credential helper.
+  - `--dry-run` writes nothing, and without `--yes` or a terminal setup writes nothing (exit 2).
+  - Rerunning changes nothing when everything is in place.
+- **Profiles `solo`, `team` and `strict`.** They change only how a human approval is proven:
+  - `solo`: unsigned approval commits
+  - `team`: SSH-signed, a human per signature
+  - `strict`: an `sk-` key touch, plus CODEOWNERS on `/.aiops/`
+
+  The new `"sk"` key policy backs `strict`. An unknown `approval_key_policy` is now refused instead of behaving like
+  `"any"`. Config gains `profile` (default `team`), and doctor shows it.
+- **Human-owned files stay human.** Run by the agent, setup never changes an existing `.aiops/config.json` or
+  `.claude/settings.json`: it prints the exact JSON for the human. Run by a human, it merges only its own keys,
+  showing a diff.
+- **Collaborators are offered the plugin.** The scaffold's `.claude/settings.json` carries the marketplace snippet
+  (`extraKnownMarketplaces` and `enabledPlugins`).
+- **`sdlc setup --sandbox <dir>`.** A committed throwaway repo with a stdlib-only app, the `solo` scaffold and a
+  sample intent `0001`, to walk the five states safely.
+- **`sdlc feedback`.** Issue links and a doctor summary with paths reduced to the repo name; it sends nothing.
+- **Docs.** A task-first README (Start using, install paths A/B/C, profiles), `COMMANDS-QUICK-REF.md`,
+  `TROUBLESHOOTING.md`, and the `install-problem` and `quick-feedback` issue forms.
+- **`tests/test_playbook.py`.** The full playbook walk in each profile, through the real guards and hooks.
+
+### Changed
+- `init` and `setup` share one scaffold preview (`init_actions`/`apply_init`), so setup's plan is exactly what gets
+  written.
+- CODEOWNERS placeholders (`@your-org/...`) no longer count as owners.
+
+### Upgrading from 0.2.0-alpha.1
+Nothing changes until you run `sdlc setup`. A config without `profile` reads as `team`. To record your profile, run
+`sdlc setup --profile solo|team|strict` in your own terminal and confirm the diff.
+
 ## [0.2.0-alpha.1] - 2026-11-03
 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas. Pin a full
@@ -168,6 +210,7 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.2...HEAD
+[0.2.0-alpha.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...v0.2.0-alpha.2
 [0.2.0-alpha.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v0.2.0-alpha.1
 [0.1.0]: https://github.com/zoujagger/zouj-ai-sdlc/releases/tag/v0.1.0

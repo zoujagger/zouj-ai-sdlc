@@ -165,7 +165,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 
     Red: the files are missing.
   - Covers: AC-12
-- [ ] **S14**: Release 0.2.0-alpha.2
+- [x] **S14**: Release 0.2.0-alpha.2
   - Files: `.claude-plugin/plugin.json`, `CHANGELOG.md`, `tests/test_shell_hooks.py` (version assertion) (modify)
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_version_matches_changelog`, asserting
     `0.2.0-alpha.2`. Red: the version is still alpha.1.

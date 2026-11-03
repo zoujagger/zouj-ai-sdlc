@@ -302,11 +302,13 @@ class ShellHooks(RepoCase):
     def test_version_matches_changelog(self):
         import re
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
-        self.assertEqual(version, "0.2.0-alpha.1")                               # AC-15: the hardening release, as an alpha
+        self.assertEqual(version, "0.2.0-alpha.2")                               # 0003: guided setup (alpha)
         log = (ROOT / "CHANGELOG.md").read_text()
         released = re.findall(r"^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]", log, re.M)
         self.assertEqual(released[0], version, "the newest CHANGELOG release must match plugin.json")
-        self.assertIn(f"[{version}]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v{version}", log)
+        previous = released[1]                                                    # each release compares to the last
+        self.assertIn(f"[{version}]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{previous}...v{version}", log)
+        self.assertIn(f"[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{version}...HEAD", log)
 
     def test_ci_pins_tools(self):
         import re
