@@ -199,6 +199,10 @@ def main(root, args):
     if dry_run:
         print("dry run: nothing was written.")
         return 0
+    if not any(mark in "+~" for mark, _, _ in actions):
+        print("Already set up: nothing to write.")
+        human_steps(root, profile, [])
+        return 0
     if not yes and not (tty and _confirm()):
         print("not confirmed: nothing was written. Re-run with --yes to apply without the question."
               if tty else "no terminal to confirm: nothing was written. Re-run with --yes to apply.")
@@ -221,5 +225,51 @@ def _confirm():
 
 
 def apply(root, profile, actions, args):
-    print("apply: not part of this step yet (S7); nothing was written.")
-    return 1
+    stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
+    if stack and not (cli.TEMPLATES / "stacks" / f"{stack}.recipes").is_file():
+        print(f"unknown stack {stack!r} (python, node, go); nothing was written.", file=sys.stderr)
+        return 1
+    creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
+    cli.apply_init(root, creates)
+    created = {rel for _, rel in creates}
+    if ".aiops/config.json" in created:                 # a new config takes the profile; an existing one is human-owned
+        f = root / ".aiops" / "config.json"
+        f.write_text(json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n")
+    if stack and "Makefile" in created:
+        wired = cli._wire_stack(root / "Makefile", stack)
+        print(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
+    print("Applied")
+    for rel in sorted(created):
+        print(f"  + {rel}")
+    human_steps(root, profile, [a for a in actions if a[0] == "~"])
+    print("Doctor")
+    cli.cmd_doctor(root, [])
+    return 0
+
+
+def human_steps(root, profile, pending):
+    """What only the human can do: install the plugin, set up signing, own .aiops/, apply changes to human-owned
+    files, commit, and start the first intent."""
+    steps = ["In Claude Code (or just reopen Claude Code here: the project settings offer the plugin):\n"
+             "       /plugin marketplace add zoujagger/zouj-ai-sdlc\n"
+             "       /plugin install zouj-ai-sdlc@zouj"]
+    if profile in ("team", "strict") and approvals.signing_problem(root):
+        key = "~/.ssh/aiops_signing_sk" if profile == "strict" else "~/.ssh/aiops_signing"
+        gen = (f"ssh-keygen -t ed25519-sk -f {key}            # a FIDO key: a touch for every approval"
+               if profile == "strict" else f"ssh-keygen -t ed25519 -f {key}   # set a passphrase; keep it out of ssh-agent")
+        steps.append("In your own terminal, set up approval signing:\n"
+                     f"       {gen}\n"
+                     "       git config --global gpg.format ssh\n"
+                     f"       git config --global user.signingkey {key}.pub\n"
+                     f"       echo \"$(git config user.email) namespaces=\\\"git\\\" $(cat {key}.pub)\" >> "
+                     ".aiops/config/allowed-signers")
+    if profile == "strict" and not cli.codeowners_cover_aiops(root):
+        steps.append("Give /.aiops/ a real owner (strict requires it): in .github/CODEOWNERS replace the @your-org/... "
+                     "placeholders, at least:\n       /.aiops/ @<approver>")
+    for _mark, rel, note in pending:
+        steps.append(f"Change {rel} yourself (human-owned): {note}")
+    steps.append(f'Commit: git add -A && git commit -m "chore: adopt zouj-ai-sdlc (profile {profile})"')
+    steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
+    print("Human steps")
+    for i, step in enumerate(steps, 1):
+        print(f"  {i}. {step}")

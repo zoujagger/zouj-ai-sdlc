@@ -1,9 +1,12 @@
 """`sdlc setup`: guided, rerunnable onboarding that keeps the playbook workflow in every profile."""
+import json
 import shutil
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
-from helpers import RepoCase, git
+from helpers import SDLC, RepoCase, git
 
 from sdlc_engine import cli
 
@@ -124,6 +127,63 @@ class Plan(SetupCase):
         self.assertIn("--yes", r.stdout)
         self.assertIn("nothing was written", r.stdout)
         self.assertEqual(self.snapshot(), before)
+
+
+class Apply(SetupCase):
+    def fresh_repo(self, name):
+        d = self.root.parent / f"{self.root.name}.{name}"
+        d.mkdir()
+        git(d, "init", "-q", "-b", "main")
+        for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com"),
+                           ("commit.gpgsign", "false")):
+            git(d, "config", key, value)
+        (d / "README.md").write_text("demo\n")
+        git(d, "add", "-A")
+        git(d, "commit", "-qm", "init")
+        return d
+
+    def sdlc_in(self, d, *args):
+        env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d)}
+        return subprocess.run([sys.executable, SDLC, *args], cwd=d, input="", capture_output=True, text=True, env=env)
+
+    def test_fresh_repo_each_profile(self):
+        expected = {"solo": (False, "any"), "team": (True, "human"), "strict": (True, "sk")}
+        for profile, (signed, policy) in expected.items():
+            with self.subTest(profile=profile):
+                d = self.fresh_repo(profile)
+                r = self.sdlc_in(d, "setup", "--profile", profile, "--stack", "python", "--yes")
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                cfg = json.loads((d / ".aiops" / "config.json").read_text())
+                self.assertEqual((cfg["profile"], cfg["require_signed_approvals"], cfg["approval_key_policy"],
+                                  cfg["commit_approvals"]), (profile, signed, policy, True))
+                self.assertIn("pytest -q", (d / "Makefile").read_text())
+                self.assertIn(".aiops/state/", (d / ".gitignore").read_text())
+                steps = r.stdout.split("Human steps\n", 1)[1].split("\nDoctor\n", 1)[0]
+                self.assertIn("/plugin marketplace add zoujagger/zouj-ai-sdlc", steps)
+                self.assertIn("/plugin install zouj-ai-sdlc@zouj", steps)
+                self.assertEqual("git config --global user.signingkey" in steps, profile != "solo")
+                self.assertEqual("ed25519-sk" in steps, profile == "strict")
+                self.assertEqual("/.aiops/ @" in steps, profile == "strict")       # CODEOWNERS for strict
+                self.assertIn("No intents yet", self.sdlc_in(d, "status").stdout)
+                # code is read-only until a plan is approved: the playbook gate holds right after setup
+                edit = {"tool_name": "Write", "cwd": str(d),
+                        "tool_input": {"file_path": str(d / "src" / "app.py"), "content": "x = 1\n"}}
+                env = {**self.env, "CLAUDE_PROJECT_DIR": str(d)}
+                h = subprocess.run([sys.executable, SDLC, "hook", "pre-edit"], cwd=d, input=json.dumps(edit),
+                                   capture_output=True, text=True, env=env)
+                self.assertEqual(h.returncode, 2, h.stdout + h.stderr)
+                self.assertIn("read-only lock", h.stderr)
+
+    def test_rerun_plans_nothing(self):
+        d = self.fresh_repo("rerun")
+        self.assertEqual(self.sdlc_in(d, "setup", "--profile", "solo", "--yes").returncode, 0)
+        stamp = {p: p.stat().st_mtime_ns for p in d.rglob("*") if p.is_file() and ".git" not in p.parts}
+        r = self.sdlc_in(d, "setup", "--profile", "solo", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotRegex(r.stdout, r"(?m)^  [+~] ")                                 # 0 writes planned
+        self.assertIn("nothing to write", r.stdout)
+        self.assertEqual({p: p.stat().st_mtime_ns for p in d.rglob("*") if p.is_file() and ".git" not in p.parts},
+                         stamp)
 
 
 if __name__ == "__main__":

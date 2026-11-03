@@ -90,7 +90,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
       `git status` clean
     - without `--yes` and without a tty, it exits 2 listing `--profile`
   - Covers: AC-1, AC-6
-- [ ] **S7**: Apply on a fresh repo with profiles; rerun is idempotent
+- [x] **S7**: Apply on a fresh repo with profiles; rerun is idempotent
   - Files: `lib/sdlc_engine/setup.py` (modify)
   - Test first: `tests/test_setup.py::Apply::test_fresh_repo_each_profile` and `::test_rerun_plans_nothing`:
     - for solo, team and strict, `--yes` initializes the repo and writes the profile's config values
@@ -204,3 +204,4 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-03 | S7 | `lib/sdlc_engine/cli.py` changed too (S7 listed only `setup.py`). The `.gitignore` entry moved from `cmd_init` into `apply_init`, so init and setup share it. `codeowners_cover_aiops` (S4) no longer counts the scaffold's `@your-org/...` placeholders as owners; `test_strict_requires_codeowners` pins that | otherwise setup would skip the ignore line, and `strict` would pass on a fresh scaffold with no real owner | S7 commit |

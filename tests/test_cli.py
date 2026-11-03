@@ -138,6 +138,8 @@ class Lifecycle(RepoCase):
         self.assertEqual(r.returncode, 0, r.stdout)
         owners.write_text("/.aiops/\n")                                 # a pattern without an owner covers nothing
         self.assertEqual(self.run_sdlc("doctor").returncode, 1)
+        owners.write_text("/.aiops/ @your-org/product\n")              # the scaffold's placeholder isn't an owner
+        self.assertEqual(self.run_sdlc("doctor").returncode, 1)
 
     def test_doctor_checks_signing(self):
         from helpers import git

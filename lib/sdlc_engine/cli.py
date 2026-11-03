@@ -317,6 +317,11 @@ def apply_init(root, actions):
             if REF_PLACEHOLDER in text:
                 dst.write_text(text.replace(REF_PLACEHOLDER, f"v{plugin_version()}"))
     (root / ".aiops" / "state").mkdir(parents=True, exist_ok=True)
+    gi = root / ".gitignore"
+    lines = gi.read_text().splitlines() if gi.exists() else []
+    if ".aiops/state/" not in lines:
+        gi.write_text("\n".join(lines + ["", "# zouj-ai-sdlc engine state (active intent, test lock)", ".aiops/state/"])
+                      .lstrip("\n") + "\n")
 
 
 def cmd_init(root, args):
@@ -332,11 +337,6 @@ def cmd_init(root, args):
     if stack and "Makefile" in created:
         wired = _wire_stack(root / "Makefile", stack)
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
-    gi = root / ".gitignore"
-    lines = gi.read_text().splitlines() if gi.exists() else []
-    if ".aiops/state/" not in lines:
-        gi.write_text("\n".join(lines + ["", "# zouj-ai-sdlc engine state (active intent, test lock)", ".aiops/state/"])
-                      .lstrip("\n") + "\n")
     out("Created:\n  " + ("\n  ".join(created) or "(nothing)"))
     if skipped:
         out("Kept existing (compare with the plugin's templates/scaffold/ or re-run with --force):\n  "
@@ -392,7 +392,7 @@ def codeowners_cover_aiops(root):
     for line in (f.read_text(errors="replace").splitlines() if f else []):
         words = line.split("#", 1)[0].split()
         if words and words[0] in AIOPS_PATTERNS:
-            owned = len(words) > 1
+            owned = any(not w.startswith("@your-org/") for w in words[1:])   # the scaffold's placeholder isn't an owner
     return owned
 
 
