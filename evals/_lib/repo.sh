@@ -10,7 +10,15 @@ init_repo() {
   git config user.name "Eval Human"; git config user.email "eval@example.com"; git config commit.gpgsign false
   # Approvals must be SSH-signed by an allow-listed key: give the fixture its own throwaway key.
   ssh-keygen -q -t ed25519 -N "" -C eval -f "$PWD/.eval-signing-key"
-  git config --global gpg.format ssh; git config --global user.signingkey "$PWD/.eval-signing-key.pub"   # HOME is a temp dir
+  # Signing config must be global (repo-local is refused), so the eval HOME must be a throwaway one: never touch
+  # the operator's own global git config.
+  local real_home
+  real_home=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)
+  if [[ -n "$real_home" && "$(cd "$HOME" && pwd -P)" == "$(cd "$real_home" && pwd -P)" ]]; then
+    echo "evals: HOME is the operator's home; refusing to rewrite its global git config (run evals with a temp HOME)" >&2
+    exit 1
+  fi
+  git config --global gpg.format ssh; git config --global user.signingkey "$PWD/.eval-signing-key.pub"
   $SDLC init >/dev/null
   mkdir -p .aiops/config
   echo "eval@example.com namespaces=\"git\" $(cat .eval-signing-key.pub)" > .aiops/config/allowed-signers

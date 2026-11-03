@@ -115,6 +115,13 @@ class Lifecycle(RepoCase):
         r = self.run_sdlc("doctor")                                   # the default policy: the same key fails
         self.assertIn("✗ approval signing: the signing key has no passphrase", r.stdout)
         self.assertEqual(r.returncode, 1)
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
+        for key, value in (("gpg.format", "openpgp"), ("core.fsmonitor", "/tmp/x.sh")):   # repo-local overrides
+            git(self.root, "config", "--local", key, value)
+            r = self.run_sdlc("doctor")
+            self.assertIn(f"✗ approval signing: repo-local git config sets {key}", r.stdout)
+            self.assertEqual(r.returncode, 1)
+            git(self.root, "config", "--local", "--unset", key)
         git(self.root, "config", "--global", "--unset", "user.signingkey")
         r = self.run_sdlc("doctor")
         self.assertIn("✗ approval signing", r.stdout)

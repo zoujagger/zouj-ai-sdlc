@@ -454,6 +454,8 @@ def _patch_check(args, cwd, root, git_am=False):
     for f in readable:
         for m in PATCH_PATH_RE.finditer(f.read_text(errors="replace")):
             for g in filter(None, m.groups()):
+                if g.startswith('"') and g.endswith('"'):   # git's C-quoted names: "a/.aio\160s/…"
+                    g = g[1:-1].encode("latin-1", "backslashreplace").decode("unicode_escape")
                 parts = g.split("/")
                 for k in range(len(parts)):            # every -pN strip level
                     for d in dirs:
@@ -476,6 +478,7 @@ def _extract_dirs(name, args):
                 and not (args and not args[0].startswith("-") and "x" in args[0]):
             return []
         dirs = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-C", "--directory")] + \
+            [a[2:] for a in args if a.startswith("-C") and len(a) > 2] + \
             [a.split("=", 1)[1] for a in args if a.startswith("--directory=")]
         return dirs or ["."]
     return []
@@ -577,7 +580,12 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             if rel is not None and (rel == ".git" or rel.startswith(".git/")):
                 return _block("toolchain", f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
                               "use git commands; ask the human for config or hook changes.")
-            if rel is None:
+            if rel is None:   # outside the repo: still never write secret material (~/.ssh/config, ~/.aws/…)
+                p = Path(t).expanduser()
+                p = p if p.is_absolute() else Path(cwd) / p
+                if glob_hit(str(p), globs(root, "secret-paths")) and not _secret_template(p.name):
+                    return _block("protected", f"'{p}' is secret material; shell writes count too.",
+                                  "ask the human to change credentials themselves.")
                 continue
             if _aiops_protected(rel):
                 return _block("artifacts", f"shell writes to '{rel}' bypass the gate guard.",
@@ -613,11 +621,15 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                               if why == "aiops" else f"`git {sub}` from stdin can't be inspected for .aiops/ changes.",
                               "edit artifacts with the Edit/Write tools, or apply a patch file by name.")
             if sub in GIT_TREE_WRITERS:
-                hit = next((r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-"))
-                            if r and _aiops_protected(r)), None)
+                rels = [r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-")) if r]
+                hit = next((r for r in rels if _aiops_protected(r)), None)
                 if hit:
                     return _block("artifacts", f"`git {sub}` on '{hit}' would delete or rewrite an artifact outside the "
                                   "gate guard.", "edit artifacts with the Edit/Write tools; ask the human to remove one.")
+                prot = next((r for r in rels if glob_hit(r, globs(root, "protected-paths"))), None)
+                if prot:
+                    return _block("protected", f"`git {sub}` would rewrite '{prot}', a protected path.",
+                                  "propose the change in chat; a human edits protected files.")
             if on_main and sub in GIT_MAIN_FORBIDDEN:
                 return _block("final gate", f"`git {sub}` on {config(root)['main_branch']}: merging is the human's decision.",
                               "leave the branch for the human to review and merge (/zouj-ai-sdlc:pr).")

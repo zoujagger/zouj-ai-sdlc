@@ -231,6 +231,19 @@ class BashGuard(RepoCase):
                     "find . -iname '*.PYC' -delete", "rm -rf {build,dist}", "d=build; rm -rf $d", "x=1; echo $x"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_review_round3_minor_forms(self):
+        self.to_execution()
+        (self.root / "cq.patch").write_text('--- "a/.aio\\160s/0001-csv-export/plan.md"\n'
+                                            '+++ "b/.aio\\160s/0001-csv-export/plan.md"\n')
+        (self.root / "build").mkdir()
+        for cmd in ("git checkout main -- .github/workflows/aiops-gates.yml", "git restore -s main .claude/settings.json",
+                    "tar -xf x.tar -C.aiops", "git apply cq.patch", "echo x >> /tmp/someone/.ssh/config",
+                    "cp key /tmp/someone/.aws/credentials"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("git checkout main -- src/app.py", "git restore src/app.py", "tar -xf x.tar -Cbuild",
+                    "echo x >> /tmp/notes.txt"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_engine_cannot_be_disguised(self):
         self.to_execution()
         for cmd in ("env -u CLAUDECODE sdlc approve 0001 plan", "unset CLAUDECODE", "unset FOO CLAUDE_CODE_CHILD_SESSION",
