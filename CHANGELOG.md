@@ -79,6 +79,11 @@ delivered as intent `.aiops/0002-hardening/`.
   `find` feeding a reader counts as a recursive read. GitHub CLI and git-credential files are secret paths.
   Approvals refuse symlinked artifacts and report a busy index. The round-3 `-b`/`-u` false negatives and false
   positives are fixed.
+- **Round 5.** The engine-call rule is per command again (no blocks on `$GIT commit -m "…close…"`). `curl -F
+  file=@.env` / `--data-binary @.env` uploads and credential printers (`gh auth token`, `git credential fill`, …)
+  are blocked. `git checkout <rev> -- .` and `git restore -s <rev> ':/'` are refused. Git's global config, shell
+  startup files, `~/.local/bin`, `~/bin` and `~/.claude/plugins` can't be written by the agent
+  (`defaults/toolchain-paths`). `bin/sdlc` starts through a POSIX `sh` line that runs `python3 -I`.
 
 ### Added
 - `sdlc legacy-approvals [--write [--yes]]` (human-only): records pre-signing approval commits as an explicit legacy list.
