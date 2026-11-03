@@ -349,6 +349,35 @@ class BashGuard(RepoCase):
                     'for f in *.py; do echo "$f"; done', "$EDITOR notes.md"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_review_round5_forms(self):
+        from helpers import ROOT
+        self.to_execution()
+        for cmd in ('$GIT commit -m "fix: close the file handle"', '"$VENV/bin/pytest" -k "hook or approve"',
+                    "$PYTHON -m pytest -k hook", "$PYTHON manage.py approve 12", "npx tsc && $NODE dist/cli.js close",
+                    "$(npm bin)/eslint --rule hook src", "git checkout -- .",
+                    "git restore ."):
+            self.assertFalse(self.blocked(cmd), cmd)
+        # `timeout 30 $TEST_CMD close` has the exact shape of `timeout 5 $s approve`: blocked on purpose
+        for cmd in ("timeout 30 $TEST_CMD close", "x=approve; $s $x 0001 plan", "s=sdlc; $s approve 0001 plan",
+                    "git checkout HEAD~1 -- .",
+                    "git restore --source=HEAD~1 .", "git checkout HEAD~1 -- ':/'", "git checkout HEAD~1 -- '*.yml'",
+                    "git restore -s main ':(glob)**'", "cp /tmp/evil ~/.local/bin/python3", "echo x >> ~/.profile",
+                    "echo x >> ~/.bashrc", "printf '[gpg]' >> ~/.config/git/config", "echo x >> ~/.gitconfig"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        # pre-edit refuses the installed plugin even when the plugin isn't the project
+        import shutil
+        import tempfile
+        other = tempfile.mkdtemp(dir=self.root.parent)
+        try:
+            shutil.copytree(self.root, other, dirs_exist_ok=True)
+            payload = self.hook_input("Write", file_path=str(ROOT / "lib" / "sdlc_engine" / "approvals.py"), content="x")
+            payload["cwd"] = other
+            r = self.hook("pre-edit", payload, env={"CLAUDE_PROJECT_DIR": other})
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertIn("installed plugin", r.stderr)
+        finally:
+            shutil.rmtree(other)
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",

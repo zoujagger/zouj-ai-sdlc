@@ -204,19 +204,27 @@ SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 
 
 def _dynamic_engine_call(cmd, plain):
-    """A human-only subcommand word anywhere, with a command word the parser can't read: `$s`, `${s}lc`, `$(…)`, or a
-    glob/brace (`bin/sdl?`, `sdl{c,}`) after any wrappers and assignments; or text piped or sourced into a shell."""
+    """Per simple command: a command word the parser can't read (`$s`, `${s}lc`, a glob/brace like `bin/sdl?`, after
+    wrappers, keywords and assignments) whose first argument is a human-only subcommand, or is itself dynamic while
+    a human-only word is assigned somewhere (`x=approve; $s $x`). Also text piped or sourced into a shell."""
     if not HUMAN_WORD_RE.search(plain):
         return False
     if SHELL_FED_RE.search(plain) and re.search(rf"([$`?*\[{{]\S*|sdl\S*)\s+{HUMAN_SUBS}\b", plain):
         return True
+    human = re.compile(rf"^{HUMAN_SUBS}$")
+    assigned = re.search(rf"\w+={HUMAN_SUBS}\b", plain)
     for words, _ in segments(tokenize(cmd)):
         i = 0
         while i < len(words) and (words[i] in WRAPPER_WORDS or re.match(r"^[A-Za-z_]\w*=", words[i])
                                   or re.match(r"^python[\d.]*$", Path(words[i]).name)
                                   or (i and words[i - 1] in WRAPPER_WORDS and words[i].startswith("-"))):
             i += 1
-        if i < len(words) and re.search(r"[$`?*\[{]", words[i].split()[0] if words[i].split() else ""):
+        head = words[i].split() if i < len(words) else []
+        if not head or not re.search(r"[$`?*\[{]", head[0]):
+            continue
+        rest = head[1:] + words[i + 1:]                      # `eval "$s approve …"` keeps its words in one token
+        first = next((w for w in rest if not w.startswith("-")), "")
+        if human.match(first) or (assigned and re.search(r"[$`]", first)):
             return True
     return False
 
@@ -563,6 +571,29 @@ def _secret_template(rel):
     return name in (".env.example", ".env.sample", ".env.template") or name.endswith(".pub")
 
 
+def _toolchain_path(p, root):
+    """Shell startup files, git's global config, user PATH directories and installed plugins (defaults/toolchain-paths,
+    plus ~/bin): an agent's write there runs inside the human's next approval."""
+    s = str(p)
+    return bool(glob_hit(s, globs(root, "toolchain-paths"))) or s.startswith(str(Path.home() / "bin") + "/")
+
+
+WHOLE_TREE_RE = re.compile(r"^(\.|\./|:/.*|:\(.*|.*[*?\[].*)$")
+
+
+def _rewrites_tree_from_rev(sub, rest):
+    """`git checkout <rev> -- .` / `git restore -s <rev> ':/'`: older versions of everything, protected files included."""
+    if sub == "restore":
+        rev = any(a in ("-s", "--source") or a.startswith("--source=") or (a.startswith("-s") and len(a) > 2)
+                  for a in rest)
+    elif sub == "checkout" and "--" in rest:
+        rev = any(not a.startswith("-") for a in rest[:rest.index("--")])
+    else:
+        return False
+    paths = rest[rest.index("--") + 1:] if "--" in rest else [a for a in rest if not a.startswith("-")]
+    return rev and any(WHOLE_TREE_RE.match(p) for p in paths)
+
+
 def _in_plugin(target, cwd, root):
     """True for a write into the installed plugin (not when the project *is* the plugin checkout)."""
     if PLUGIN_ROOT.resolve() == root.resolve():
@@ -614,12 +645,15 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             if rel is not None and (rel == ".git" or rel.startswith(".git/")):
                 return _block("toolchain", f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
                               "use git commands; ask the human for config or hook changes.")
-            if rel is None:   # outside the repo: still never write secret material (~/.ssh/config, ~/.aws/…)
+            if rel is None:   # outside the repo: never secret material, nor what runs inside the human's approval
                 p = Path(t).expanduser()
                 p = p if p.is_absolute() else Path(cwd) / p
                 if glob_hit(str(p), globs(root, "secret-paths")) and not _secret_template(p.name):
                     return _block("protected", f"'{p}' is secret material; shell writes count too.",
                                   "ask the human to change credentials themselves.")
+                if _toolchain_path(p, root):
+                    return _block("toolchain", f"'{p}' is part of what runs when the human approves (PATH, shell "
+                                  "startup, git config, installed plugins).", "ask the human to change it themselves.")
                 continue
             if _aiops_protected(rel):
                 return _block("artifacts", f"shell writes to '{rel}' bypass the gate guard.",
@@ -655,6 +689,10 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                               if why == "aiops" else f"`git {sub}` from stdin can't be inspected for .aiops/ changes.",
                               "edit artifacts with the Edit/Write tools, or apply a patch file by name.")
             if sub in GIT_TREE_WRITERS:
+                if _rewrites_tree_from_rev(sub, rest):
+                    return _block("protected", f"`git {sub}` from another revision with a whole-tree pathspec would "
+                                  "rewrite protected files and artifacts.",
+                                  "name the paths you need (outside protected paths and .aiops/).")
                 rels = [r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-")) if r]
                 hit = next((r for r in rels if _aiops_protected(r)), None)
                 if hit:

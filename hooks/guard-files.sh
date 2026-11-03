@@ -28,6 +28,11 @@ if [[ "$plugin_real" != "$root_real" && "$path_real/" == "$plugin_real/"* ]]; th
   block "'$path' is inside the installed plugin, which the human runs to approve; change it through its own repo"
 fi
 
+# Outside the repo: shell startup, git's global config, user PATH and installed plugins run inside the human's approval.
+if [[ "$path_real" != "$root_real"/* ]] && { hit=$(config_match "$path_real" "$root" toolchain-paths) || [[ "$path_real" == "$HOME/bin/"* ]]; }; then
+  block "'$path' is part of what runs when the human approves (${hit#* }); ask the human to change it"
+fi
+
 # Credential patterns: scan the raw payload so content, new_string, and MultiEdit edits are all covered.
 if grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{36}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}' <<<"$input"; then
   block "content looks like a credential; use env vars / the secret manager instead"

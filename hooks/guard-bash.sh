@@ -30,6 +30,7 @@ re_push_main="git push[^;&|]*( |:)(main|master)${E}"
 re_history="git (reset --hard|clean -[a-z]*f|filter-branch|filter-repo)"
 re_bypass="(--no-verify|core\\.hooksPath|SKIP_STOP_VERIFY=1|--dangerously-skip-permissions)"
 re_pipe_sh="(curl|wget)[^|]*\\| ?(sudo )?(ba|z)?sh${E}"
+re_cred_print="(gh auth token|gh auth status[^;&|]*(-t|--show-token)|git credential(-[a-z]+)? (fill|get)|aws configure get [^;&|]*(secret|token)|gcloud auth print-[a-z-]*token|az account get-access-token)"
 re_dump_env="(${S}printenv|${S}env${E}|echo .*\\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD))"
 re_system="${S}(sudo|mkfs|dd if=|chmod -R 777)${E}"
 re_gate="gh (pr merge|pr review [^;&|]*--approve|release delete|repo delete)"
@@ -46,6 +47,7 @@ re_write_op="(>|${S}(sed -i|tee|mv|cp|rm|truncate|perl -pi)${E})"
 # excluded), after ~/$HOME/glob expansion and with `cd` tracked, against defaults/secret-paths + .aiops/config/secret-paths.
 # One python pass (lib/sdlc_engine/secret_scan.py) instead of a subshell per word.
 secret_scan "$input" || exit 2
+[[ "$u" =~ $re_cred_print ]] && block "printing credentials into the session" "use the tool's own auth (gh, git, aws) without printing the token; never read real secrets."
 [[ "$c" =~ $re_dump_env ]]   && block "dumping environment secrets"
 [[ "$c" =~ $re_system ]]     && block "privileged or dangerous system command"
 (( enabled )) && [[ "$c" =~ $re_gate ]] && block "merging/approving/deleting is a human gate" "a CODEOWNER approves and merges the PR (state 5 is the human's decision); the agent never approves its own work."

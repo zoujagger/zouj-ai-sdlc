@@ -21,7 +21,8 @@ SUBST_RE = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 HOME_RE = re.compile(r"\$\{HOME\}|\$HOME\b")
 HARMLESS = {"echo", "printf", "ls", "test", "[", "[[", "mkdir", "which", "type", "true", "false", ":"}
 MESSAGE_OPTS = {"-m", "--message", "--body", "-b", "--title", "--notes", "--subject"}   # values are prose, not paths
-MESSAGE_TOOLS = {"git", "gh", "glab", "hub", "hg", "svn", "jj"}                          # …for these tools only
+MESSAGE_SUBS = {"git": {"commit", "tag", "notes", "merge"}, "gh": {"pr", "issue", "release"},   # …for these only
+                "glab": {"mr", "issue", "release"}, "hg": {"commit"}, "svn": {"commit", "ci"}, "jj": {"describe", "new"}}
 PATTERN_FIRST = {"grep", "egrep", "fgrep", "rg", "ag", "ack"}                             # first operand is a regex
 RECURSIVE = {"rg", "ag", "ack", "tar", "zip", "rsync"}                                   # always read whole trees
 RECURSIVE_FLAG = {"grep", "egrep", "fgrep", "cp", "scp", "chmod", "du"}                  # with -r/-R
@@ -61,10 +62,10 @@ def secret_hit(path, root, pats):
     return None
 
 
-def ancestor_hit(path, root, pats):
-    """A secret directory directly inside directory `path` (`~` holds `.ssh`, the repo holds `secrets/`)."""
+def ancestor_hit(path, root, pats, files=False):
+    """A secret directory (or, with files=True, a secret file) directly inside directory `path`."""
     try:
-        entries = [e for e in os.scandir(path) if e.is_dir(follow_symlinks=False)]
+        entries = [e for e in os.scandir(path) if files or e.is_dir(follow_symlinks=False)]
     except OSError:
         return None
     for e in entries:
@@ -80,6 +81,8 @@ def _expand(word, cwd):
     w = word[1:] if word[:1] in "<>" else word
     if w.startswith("--") and "=" in w:
         w = w.split("=", 1)[1]
+    w = re.sub(r"^[\w.-]+=(?=@)", "", w)                    # curl -F file=@.env, gh api -F body=@.env
+    w = w[1:] if w.startswith("@") else w                   # curl --data-binary @.env
     w = os.path.expanduser(HOME_RE.sub(os.path.expanduser("~"), w.rstrip(")")))
     if not w or "$" in w:
         return []
@@ -95,8 +98,9 @@ def _expand(word, cwd):
 def _skip_indexes(name, args):
     """Argument positions that are prose or a search pattern, not paths."""
     skip, operands = set(), 0
+    sub = next((a for a in args if not a.startswith("-")), "")
     for i, a in enumerate(args):
-        if (name in MESSAGE_TOOLS and a in MESSAGE_OPTS) or (name in PATTERN_FIRST and a in ("-e", "--regexp")):
+        if (sub in MESSAGE_SUBS.get(name, ()) and a in MESSAGE_OPTS) or (name in PATTERN_FIRST and a in ("-e", "--regexp")):
             skip.add(i + 1)
         elif name in PATTERN_FIRST and not a.startswith("-") and i not in skip:
             operands += 1
@@ -134,6 +138,10 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
         recursive = name in RECURSIVE or (name in RECURSIVE_FLAG and any(
             re.match(r"^-[a-zA-Z]*[rR]", a) or a == "--recursive" for a in args)) or (name == "find" and (
                 depth or any(a in FIND_READS for a in args)))
+        hidden = name in ("rg", "ag") and any(re.match(r"^(--hidden|--no-ignore\S*|-u+|-\w*u)$", a) for a in args)
+        if hidden and not [a for j, a in enumerate(args) if not a.startswith("-") and j not in skip]:
+            if (hit := ancestor_hit(cwd, root, pats, files=True)):   # no path operand: the cwd, hidden files included
+                return f"`{name}` with hidden files searches '{cwd}', which holds secret material ({hit})"
         for i, word in enumerate(words):
             if i and (i - 1) in skip:
                 continue

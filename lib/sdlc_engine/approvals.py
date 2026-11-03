@@ -30,9 +30,13 @@ def approver(root):
     return f"{name} <{email}>" if email else name
 
 
+PYTHON = "/usr/bin/python3" if Path("/usr/bin/python3").is_file() else "python3"
+
+
 def approve_command(ident="NNNN", kind="intent|spec|plan"):
-    """The terminal command that approves, by the plugin's absolute path (consumer repos have no bin/sdlc)."""
-    return f"{shlex.quote(str(PLUGIN_ROOT / 'bin' / 'sdlc'))} approve {ident} {kind}"
+    """The terminal command that approves: the plugin's absolute path (consumer repos have no bin/sdlc), run by an
+    absolute, isolated python so nothing earlier on PATH or in the user site runs inside the approval."""
+    return f"{PYTHON} -I {shlex.quote(str(PLUGIN_ROOT / 'bin' / 'sdlc'))} approve {ident} {kind}"
 
 
 SIGNING_HELP = (
@@ -57,6 +61,7 @@ KEY_HELP = (
 # anything an agent can write (repo git config, .git/hooks) must not sit between the human and the signature.
 SSH_KEYGEN = "/usr/bin/ssh-keygen" if Path("/usr/bin/ssh-keygen").is_file() else (shutil.which("ssh-keygen") or "ssh-keygen")
 GIT = "/usr/bin/git" if Path("/usr/bin/git").is_file() else (shutil.which("git") or "git")   # not via an agent's PATH
+SSH_ADD = "/usr/bin/ssh-add" if Path("/usr/bin/ssh-add").is_file() else (shutil.which("ssh-add") or "ssh-add")
 PINNED = ("-c", "gpg.format=ssh", "-c", f"gpg.ssh.program={SSH_KEYGEN}", "-c", "core.hooksPath=/dev/null",
           "-c", "core.fsmonitor=false", "-c", "core.attributesFile=/dev/null")
 # Repo-local (and worktree) config may only hold keys that can't run code or redirect signing; read with includes.
@@ -101,11 +106,11 @@ def key_protection(root):
         return None
     if private is None or not private.is_file():
         return "the signing key's private file can't be found, so its protection can't be checked"
-    unlocked = subprocess.run(["ssh-keygen", "-y", "-P", "", "-f", str(private)], capture_output=True)
+    unlocked = subprocess.run([SSH_KEYGEN, "-y", "-P", "", "-f", str(private)], capture_output=True)
     if unlocked.returncode == 0:
         return "the signing key has no passphrase, so anything running as you could sign approvals"
     if os.environ.get("SSH_AUTH_SOCK") and len(parts) >= 2:
-        loaded = subprocess.run(["ssh-add", "-L"], capture_output=True, text=True)
+        loaded = subprocess.run([SSH_ADD, "-L"], capture_output=True, text=True)
         if loaded.returncode == 0 and parts[1] in loaded.stdout:
             return "the signing key is loaded in ssh-agent, so it would sign without asking you"
     return None
@@ -129,7 +134,8 @@ EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 def _commit_alone(root, rel, title, body, sign):
     """Commit `rel` as it is in the working tree, alone, with plumbing: the blob is hashed without filters, the
     tree is built in a throwaway index, and `commit-tree` signs it. Attributes come from the empty tree, so no hook,
-    fsmonitor, filter or worktree scan runs in the human's approval. Returns the commit sha or None."""
+    fsmonitor, filter or worktree scan runs in the human's approval. Returns (sha, fix) where fix is a command the
+    human must run when the real index couldn't follow, or None if the commit failed."""
     base_env = {**os.environ, "GIT_ATTR_SOURCE": EMPTY_TREE}
 
     def run(*args, index=None):
