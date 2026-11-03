@@ -235,5 +235,41 @@ class Owned(SetupCase):
         self.assertIn("nothing to write", rerun.stdout)
 
 
+class Sandbox(SetupCase):
+    def test_creates_committed_repo(self):
+        before = self.snapshot()
+        box = self.root.parent / f"{self.root.name}.sandbox"
+        r = self.setup_run("--sandbox", str(box))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(git(box, "branch", "--show-current"), "main")
+        self.assertEqual(git(box, "status", "--porcelain"), "")                    # everything committed
+        self.assertEqual(json.loads((box / ".aiops" / "config.json").read_text())["profile"], "solo")
+        intents = sorted((box / ".aiops").glob("0001-*/intent.md"))
+        self.assertEqual(len(intents), 1, intents)
+        self.assertIn("status: Draft", intents[0].read_text())
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(box)}
+        v = subprocess.run([sys.executable, SDLC, "validate", "0001"], cwd=box, capture_output=True, text=True, env=env)
+        self.assertEqual(v.returncode, 0, v.stdout + v.stderr)
+        st = subprocess.run([sys.executable, SDLC, "status"], cwd=box, capture_output=True, text=True, env=env).stdout
+        self.assertIn("1 BRAINSTORMING", st)                                      # the sample intent is active
+        m = subprocess.run(["make", "check"], cwd=box, capture_output=True, text=True)
+        self.assertEqual(m.returncode, 0, m.stdout + m.stderr)                    # stdlib only: green anywhere
+        self.assertIn("Intent Approved 0001", r.stdout)                           # how to walk the states
+        self.assertEqual(self.snapshot(), before)                                 # the calling repo is untouched
+        # refusals: a non-empty directory, a symlink, a directory inside the calling repo
+        r = self.setup_run("--sandbox", str(box))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("not empty", r.stdout + r.stderr)
+        link = self.root.parent / f"{self.root.name}.boxlink"
+        link.symlink_to(self.root.parent)
+        r = self.setup_run("--sandbox", str(link))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("symlink", r.stdout + r.stderr)
+        r = self.setup_run("--sandbox", str(self.root / "box"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("inside this repo", r.stdout + r.stderr)
+        self.assertFalse((self.root / "box").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

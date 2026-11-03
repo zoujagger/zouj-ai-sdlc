@@ -109,7 +109,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
     - as a human with `--yes`, only the two keys are added, `permissions`/`hooks` parse equal, and the profile
       change is shown as a diff and applied
   - Covers: AC-4, AC-5
-- [ ] **S9**: Sandbox
+- [x] **S9**: Sandbox
   - Files: `lib/sdlc_engine/setup.py` (modify), `templates/sandbox/` (create: `src/app.py`, `tests/test_app.py`, the
     `0001` intent text)
   - Test first: `tests/test_setup.py::Sandbox::test_creates_committed_repo`:
@@ -205,3 +205,4 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-03 | S7 | `lib/sdlc_engine/cli.py` changed too (S7 listed only `setup.py`). The `.gitignore` entry moved from `cmd_init` into `apply_init`, so init and setup share it. `codeowners_cover_aiops` (S4) no longer counts the scaffold's `@your-org/...` placeholders as owners; `test_strict_requires_codeowners` pins that | otherwise setup would skip the ignore line, and `strict` would pass on a fresh scaffold with no real owner | S7 commit |
+| 2026-11-03 | S9 | The sandbox's Makefile uses its own stdlib-only recipes (`templates/sandbox/sandbox.recipes`: `py_compile`, `unittest`) instead of the python preset (ruff, mypy, pytest). `cli._wire_stack` gained an optional recipes-file argument for it. The sandbox also refuses a directory inside the calling repo | AC-10 needs `make check` green on any machine, and none of ruff, mypy or pytest is guaranteed; a sandbox inside the repo would touch it | S9 commit |

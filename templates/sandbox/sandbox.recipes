@@ -1,0 +1,6 @@
+# Stdlib-only recipes for the sandbox Makefile, so `make check` is green on any machine with python3.
+format    @echo "[format] sandbox: no formatter installed, nothing to do"
+lint      python3 -m py_compile src/greet.py tests/test_greet.py
+typecheck @echo "[typecheck] sandbox: stdlib only, no type checker"
+test      python3 -m unittest discover -s tests -q
+build     @echo "[build] sandbox: nothing to build"

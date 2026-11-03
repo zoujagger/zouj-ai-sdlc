@@ -4,6 +4,7 @@ Profiles change only how strongly a human approval is proven; every profile runs
 (docs/sdlc.md). External tools are looked up on PATH and run with a short timeout: a missing or hung `claude`/`gh`
 becomes a warning, while missing git, make or python >= 3.9 stops setup before anything is written.
 """
+import datetime
 import difflib
 import json
 import os
@@ -191,7 +192,58 @@ def _choices(args):
     return profile, "--dry-run" in args, "--yes" in args
 
 
+SANDBOX = cli.TEMPLATES / "sandbox"
+
+
+def sandbox(root, target):
+    """A throwaway, committed repo with the solo scaffold and a Draft sample intent, outside the calling repo."""
+    raw = Path(target).expanduser()
+    if raw.is_symlink():
+        print(f"refusing {raw}: it is a symlink; give a plain path for the sandbox.", file=sys.stderr)
+        return 1
+    box = raw.resolve()
+    if box == root.resolve() or root.resolve() in box.parents:
+        print(f"refusing {box}: it is inside this repo; put the sandbox elsewhere, e.g. /tmp/sdlc-sandbox.",
+              file=sys.stderr)
+        return 1
+    if box.exists() and (not box.is_dir() or any(box.iterdir())):
+        print(f"refusing {box}: it exists and is not empty; nothing was written.", file=sys.stderr)
+        return 1
+    box.mkdir(parents=True, exist_ok=True)
+    run = lambda *a: subprocess.run([approvals.GIT, *a], cwd=box, capture_output=True, text=True, check=True)  # noqa: E731
+    run("init", "-q", "-b", "main")
+    shutil.copytree(SANDBOX / "files", box, dirs_exist_ok=True)
+    cli.apply_init(box, cli.init_actions(box))
+    cfg = box / ".aiops" / "config.json"
+    cfg.write_text(json.dumps({**(_json(cfg) or {}), **PROFILE_CONFIG["solo"]}, indent=2) + "\n")
+    cli._wire_stack(box / "Makefile", "sandbox", SANDBOX / "sandbox.recipes")
+    intent = box / ".aiops" / "0001-greet-in-languages"
+    intent.mkdir()
+    (intent / "intent.md").write_text((SANDBOX / "intent-0001.md").read_text()
+                                      .replace("__DATE__", datetime.date.today().isoformat()))
+    (box / ".aiops" / "state" / "active").write_text("0001\n")
+    who = [] if subprocess.run([approvals.GIT, "config", "user.email"], cwd=box, capture_output=True).returncode == 0 \
+        else ["-c", "user.name=zouj-ai-sdlc sandbox", "-c", "user.email=sandbox@localhost"]
+    run("add", "-A")
+    run(*who, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "chore: zouj-ai-sdlc sandbox (solo profile)")
+    print(f"""Sandbox ready: {box}
+  A committed repo on main with the solo scaffold, a tiny app (src/greet.py) and a Draft sample intent 0001.
+  Walk the playbook there:
+    cd {box} && claude          # accept the zouj-ai-sdlc plugin it offers
+    sdlc status                 # state 1 BRAINSTORMING, waiting for you
+    then type `Intent Approved 0001`, let it write the spec, `Spec Approved 0001`, the plan,
+    `Plan Approved 0001`, watch the TDD execution, then /zouj-ai-sdlc:review.
+  Delete the directory when you're done; nothing outside it was touched.""")
+    return 0
+
+
 def main(root, args):
+    if "--sandbox" in args:
+        target = args[args.index("--sandbox") + 1] if "--sandbox" in args[:-1] else None
+        if not target:
+            print("usage: sdlc setup --sandbox <dir>", file=sys.stderr)
+            return 1
+        return sandbox(root, target)
     profile, dry_run, yes = _choices(args)
     if profile is not None and profile not in PROFILES:
         print(f"unknown profile {profile!r} (solo, team, strict)", file=sys.stderr)

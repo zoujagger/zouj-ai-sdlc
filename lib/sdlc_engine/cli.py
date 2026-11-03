@@ -272,9 +272,9 @@ def cmd_unlock(root, args):
     return 0
 
 
-def _wire_stack(makefile, stack):
+def _wire_stack(makefile, stack, recipes_file=None):
     recipes = {}
-    for line in (TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
+    for line in (recipes_file or TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and not parts[0].startswith("#"):
             recipes[parts[0]] = parts[1]
