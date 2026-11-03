@@ -1,10 +1,14 @@
 ---
 id: 0003
 title: Guided setup and first-run onboarding (roadmap phase 1)
-status: Draft          # Draft → Approved (human types `Spec Approved 0003`)
+status: Approved
 risk: medium           # touches init, approval policy and project settings; no gate semantics change
 intent: ./intent.md
 created: 2026-11-03
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-11-03T20:15:41Z
+approved-via: cli
+approved-sha256: f36cc87823326f66a9f71cebc56879b72bcc735aa1d9e5cf8ab369f1b81bafa4
 ---
 
 # Spec: Guided setup and first-run onboarding (roadmap phase 1)
