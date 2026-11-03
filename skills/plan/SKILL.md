@@ -18,7 +18,7 @@ Intent: `$ARGUMENTS` (default: active).
    - **Test definitions** have at least one row per AC. `sdlc validate <id>` must pass.
 4. **Stress test.** Ask the human the planner's 3 hardest questions (failure modes, rollback, test gaps). Revise plan.md from their answers.
 5. **HALT.** Summarise the steps (count, files, risks), then say exactly:
-   > Execution is locked. Review `.aiops/NNNN-slug/plan.md`, then type **`Plan Approved NNNN`** (or, if signing needs your passphrase, run `bin/sdlc approve NNNN plan` in your terminal) to unlock autonomous execution.
+   > Execution is locked. Review `.aiops/NNNN-slug/plan.md`, then type **`Plan Approved NNNN`** (or, if signing needs your passphrase, run the printed `<plugin>/bin/sdlc approve NNNN plan` command in your terminal) to unlock autonomous execution.
 
    **Don't execute anything** until the approval context confirms the gate opened.
 

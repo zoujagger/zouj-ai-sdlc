@@ -345,7 +345,8 @@ def _is_ssh_identity(private):
 def _doctor_signing(root, row):
     problem = approvals.signing_problem(root)
     row(problem is None, "approval signing configured (ssh)" if problem is None else f"approval signing: {problem}",
-        "git config gpg.format ssh && git config user.signingkey ~/.ssh/id_ed25519.pub")
+        "git config --global gpg.format ssh && git config --global user.signingkey ~/.ssh/aiops_signing.pub "
+        "(a dedicated key with a passphrase; repo-local signing settings are refused)")
     if problem:
         return
     key = git(root, "config", "user.signingkey") or ""

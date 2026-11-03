@@ -15,6 +15,6 @@ Intent: `$ARGUMENTS` (default: active). The state is **read-only**: write only `
 5. **Security & data-leak flags.** Apply `policy-security` and `policy-compliance`. Every endpoint and data flow gets a check for authz/IDOR, cross-tenant access, and leaks through logs, errors, exports, caches and third parties. Each flag reads risk → mitigation → who decides. Set `risk: high` when the triggers apply.
 6. **Validate.** Run `sdlc validate <id>`. Fix every error.
 7. **Stop at the gate.** Present: the ACs, the schema and API summary, the **flags needing a decision**, open questions, and the risk. Then:
-   > Review `.aiops/NNNN-slug/spec.md`. Resolve the flags above, or type **`Spec Approved NNNN`** (or, if signing needs your passphrase, run `bin/sdlc approve NNNN spec` in your terminal) to move to PLAN.
+   > Review `.aiops/NNNN-slug/spec.md`. Resolve the flags above, or type **`Spec Approved NNNN`** (or, if signing needs your passphrase, run the printed `<plugin>/bin/sdlc approve NNNN spec` command in your terminal) to move to PLAN.
 
    For `risk: high`, say that the tech lead should review before approval. **Don't start planning until the gate opens.**

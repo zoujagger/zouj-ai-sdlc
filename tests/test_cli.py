@@ -75,7 +75,7 @@ class Lifecycle(RepoCase):
         r = self.run_sdlc("hook", "prompt", stdin=payload, env={"CLAUDECODE": "1"})
         ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertIn("NOT opened", ctx)
-        self.assertIn("`bin/sdlc approve 0001 intent`", ctx)      # the exact command for the human's terminal
+        self.assertIn("/bin/sdlc approve 0001 intent`", ctx)      # the exact command for the human's terminal
 
     def test_validate_rejects_empty_base(self):
         self.write("intent", INTENT)

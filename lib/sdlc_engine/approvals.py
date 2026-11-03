@@ -6,13 +6,14 @@ import datetime
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from . import artifacts as A
-from .machine import DEFAULT_CONFIG, SCHEMAS, config, evaluate, gate, git, intent_dirs, read
+from .machine import DEFAULT_CONFIG, PLUGIN_ROOT, SCHEMAS, config, evaluate, gate, git, intent_dirs, read
 from .schema import validate
 
 TRAILER = "AIOps-Approval"
@@ -29,19 +30,26 @@ def approver(root):
     return f"{name} <{email}>" if email else name
 
 
+def approve_command(ident="NNNN", kind="intent|spec|plan"):
+    """The terminal command that approves, by the plugin's absolute path (consumer repos have no bin/sdlc)."""
+    return f"{shlex.quote(str(PLUGIN_ROOT / 'bin' / 'sdlc'))} approve {ident} {kind}"
+
+
 SIGNING_HELP = (
-    "Set up SSH commit signing, then approve again:\n"
-    "  git config gpg.format ssh\n"
-    "  git config user.signingkey ~/.ssh/id_ed25519.pub\n"
+    "Set up SSH commit signing with a dedicated key (global config: repo-local signing settings are refused), then\n"
+    "approve again:\n"
+    "  ssh-keygen -t ed25519 -f ~/.ssh/aiops_signing -C \"aiops approvals\"   # set a passphrase\n"
+    "  git config --global gpg.format ssh\n"
+    "  git config --global user.signingkey ~/.ssh/aiops_signing.pub\n"
     "and make sure your key is in .aiops/config/allowed-signers (human-owned), e.g.\n"
-    "  echo \"$(git config user.email) namespaces=\\\"git\\\" $(cat ~/.ssh/id_ed25519.pub)\" >> .aiops/config/allowed-signers\n"
-    "Use a passphrase-protected key that is not loaded in ssh-agent (or an sk- key): `sdlc doctor` checks it.")
+    "  echo \"$(git config user.email) namespaces=\\\"git\\\" $(cat ~/.ssh/aiops_signing.pub)\" >> .aiops/config/allowed-signers\n"
+    "Keep the key out of ssh-agent (or use an sk- key): `sdlc doctor` checks it.")
 
 
 KEY_HELP = (
     "Approvals need a human for each signature: use a passphrase-protected key that is NOT loaded in ssh-agent\n"
-    "(add one with `ssh-keygen -p -f ~/.ssh/id_ed25519`; unload with `ssh-add -d ~/.ssh/id_ed25519`), or a FIDO\n"
-    "`sk-` key that needs a touch. Then approve in your own terminal: `bin/sdlc approve NNNN intent|spec|plan`\n"
+    "(add one with `ssh-keygen -p -f ~/.ssh/aiops_signing`; unload with `ssh-add -d ~/.ssh/aiops_signing`), or a FIDO\n"
+    f"`sk-` key that needs a touch. Then approve in your own terminal: `{approve_command()}`\n"
     "(it asks for the passphrase). Escape hatch (human-owned): \"approval_key_policy\": \"any\" in .aiops/config.json.")
 
 
@@ -195,7 +203,7 @@ def approve(root, d, kind, via, who=None):
     if problem:
         setup = "" if KEY_HELP in problem else f"\n{SIGNING_HELP}"
         return False, (f"{kind}.md for {ident} was NOT approved: {problem.rstrip('.')}.{setup}\n"
-                       f"Approve in your own terminal: `bin/sdlc approve {ident} {kind}`.")
+                       f"Approve in your own terminal: `{approve_command(ident, kind)}`.")
     signed = bool(config(root).get("require_signed_approvals"))
     who = who or approver(root)
     digest = A.approval_hash(kind, text)
@@ -216,7 +224,7 @@ def approve(root, d, kind, via, who=None):
                 path.write_text(text)
                 return False, (f"{kind}.md for {ident} was NOT approved: the signed commit failed (signing needs "
                                f"you: a passphrase or touch, which needs a terminal). Approve in your own terminal: "
-                               f"`bin/sdlc approve {ident} {kind}`.")
+                               f"`{approve_command(ident, kind)}`.")
             note = "\n(The approval is in the working tree, but committing it failed. Commit it yourself.)"
         else:
             note = f"\nCommitted as `{title}`."

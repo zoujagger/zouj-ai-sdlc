@@ -145,6 +145,23 @@ class ShellHooks(RepoCase):
         for needle in ("no-touch-required", "brace", "--mirror", "fails closed", "--yes"):
             self.assertIn(needle, log)
 
+    def test_setup_hints_are_global_and_runnable(self):
+        import re
+        import sys
+        sys.path.insert(0, str(ROOT / "lib"))
+        from sdlc_engine import approvals as ap
+        texts = {"SIGNING_HELP": ap.SIGNING_HELP, "KEY_HELP": ap.KEY_HELP}
+        for rel in ("README.md", "templates/scaffold/.aiops/README.md", "lib/sdlc_engine/cli.py",
+                    "lib/sdlc_engine/guards.py", "skills/intent/SKILL.md", "skills/spec/SKILL.md",
+                    "skills/plan/SKILL.md", "skills/using-zouj-ai-sdlc/SKILL.md"):
+            texts[rel] = (ROOT / rel).read_text()
+        for name, text in texts.items():
+            self.assertIsNone(re.search(r"git config (gpg\.|user\.signingkey)", text), name)   # repo-local is refused
+            self.assertNotIn("`bin/sdlc approve", text, name)          # consumer repos have no bin/sdlc
+            self.assertNotIn("id_ed25519", text, name)                 # a dedicated key, not the SSH login identity
+        cmd = ap.approve_command("0001", "plan")
+        self.assertTrue(cmd.startswith(str(ROOT)) and cmd.endswith("bin/sdlc approve 0001 plan"), cmd)
+
     def test_version_matches_changelog(self):
         import re
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]

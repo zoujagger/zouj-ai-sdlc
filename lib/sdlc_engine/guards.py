@@ -431,7 +431,8 @@ def check_bash(data):
     plain = re.sub(r"[\\'\"]", "", cmd)
     if TRAILER_RE.search(plain) or (FORMAT_TRAILER_RE.search(plain) and "Approval" in plain):   # also printf-built
         return _block("human gate", "approval commits are created only by a human approval.",
-                      "ask the human to approve in their terminal (`bin/sdlc approve NNNN intent|spec|plan`).")
+                      "ask the human to approve in their terminal (`<plugin>/bin/sdlc approve NNNN intent|spec|plan`, "
+                      "the exact path is in the refusal message).")
     if any(r.search(plain) for r in ENV_RES):
         return _block("human gate", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
                       "would let human-only commands run as the agent.",
