@@ -293,6 +293,19 @@ class BashGuard(RepoCase):
                     "git commit -m \"$(printf 'AIOps-%s: plan 0001' Approval)\""):
             self.assertTrue(self.blocked(cmd), cmd)
 
+    def test_wrapped_engine_calls(self):
+        self.to_execution()
+        for cmd in ('eval "$s approve 0001 plan"', 'bash -c "$s approve 0001 plan"',
+                    'sh -c "$(which sdlc) approve 0001 plan"', "nice $s approve 0001 plan",
+                    "nice -n 5 $s approve 0001 plan", "timeout 5 $s approve 0001 plan",
+                    "xargs -I{} $s approve 0001 plan", "! $s approve 0001 plan", "{ $s approve 0001 plan; }",
+                    "env -u FOO $s approve 0001 plan", 'a=CLAUDE; eval "unset ${a}CODE ${a}_CODE_CHILD_SESSION"',
+                    "export -n ${a}CODE", "env -u ${a}CODE make test", 'm=AIOps-Approval; git commit -m "$m: plan"'):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("echo $HOME close the door", "nice make test", "timeout 5 make check",
+                    "export PATH=$PATH:/opt/bin", "unset FOO"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",

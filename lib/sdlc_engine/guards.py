@@ -156,7 +156,10 @@ GIT_MAIN_FORBIDDEN = {"merge", "rebase", "cherry-pick", "am"}
 GIT_TREE_WRITERS = {"rm", "mv", "checkout", "restore", "reset", "clean", "stash"}
 MAKE_WRITERS = {"format", "fmt", "fix", "generate", "gen", "migrate", "codegen"}
 HUMAN_SUBS = r"(approve|close|unlock|hook|legacy-approvals)"
-CMD_POS = r"(^|[;&|(`\n]|\b(then|do|else)\s)\s*((sudo|command|exec|env|nohup|time|builtin|xargs)\s+|\w+=\S*\s+)*"
+# Commands that run their arguments as a command; any literal words (options, durations) may follow them.
+WRAPPERS = (r"(sudo|doas|command|exec|env|nohup|time|builtin|xargs|eval|nice|timeout|stdbuf|setsid|ionice|chrt|"
+            r"taskset|unbuffer|watch|flock|bash|sh|zsh|dash|ksh)")
+CMD_POS = rf"(^|[;&|(`\n{{!]|\b(then|do|else)\s)\s*({WRAPPERS}(\s+[^\s$`;&|]+)*?\s+|\w+=\S*\s+)*"
 ENGINE_RES = (   # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
     re.compile(rf"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*{HUMAN_SUBS}\b"),
     re.compile(rf"{CMD_POS}[^\s;&|]*[$`][^\s;&|]*\s+{HUMAN_SUBS}\b"),     # dynamic command word: $s, ${s}lc, $(…)
@@ -170,7 +173,7 @@ ENGINE_RES = (   # matched against the command with quotes and backslashes remov
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
 TRAILER_RE = re.compile(r"AIOps-Approval\s*:")
-FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:")                    # printf 'AIOps-%s:' Approval, AIOps-$x:
+FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:|\w+=\S*AIOps-")      # printf 'AIOps-%s:', AIOps-$x:, m=AIOps-…
 MARKERS = r"(CLAUDECODE|CLAUDE_CODE_CHILD_SESSION)"
 ENV_RES = (
     re.compile(rf"(?<![\w$]){MARKERS}="),                                # an assignment, not `[ $CLAUDECODE = 1 ]`
@@ -178,6 +181,7 @@ ENV_RES = (
     re.compile(rf"(\s-u\s*|--unset[=\s]+){MARKERS}\b"),
     re.compile(r"\benv\s+(-\S+\s+)*(-i|--ignore-environment|-)(\s|$)"),
     re.compile(rf"\b(export|declare|typeset|readonly|local)\b[^;&|\n]*\b{MARKERS}\b"),   # export -n, declare +x, …
+    re.compile(r"(\bunset\b|\s-u\s*|--unset[=\s]+|\b(export|declare|typeset)\s+[-+]\w+\s)[^;&|\n]*\$"),  # computed names
 )
 
 
