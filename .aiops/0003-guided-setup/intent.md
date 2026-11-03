@@ -2,32 +2,93 @@
 id: 0003
 title: Guided setup and first-run onboarding (roadmap phase 1)
 status: Draft          # Draft → Approved (human types `Intent Approved 0003`) · Closed
-owner: <product owner who approves>
-initiator: <person, ticket, or alert>
-source: <free text | #issue | alert:<metric> | postmortem:<file>>
+owner: zoujagger
+initiator: zoujagger
+source: docs/roadmap.md (Phase 1, approved 2026-11-03); comparison with github.com/affaan-m/ECC's install experience
 created: 2026-11-03
 ---
 
 # Intent: Guided setup and first-run onboarding (roadmap phase 1)
 
-<!-- State 1 BRAINSTORMING. Written from a targeted clarification interview. Unknowns go in Open questions,
-     never invented. approved-* fields are stamped by the human approval; agents never write them. -->
+<!-- State 1 BRAINSTORMING. Written from the approved roadmap (docs/roadmap.md), which answered the interview
+     questions. Unknowns go in Open questions, never invented. -->
 
 ## Problem
-<What is wrong or missing today? Evidence: tickets, metrics, quotes.>
+Adopting zouj-ai-sdlc v0.2.0-alpha.1 takes too many manual steps, and a newcomer gets little guidance:
+- **Install is three separate steps:** two `/plugin` commands, then `/zouj-ai-sdlc:init` per repo, then signing
+  setup. Nothing checks prerequisites first: git, make, python ≥ 3.9, Claude Code, `gh` scopes, a git credential
+  helper. Releasing 0.2.0-alpha.1 itself hit a missing credential helper and a missing `workflow` scope.
+- **Signing setup is the biggest blocker.** It's 6 commands across 3 files, and doctor only reports problems after
+  the fact. The maintainer kept `"approval_key_policy": "any"` rather than go through it.
+- **Teammates each install the plugin by hand.** Nothing in a repo offers the plugin to a new contributor.
+- **There's no safe way to try it.** `init` turns every gate on in a real repo at once, with no preview of what
+  will be enforced.
+- **The README explains the state machine, not where to start.** There's no troubleshooting page, command quick
+  reference or issue template, and no pinned install commands.
+
+ECC solves the same adoption problems with:
+- one pinned, rerunnable, guided setup command with preflight and dry-run
+- a declarative `settings.json` marketplace snippet
+- a task-first README
+- explicit consent before hooks are written
+- troubleshooting and feedback surfaces
 
 ## Desired outcome
-<What is observably true when this is done? Outcomes, not solutions.>
+- A new user goes from nothing to their first approved intent in about **10 minutes**, guided by one rerunnable
+  command that previews every change before writing it.
+- **Profiles** (`solo`, `team`, `strict`) change only how strongly a human approval is proven, never whether a gate
+  exists or who decides.
+- A contributor who clones an initialized repo is offered the plugin automatically.
+- Someone curious can **try** the full intent → … → review cycle in a throwaway sandbox repo before adopting it.
+- The README starts from "what are you doing?" and gives pinned install commands. Troubleshooting, a quick reference
+  and issue templates exist.
+- **The AI-Native SDLC Playbook workflow (`docs/sdlc.md`) holds in every profile and install path, and that is
+  proven by tests:**
+  - every stage in order, with its artifact
+  - every human gate (intent, spec, plan, merge, production)
+  - the read-only lock in states 1-3
+  - `make check` green before stop
+  - a fresh-context review before the merge
 
 ## Users & systems affected
-- Users: <personas / teams>
-- Systems: <services, data stores, integrations>
+- **Users:**
+  - new adopters: solo developers and team leads evaluating the plugin
+  - contributors joining an initialized repo
+  - approvers who set up signing
+- **Systems:**
+  - `bin/sdlc` and `lib/sdlc_engine/` (new setup and profile handling, building on `cmd_init` and `cmd_doctor`)
+  - `templates/scaffold/` (`.claude/settings.json`, `.aiops/config.json`)
+  - `skills/` (a setup or onboarding skill)
+  - README and docs, `.github/ISSUE_TEMPLATE/`
+  - the tests
 
 ## Constraints
-- <Deadlines, regulatory, budget, compatibility, performance envelopes>
+- **The playbook workflow is non-negotiable.** No gateless, advisory or "no-hooks" mode.
+- **Stdlib-only Python and no new runtime dependencies:** no npm and no PyPI in this phase. `make`, `gh` and `jq`
+  stay as they are (standing decision).
+- **The setup never writes human-owned material.** It doesn't write `.aiops/config/allowed-signers`, signing keys,
+  global git config or `.claude/settings.json` permission rules on the user's behalf. For those it prints exact
+  commands for the human to run.
+- **Rerunnable and idempotent,** with `--dry-run` (no writes) and `--yes` (non-interactive, every choice explicit).
+- **It keeps working inside the plugin's own guards:**
+  - the agent can't write the toolchain paths, `~/.claude/plugins` or the global git config
+  - Claude Code's `/plugin` commands can't be driven from a hook or a script
+- **Existing initialized repos keep working unchanged** (the 0.2.0-alpha.1 scaffold).
 
 ## Out of scope
-- <What we deliberately aren't doing>
+- Phase 2 (install-state, `repair`, `upgrade`, `uninstall`, rule ids, `allowed-commands`, `/zouj-ai-sdlc:configure`)
+  and Phase 3 (PyPI or `uvx` distribution, macOS and Windows support, short plugin id), per `docs/roadmap.md`.
+- Supporting other harnesses (Codex, Cursor, …).
+- Changing the gates, the state machine or the review personas.
+- Fixing the 0.2.0-alpha.1 known issues (the CHANGELOG list); they get their own intent.
 
 ## Open questions
-- [ ] <Question> (who can answer)
+- [ ] The `solo` profile: should approvals still be committed (`commit_approvals: true`) with no signing, or kept
+  as stamps only? Committing keeps an audit trail and matches the playbook's "formalise and share". (zoujagger)
+- [ ] Should `sdlc setup` also install the plugin? It can't drive `/plugin` itself. Should it print the two commands,
+  or write the declarative `extraKnownMarketplaces`/`enabledPlugins` snippet into the *project's* `.claude/settings.json`
+  (which Claude Code then offers to the user)? (zoujagger)
+- [ ] The sandbox: should it be a local throwaway repo (`sdlc setup --sandbox <dir>`) with a sample intent, or a
+  separate public example repository? (zoujagger)
+- [ ] Should this phase be released as 0.2.0-alpha.2, or does it wait to be bundled with the known-issues fixes?
+  (zoujagger)
