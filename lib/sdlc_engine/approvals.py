@@ -64,12 +64,25 @@ def _signing_key_files(root):
     return (pub.read_text() if pub.is_file() else ""), path
 
 
+def _signer_options(root, blob):
+    """The options (`namespaces=…`, `no-touch-required`, …) of the allowed-signers entry for a key blob."""
+    f = root / SIGNERS
+    for line in (f.read_text() if f.is_file() else "").splitlines():
+        words = line.split()
+        if blob in words and not line.lstrip().startswith("#"):
+            opts = words[1:words.index(blob) - 1]                  # principals [options] keytype key
+            return {o.split("=", 1)[0] for o in ",".join(opts).split(",") if o}
+    return set()
+
+
 def key_protection(root):
     """Why the signing key could sign without the human, or None: an `sk-` key (a touch per signature) or a
     passphrase-protected key that isn't cached in the reachable ssh-agent."""
     pubtext, private = _signing_key_files(root)
     parts = pubtext.split()
     if parts and parts[0].startswith("sk-"):
+        if len(parts) >= 2 and _signer_options(root, parts[1]) & {"no-touch-required"}:
+            return "the sk- key is allow-listed with no-touch-required, so it would sign without a touch"
         return None
     if private is None or not private.is_file():
         return "the signing key's private file can't be found, so its protection can't be checked"
@@ -281,12 +294,22 @@ def audit(root, d, kind, base=None, warnings=None):
 
 def unsigned_approvals(root):
     """Approval commits of open gates that don't verify against the working-tree signer list but pass every other
-    audit check: only those may become legacy (a forged approval must never be grandfathered)."""
+    audit check, are on main, and predate the commit that introduced the signer list there: only those may become
+    legacy (a forged approval, or one made after signing started, must never be grandfathered)."""
     _, signers, _ = trust(root)
+    main = config(root)["main_branch"]
+    intro = (git(root, "log", main, "--diff-filter=A", "--format=%H", "--", SIGNERS) or "").split()
     out = []
     for d in intent_dirs(root):
         for kind in ("intent", "spec", "plan"):
             sha, problems = commit_problems(root, d, kind)
-            if sha and not problems and signature(root, sha, signers) != "G":
-                out.append((sha, f"{d.name}/{kind}.md"))
+            if not sha or problems or signature(root, sha, signers) == "G":
+                continue
+            if not _is_ancestor(root, sha, main) or (intro and not (sha != intro[-1] and _is_ancestor(root, sha, intro[-1]))):
+                continue
+            out.append((sha, f"{d.name}/{kind}.md"))
     return out
+
+
+def _is_ancestor(root, a, b):
+    return subprocess.run(["git", "merge-base", "--is-ancestor", a, b], cwd=root, capture_output=True).returncode == 0

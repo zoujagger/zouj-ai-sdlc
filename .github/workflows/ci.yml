@@ -44,9 +44,9 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if ! git rev-parse -q --verify "${BASE_SHA}^{commit}" >/dev/null; then
-            echo "::warning::no base commit (${BASE_SHA}); auditing against this commit's parent"
-            BASE_SHA=$(git rev-parse HEAD~1)
+          if [ -z "$BASE_SHA" ] || ! git rev-parse -q --verify "${BASE_SHA}^{commit}" >/dev/null; then
+            echo "::error::base commit '${BASE_SHA}' does not resolve; refusing to audit against the change itself"
+            exit 1
           fi
           git worktree add -q "$RUNNER_TEMP/base" "$BASE_SHA"
           if grep -q -- '--base' "$RUNNER_TEMP/base/lib/sdlc_engine/cli.py"; then

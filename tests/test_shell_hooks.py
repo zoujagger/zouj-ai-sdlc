@@ -152,6 +152,8 @@ class ShellHooks(RepoCase):
         self.assertIn('"$RUNNER_TEMP/base/bin/sdlc"', gates)
         self.assertRegex(gates, r"validate --all --ci --base \"\$BASE_SHA\"")
         self.assertIsNone(re.search(r"^\s*run: python3 bin/sdlc", gates, re.M))
+        self.assertNotIn("HEAD~1", gates)                                    # fail closed, never the change itself
+        self.assertRegex(gates, r"::error::[^\n]*\n\s*exit 1")
         self.assertRegex((ROOT / ".github" / "CODEOWNERS").read_text(), r"/\.aiops/config")
 
     def test_safety_guards_always_on(self):

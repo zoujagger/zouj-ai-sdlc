@@ -374,9 +374,51 @@ class Approvals(RepoCase):
         self.assertTrue(approvals.audit(self.root, self.d, "intent"))
         legacy.write_text(f"{sha}\n")
         self.assertEqual(approvals.audit(self.root, self.d, "intent"), [])
+        git(self.root, "branch", "-f", "main", "HEAD")           # legacy candidates are on main
         found = [s for s, _ in approvals.unsigned_approvals(self.root)]
         self.assertIn(sha, found)
         self.assertNotIn(forged, found)                          # --write never legitimises a forged approval
+
+    def test_legacy_write_only_pre_signing_on_main(self):
+        cfg = self.root / ".aiops" / "config.json"
+        legacy = self.root / ".aiops" / "config" / "legacy-approvals"
+        cfg.write_text('{"require_signed_approvals": false, "approval_key_policy": "any"}')
+        self.write("intent", INTENT)
+        self.approve("intent")                                   # unsigned, on the feature branch only
+        intent_sha = git(self.root, "log", "-1", "--format=%H")
+        self.assertEqual(approvals.unsigned_approvals(self.root), [])
+        git(self.root, "switch", "-q", "main")
+        git(self.root, "merge", "-q", "--ff-only", "feat/0001-csv-export")
+        self.assertEqual([s for s, _ in approvals.unsigned_approvals(self.root)], [intent_sha])
+        git(self.root, "add", ".aiops/config/allowed-signers")
+        git(self.root, "commit", "-qm", "chore(aiops): approver keys")      # signing is introduced here
+        self.write("spec", SPEC)
+        self.approve("spec")                                     # unsigned, but after signing was introduced
+        found = [s for s, _ in approvals.unsigned_approvals(self.root)]
+        self.assertEqual(found, [intent_sha])
+        # --write confirms each entry; --yes skips the question
+        r = self.run_sdlc("legacy-approvals", "--write", stdin="n\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(legacy.is_file() and intent_sha in legacy.read_text())
+        r = self.run_sdlc("legacy-approvals", "--write", stdin="y\n")
+        self.assertIn(intent_sha, legacy.read_text())
+        legacy.unlink()
+        r = self.run_sdlc("legacy-approvals", "--write", "--yes")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(intent_sha, legacy.read_text())
+
+    def test_sk_key_without_touch_rejected(self):
+        from sdlc_engine import approvals as ap
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
+        sk = self.root / "sk.pub"
+        sk.write_text(f"sk-ssh-ed25519@openssh.com {blob} owner\n")
+        git(self.root, "config", "--global", "user.signingkey", str(sk))
+        self.signers.write_text(f'owner@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n')
+        self.assertIsNone(ap.signing_problem(self.root))
+        self.signers.write_text(f'owner@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n')
+        problem = ap.signing_problem(self.root)
+        self.assertTrue(problem and "no-touch-required" in problem, problem)
 
     def test_audit_fails_closed_on_unresolvable_base(self):
         self.write("intent", INTENT)

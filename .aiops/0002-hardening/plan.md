@@ -252,7 +252,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - `lib/sdlc_engine/guards.py`: the dynamic-word rule applies only in command position; a marker in `X=` assignments only; the trailer check matches `AIOps-Approval:` or a `%s`-assembled `AIOps-…:` together with `Approval`.
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_safety_variants` and `tests/test_guards.py::BashGuard::test_no_false_positives` → allowed (or blocked) wrongly today
   - Covers: AC-28
-- [ ] **S31**: Legacy recording, `sk-` keys without a touch, CI fails closed
+- [x] **S31**: Legacy recording, `sk-` keys without a touch, CI fails closed
   - Files:
     - `lib/sdlc_engine/approvals.py`: `unsigned_approvals()` lists only commits that are reachable from main and predate the commit introducing `allowed-signers`; `key_protection()` rejects an `sk-` key whose allowed-signers entry has `no-touch-required`.
     - `lib/sdlc_engine/cli.py`: `legacy-approvals --write` confirms each entry; `--yes` skips this.
@@ -327,3 +327,4 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | 2026-11-02 | — | **Human decision:** this repo uses `approval_key_policy: "any"` with the existing passphrase-less key instead of a dedicated or protected signing key ("keep commit simple"). Approvals go through `!` again. Residual: anything running as the user can sign approvals here | human-owned config, set by zoujagger in a signed commit | `c74a836` |
 | 2026-11-02 | — | Review round 2 returned CHANGES_REQUESTED (79/100). The spec was amended (R-12, AC-23..AC-29) and re-approved; the plan was amended with S25-S32 | the human chose to fix round 2 inside 0002 | `0ee464b`, `d8f1f54`, `8185ac6` |
 | 2026-11-03 | S29 | Plain `patch` gets the same inspection as `git apply` (piped input refused, `patch <file in .aiops>` blocked), and the S29 commit left the step at `[~]` (ticked with S30) | the same bypass existed through `patch`; the tick was missed | `69c2d6f` |
+| 2026-11-03 | S31 | `tests/test_cli.py::Lifecycle::test_legacy_approvals_is_human_only` and `test_legacy_needs_full_sha_and_clean_commit` were rearranged: their approval now lands on main before the signer list is committed, and `--write` gets `--yes` | the new legacy rule (correctly) no longer records a feature-branch approval made after signing started | S31 commit |

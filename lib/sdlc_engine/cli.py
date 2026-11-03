@@ -41,7 +41,7 @@ Human only (refused inside Claude Code)
   approve <id> intent|spec|plan   open a gate (same as typing `Plan Approved NNNN` in the prompt)
   close <id>                 close an intent without implementing it
   unlock                     release the /fix test lock
-  legacy-approvals [--write] list (or record) unsigned approval commits of open gates as legacy
+  legacy-approvals [--write [--yes]]  list (or record, confirming each) pre-signing approvals on main as legacy
 """
 
 
@@ -198,6 +198,15 @@ def cmd_validate(root, args):
     return 1 if failed else 0
 
 
+def _confirm(question):
+    print(question, end="", flush=True)
+    try:
+        return input().strip().lower() in ("y", "yes")
+    except EOFError:
+        print()
+        return False
+
+
 def cmd_legacy_approvals(root, args):
     """Human-only migration aid: unsigned approval commits that predate signing become an explicit legacy list."""
     if approvals.running_under_agent():
@@ -214,7 +223,8 @@ def cmd_legacy_approvals(root, args):
         f = root / approvals.LEGACY
         f.parent.mkdir(parents=True, exist_ok=True)
         known = f.read_text() if f.is_file() else "# Unsigned approval commits accepted by the audit (human-owned, append-only).\n"
-        new = [f"{sha}  # {what}" for sha, what in found if sha not in known]
+        new = [f"{sha}  # {what}" for sha, what in found if sha not in known and ("--yes" in args or _confirm(
+            f"Record {sha[:10]} ({what}) as a legacy approval? [y/N] "))]
         f.write_text(known.rstrip("\n") + "\n" + "".join(f"{ln}\n" for ln in new))
         out(f"Recorded {len(new)} commit(s) in {approvals.LEGACY}. Commit it; CI reads it from the base branch.")
     return 0

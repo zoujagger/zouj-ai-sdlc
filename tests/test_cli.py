@@ -86,19 +86,20 @@ class Lifecycle(RepoCase):
 
     def test_legacy_approvals_is_human_only(self):
         from helpers import git
-        git(self.root, "add", ".aiops/config/allowed-signers")
-        git(self.root, "commit", "-qm", "signers")
-        git(self.root, "branch", "base")                     # base: has a signer list, no legacy list
         cfg = self.root / ".aiops" / "config.json"
         cfg.write_text('{"require_signed_approvals": false}')
         self.write("intent", INTENT)
-        self.approve("intent")
+        self.approve("intent")                               # unsigned, before signing is introduced
+        sha = git(self.root, "log", "-1", "--format=%H")
+        git(self.root, "add", ".aiops/config/allowed-signers")
+        git(self.root, "commit", "-qm", "signers")
+        git(self.root, "branch", "base")                     # base: has a signer list, no legacy list
+        git(self.root, "branch", "-f", "main", "HEAD")
         cfg.write_text('{"require_signed_approvals": true}')
         self.assertEqual(self.run_sdlc("validate", "--all", "--ci").returncode, 1)
-        self.assertEqual(self.run_sdlc("legacy-approvals", "--write", env={"CLAUDECODE": "1"}).returncode, 1)
-        r = self.run_sdlc("legacy-approvals", "--write")
+        self.assertEqual(self.run_sdlc("legacy-approvals", "--write", "--yes", env={"CLAUDECODE": "1"}).returncode, 1)
+        r = self.run_sdlc("legacy-approvals", "--write", "--yes")
         self.assertEqual(r.returncode, 0, r.stderr)
-        sha = git(self.root, "log", "-1", "--format=%H")
         self.assertIn(sha, (self.root / ".aiops" / "config" / "legacy-approvals").read_text())
         self.assertEqual(self.run_sdlc("validate", "--all", "--ci").returncode, 0)
         r = self.run_sdlc("validate", "--all", "--ci", "--base", "base")
