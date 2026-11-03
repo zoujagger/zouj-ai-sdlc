@@ -397,6 +397,10 @@ def cmd_doctor(root, args):
             "edit the Makefile or: sdlc init --stack python|node|go --force")
     for b in ("gh", "jq"):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")
+    if initialized(root):
+        cfg = config(root)
+        out(f"  ✓ profile: {cfg['profile']} (approval_key_policy: {cfg.get('approval_key_policy')}, "
+            f"signed approvals: {'yes' if cfg.get('require_signed_approvals') else 'no'})")
     if initialized(root) and config(root).get("require_signed_approvals"):
         _doctor_signing(root, row)
     if initialized(root):

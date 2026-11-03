@@ -486,6 +486,38 @@ class Approvals(RepoCase):
         problem = ap.signing_problem(self.root)
         self.assertTrue(problem and "no-touch-required" in problem, problem)
 
+    def test_strict_policy_requires_a_touch_key(self):
+        from helpers import signing_key
+        from sdlc_engine import approvals as ap
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text('{"approval_key_policy": "sk"}')
+        # a passphrase key is a human per signature under "human", but not enough under "sk"
+        protected = signing_key("protected", passphrase="s3cret-pass")
+        git(self.root, "config", "--global", "user.signingkey", f"{protected}.pub")
+        problem = ap.signing_problem(self.root)
+        self.assertTrue(problem and "sk-" in problem, problem)
+        blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
+        sk = self.root / "sk.pub"
+        sk.write_text(f"sk-ssh-ed25519@openssh.com {blob} owner\n")
+        git(self.root, "config", "--global", "user.signingkey", str(sk))
+        self.signers.write_text(f'owner@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n')
+        problem = ap.signing_problem(self.root)
+        self.assertTrue(problem and "no-touch-required" in problem, problem)
+        self.signers.write_text(f'owner@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n')
+        self.assertIsNone(ap.signing_problem(self.root))                        # an sk- key that needs a touch
+        # an unknown policy is refused, never treated as "any"
+        cfg.write_text('{"approval_key_policy": "bogus"}')
+        problem = ap.signing_problem(self.root)
+        self.assertTrue(problem and "approval_key_policy" in problem, problem)
+        r = self.run_sdlc("doctor")
+        self.assertIn("✗ approval signing: ", r.stdout)
+        self.assertEqual(r.returncode, 1)
+        # the profile is reported; a config without one reads as team
+        cfg.write_text('{"approval_key_policy": "any"}')
+        self.assertIn("profile: team", self.run_sdlc("doctor").stdout)
+        cfg.write_text('{"approval_key_policy": "any", "profile": "solo"}')
+        self.assertIn("profile: solo", self.run_sdlc("doctor").stdout)
+
     def test_audit_fails_closed_on_unresolvable_base(self):
         self.write("intent", INTENT)
         self.approve("intent")

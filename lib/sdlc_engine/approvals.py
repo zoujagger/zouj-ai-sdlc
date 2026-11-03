@@ -163,6 +163,9 @@ def _commit_alone(root, rel, title, body, sign):
     return sha, None
 
 
+KEY_POLICIES = ("human", "sk", "any")   # team: a human per signature · strict: a touch key only · solo/escape hatch
+
+
 def signing_problem(root):
     """Why a signed approval commit can't be made here, or None."""
     cfg = config(root)
@@ -180,7 +183,14 @@ def signing_problem(root):
         return "git has no signing key configured (user.signingkey)"
     if (git(root, "config", "gpg.format") or "openpgp") != "ssh":
         return "git signing is not set to SSH (gpg.format ssh)"
-    if cfg.get("approval_key_policy", "human") == "human":
+    policy = cfg.get("approval_key_policy", "human")
+    if policy not in KEY_POLICIES:
+        return (f"unknown approval_key_policy {policy!r} in .aiops/config.json (use one of: "
+                f"{', '.join(KEY_POLICIES)}); an unknown value is refused, never treated as \"any\"")
+    if policy == "sk" and not _signing_key_files(root)[0].startswith("sk-"):
+        return ("the strict profile (approval_key_policy \"sk\") accepts only a FIDO sk- key that needs a touch per "
+                f"signature.\n{KEY_HELP}")
+    if policy in ("human", "sk"):
         weak = key_protection(root)
         if weak:
             return f"{weak}.\n{KEY_HELP}"

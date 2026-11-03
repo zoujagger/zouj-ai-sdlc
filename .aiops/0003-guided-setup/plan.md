@@ -59,7 +59,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
     `enabledPlugins["zouj-ai-sdlc@zouj"] = true`, and the `permissions.deny` list is unchanged. Red: the keys are
     missing.
   - Covers: AC-9
-- [ ] **S3**: The `"sk"` key policy and `profile` in config
+- [x] **S3**: The `"sk"` key policy and `profile` in config
   - Files: `lib/sdlc_engine/approvals.py`, `lib/sdlc_engine/machine.py`, `lib/sdlc_engine/cli.py` (doctor profile
     row, refusing unknown policies) (modify)
   - Test first: `tests/test_engine.py::Approvals::test_strict_policy_requires_a_touch_key`. Under `"sk"`, a
