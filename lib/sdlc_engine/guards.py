@@ -278,7 +278,7 @@ def write_targets(words, cwd):
     inplace = (name in INPLACE and any(re.match(r"^-[a-zA-Z]*i", a) or a.startswith("--in-place") for a in args)) \
         or (name in ("awk", "gawk") and _awk_inplace(args))
     if inplace:
-        return [a for a in nonopt if (Path(cwd) / a).is_file()]
+        return [a for a in nonopt if (Path(cwd) / os.path.expanduser(HOME_VAR_RE.sub(str(Path.home()), a))).is_file()]
     return []
 
 
@@ -416,9 +416,17 @@ def _braces(word):
     return out
 
 
+HOME_VAR_RE = re.compile(r"\$\{(HOME|XDG_CONFIG_HOME)\}|\$(HOME|XDG_CONFIG_HOME)\b")
+
+
 def _expand(target, cwd):
-    """A write target as the shell would see it: $PWD / $(pwd) / ~+ resolved, braces and globs expanded."""
+    """A write target as the shell would see it: $PWD / $(pwd) / ~+ / ~ / $HOME / $XDG_CONFIG_HOME resolved, braces and
+    globs expanded."""
     out = []
+    target = HOME_VAR_RE.sub(lambda m: os.environ.get(m[1] or m[2]) or str(Path.home() / ".config"
+                                                                           if (m[1] or m[2]) == "XDG_CONFIG_HOME"
+                                                                           else Path.home()), target)
+    target = os.path.expanduser(target) if target.startswith("~") and not target.startswith("~+") else target
     for t in _braces(PWD_RE.sub(lambda _m: str(cwd), target)):
         if not GLOB_CHARS.search(t):
             out.append(t)

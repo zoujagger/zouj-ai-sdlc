@@ -398,7 +398,11 @@ class BashGuard(RepoCase):
             self.assertTrue(self.blocked(f"cp /tmp/x {link}/python3"))
         finally:
             self.env["PATH"] = saved
-        for cmd in ("cp x /tmp/y", "git checkout -- .", "git restore .", "git checkout feat/x", "mkdir -p build/bin"):
+        for cmd in ("cp /tmp/x $HOME/.local/bin/git", 'cp /tmp/x "$HOME"/.local/bin/git', "echo x >> $HOME/.bashrc",
+                    "echo '[core]' >> ${HOME}/.gitconfig", "sed -i s/a/b/ ~/.bashrc", "sed -i s/a/b/ $HOME/.bashrc"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("cp x /tmp/y", "git checkout -- .", "git restore .", "git checkout feat/x", "mkdir -p build/bin",
+                    "echo x > $HOME_DIR_NAME.txt"):
             self.assertFalse(self.blocked(cmd), cmd)
 
     def test_cd_is_tracked_when_resolving_targets(self):

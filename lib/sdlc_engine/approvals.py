@@ -380,4 +380,4 @@ def unsigned_approvals(root):
 
 
 def _is_ancestor(root, a, b):
-    return subprocess.run(["git", "merge-base", "--is-ancestor", a, b], cwd=root, capture_output=True).returncode == 0
+    return subprocess.run([GIT, "merge-base", "--is-ancestor", a, b], cwd=root, capture_output=True).returncode == 0
