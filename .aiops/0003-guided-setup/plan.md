@@ -47,7 +47,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 - **S12 may be a pin:** if it has no red run, that's logged in the Deviation log.
 
 ## Steps
-- [ ] **S1**: Refactor `cmd_init` into `init_actions` + `apply_init` (no behaviour change)
+- [x] **S1**: Refactor `cmd_init` into `init_actions` + `apply_init` (no behaviour change)
   - Files: `lib/sdlc_engine/cli.py` (modify)
   - Test first: `tests/test_setup.py::Init::test_init_actions_preview_matches_apply`. `init_actions` lists exactly the
     files a following `sdlc init` creates or keeps. Red: `init_actions` doesn't exist yet.

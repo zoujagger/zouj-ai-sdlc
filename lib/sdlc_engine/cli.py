@@ -294,29 +294,40 @@ def plugin_version():
     return json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
 
 
+def init_actions(root, force=False):
+    """[(action, rel)] for every scaffold file: "create" (missing, or --force) or "keep" (exists). Writes nothing,
+    so `sdlc setup` can preview exactly what `init` will do."""
+    scaffold = TEMPLATES / "scaffold"
+    return [("create" if force or not (root / rel).exists() else "keep", str(rel))
+            for rel in sorted(p.relative_to(scaffold) for p in scaffold.rglob("*") if p.is_file())]
+
+
+def apply_init(root, actions):
+    """Copy the "create" files of init_actions() into root, pinning consumer CI to this plugin's release."""
+    scaffold = TEMPLATES / "scaffold"
+    for act, rel in actions:
+        if act != "create":
+            continue
+        dst = root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(scaffold / rel, dst)
+        if dst.suffix in (".yml", ".yaml", ".md", ".json"):
+            text = dst.read_text()
+            if REF_PLACEHOLDER in text:
+                dst.write_text(text.replace(REF_PLACEHOLDER, f"v{plugin_version()}"))
+    (root / ".aiops" / "state").mkdir(parents=True, exist_ok=True)
+
+
 def cmd_init(root, args):
     stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
     force = "--force" in args
     if stack and not (TEMPLATES / "stacks" / f"{stack}.recipes").is_file():
         out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
         return 1
-    scaffold = TEMPLATES / "scaffold"
-    created, skipped = [], []
-    for src in sorted(p for p in scaffold.rglob("*") if p.is_file()):
-        rel = src.relative_to(scaffold)
-        dst = root / rel
-        if dst.exists() and not force:
-            skipped.append(str(rel))
-            continue
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        if dst.suffix in (".yml", ".yaml", ".md", ".json"):
-            text = dst.read_text()
-            if REF_PLACEHOLDER in text:   # pin consumer CI to this plugin's release
-                dst.write_text(text.replace(REF_PLACEHOLDER, f"v{plugin_version()}"))
-        created.append(str(rel))
-    for p in (root / ".aiops" / "state",):
-        p.mkdir(parents=True, exist_ok=True)
+    actions = init_actions(root, force)
+    apply_init(root, actions)
+    created = [rel for act, rel in actions if act == "create"]
+    skipped = [rel for act, rel in actions if act == "keep"]
     if stack and "Makefile" in created:
         wired = _wire_stack(root / "Makefile", stack)
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
