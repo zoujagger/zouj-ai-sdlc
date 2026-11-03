@@ -36,7 +36,11 @@ Build from the inside out, so every user-facing piece rests on tested engine par
 One spec phrase is interpreted here: "`permissions`/`hooks` byte-identical" (AC-5). The settings merge loads and
 dumps JSON with `indent=2`, so whitespace in an existing file may be normalised. The **values** under `permissions`
 and `hooks` must stay exactly equal, which the test checks through parsed equality, and no other key may change.
-If the human wants literal byte preservation, the merge must splice text instead. That's a stress-test question.
+**Stress-test answers (zoujagger, 2026-11-03):**
+- **The JSON re-dump is accepted:** values equal, whitespace may be normalised, and the diff is shown first.
+- **Preflight tool failures warn and continue:** each call has a 5 s timeout, and its row becomes `!` with the fix.
+  Only git, python and make problems stop setup.
+- **S12 may be a pin:** if it has no red run, that's logged in the Deviation log.
 
 ## Steps
 - [ ] **S1**: Refactor `cmd_init` into `init_actions` + `apply_init` (no behaviour change)
