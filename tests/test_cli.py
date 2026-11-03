@@ -2,6 +2,7 @@
 import json
 import shutil
 import unittest
+from pathlib import Path
 
 from helpers import INTENT, RepoCase
 
@@ -28,6 +29,17 @@ class Init(RepoCase):
         r = self.run_sdlc("init", "--stack", "python")
         self.assertIn("wired format, lint, typecheck, test, build", r.stdout)
         self.assertIn("pytest -q", (self.root / "Makefile").read_text())
+
+    def test_scaffold_offers_the_plugin(self):
+        before = json.loads((Path(__file__).resolve().parents[1] / "templates" / "scaffold" / ".claude" /
+                             "settings.json").read_text())["permissions"]["deny"]
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        settings = json.loads((self.root / ".claude" / "settings.json").read_text())
+        self.assertEqual(settings["extraKnownMarketplaces"]["zouj"]["source"],
+                         {"source": "github", "repo": "zoujagger/zouj-ai-sdlc"})
+        self.assertIs(settings["enabledPlugins"]["zouj-ai-sdlc@zouj"], True)
+        self.assertEqual(settings["permissions"]["deny"], before)                # deny rules unchanged
+        self.assertNotIn("allow", settings["permissions"])                        # no permission is granted
 
     def test_scaffold_pins_and_protects(self):
         from helpers import ROOT

@@ -52,7 +52,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
   - Test first: `tests/test_setup.py::Init::test_init_actions_preview_matches_apply`. `init_actions` lists exactly the
     files a following `sdlc init` creates or keeps. Red: `init_actions` doesn't exist yet.
   - Covers: AC-1 (shared preview), AC-3
-- [ ] **S2**: Marketplace snippet in the scaffold
+- [x] **S2**: Marketplace snippet in the scaffold
   - Files: `templates/scaffold/.claude/settings.json` (modify)
   - Test first: `tests/test_cli.py::Init::test_scaffold_offers_the_plugin`. After `init`, settings has
     `extraKnownMarketplaces.zouj.source = {source: github, repo: zoujagger/zouj-ai-sdlc}` and
