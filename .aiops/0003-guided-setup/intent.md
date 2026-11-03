@@ -83,12 +83,11 @@ ECC solves the same adoption problems with:
 - Fixing the 0.2.0-alpha.1 known issues (the CHANGELOG list); they get their own intent.
 
 ## Open questions
-- [ ] The `solo` profile: should approvals still be committed (`commit_approvals: true`) with no signing, or kept
-  as stamps only? Committing keeps an audit trail and matches the playbook's "formalise and share". (zoujagger)
-- [ ] Should `sdlc setup` also install the plugin? It can't drive `/plugin` itself. Should it print the two commands,
-  or write the declarative `extraKnownMarketplaces`/`enabledPlugins` snippet into the *project's* `.claude/settings.json`
-  (which Claude Code then offers to the user)? (zoujagger)
-- [ ] The sandbox: should it be a local throwaway repo (`sdlc setup --sandbox <dir>`) with a sample intent, or a
-  separate public example repository? (zoujagger)
-- [ ] Should this phase be released as 0.2.0-alpha.2, or does it wait to be bundled with the known-issues fixes?
-  (zoujagger)
+- [x] The `solo` profile: are approvals still committed? → **Yes:** a single-file approval commit, unsigned, to keep
+  the audit trail (zoujagger, 2026-11-03)
+- [x] How does `sdlc setup` get the plugin installed? → **It writes the declarative
+  `extraKnownMarketplaces`/`enabledPlugins` snippet into the project's `.claude/settings.json`**, and also prints the
+  two `/plugin` commands (zoujagger, 2026-11-03)
+- [x] The sandbox? → **A local throwaway repo:** `sdlc setup --sandbox <dir>` with a sample intent (zoujagger,
+  2026-11-03)
+- [x] The release? → **0.2.0-alpha.2, on its own,** once it passes review (zoujagger, 2026-11-03)
