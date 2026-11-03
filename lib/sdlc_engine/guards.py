@@ -156,10 +156,11 @@ GIT_MAIN_FORBIDDEN = {"merge", "rebase", "cherry-pick", "am"}
 GIT_TREE_WRITERS = {"rm", "mv", "checkout", "restore", "reset", "clean", "stash"}
 MAKE_WRITERS = {"format", "fmt", "fix", "generate", "gen", "migrate", "codegen"}
 HUMAN_SUBS = r"(approve|close|unlock|hook|legacy-approvals)"
+CMD_POS = r"(^|[;&|(`\n]|\b(then|do|else)\s)\s*((sudo|command|exec|env|nohup|time|builtin|xargs)\s+|\w+=\S*\s+)*"
 ENGINE_RES = (   # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
     re.compile(rf"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*{HUMAN_SUBS}\b"),
-    re.compile(rf"\S*[$`]\S*\s+{HUMAN_SUBS}\b"),                       # dynamic command word: $s, ${s}lc, $(…)
-    re.compile(rf"(\$\([^)]*\)|`[^`]*`)\S*\s+{HUMAN_SUBS}\b"),            # $(which sdlc) hook, `which sdlc` close
+    re.compile(rf"{CMD_POS}[^\s;&|]*[$`][^\s;&|]*\s+{HUMAN_SUBS}\b"),     # dynamic command word: $s, ${s}lc, $(…)
+    re.compile(rf"{CMD_POS}(\$\([^)]*\)|`[^`]*`)\S*\s+{HUMAN_SUBS}\b"),  # $(which sdlc) hook, `which sdlc` close
     re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*\S*[$`]"),              # dynamic subcommand: sdlc $x, sdlc $(…)
     re.compile(r"(\bfunction\s+\w+|\b\w+\s*\(\s*\))\s*\{[^}]*\bsdlc\b"),   # a function wrapping sdlc
     re.compile(r"\balias\s+\w+=\S*\bsdlc\b"),
@@ -168,9 +169,11 @@ ENGINE_RES = (   # matched against the command with quotes and backslashes remov
     re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
+TRAILER_RE = re.compile(r"AIOps-Approval\s*:")
+FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:")                    # printf 'AIOps-%s:' Approval, AIOps-$x:
 MARKERS = r"(CLAUDECODE|CLAUDE_CODE_CHILD_SESSION)"
 ENV_RES = (
-    re.compile(rf"\b{MARKERS}\s*="),
+    re.compile(rf"(?<![\w$]){MARKERS}="),                                # an assignment, not `[ $CLAUDECODE = 1 ]`
     re.compile(rf"\bunset\b[^;&|\n]*\b{MARKERS}\b"),
     re.compile(rf"(\s-u\s*|--unset[=\s]+){MARKERS}\b"),
     re.compile(r"\benv\s+(-\S+\s+)*(-i|--ignore-environment|-)(\s|$)"),
@@ -422,7 +425,7 @@ def check_bash(data):
     if not initialized(root) or not cmd.strip():
         return None
     plain = re.sub(r"[\\'\"]", "", cmd)
-    if "AIOps-Approval" in plain or ("AIOps-" in plain and "Approval" in plain):   # also split or printf-built
+    if TRAILER_RE.search(plain) or (FORMAT_TRAILER_RE.search(plain) and "Approval" in plain):   # also printf-built
         return _block("human gate", "approval commits are created only by a human approval.",
                       "ask the human to approve in their terminal (`bin/sdlc approve NNNN intent|spec|plan`).")
     if any(r.search(plain) for r in ENV_RES):

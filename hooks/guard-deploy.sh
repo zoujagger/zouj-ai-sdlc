@@ -21,7 +21,7 @@ block() {
 P='(prod|production|prd|live)([^a-z]|$)'
 
 if [[ "$tool" == "Bash" ]]; then
-  c=$(json_get tool_input.command <<<"$input" | tr -s '[:space:]' ' ')
+  c=$(json_get tool_input.command <<<"$input" | tr -s '[:space:]' ' ' | tr -d "\"'\\\\")   # quotes out: ENV="prod"
   re_make="make [^;&|]*(deploy|rollback|release|promote)[^;&|]*ENV=${P}"
   re_wf="gh workflow run [^;&|]*deploy[^;&|]*(environment|env)=${P}"
   re_tools="(kubectl|helm|terraform|pulumi|serverless|vercel|flyctl|fly|gcloud|aws|az|eb|cdk)[^;&|]*(apply|deploy|up|upgrade|install|--prod)[^;&|]*${P}"

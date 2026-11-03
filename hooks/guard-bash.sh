@@ -15,16 +15,17 @@ block() {
   exit 2
 }
 
-# Normalise whitespace for matching.
+# Normalise whitespace for matching; u is the same with quotes and backslashes removed ('+main', "--force").
 c=$(printf '%s' "$cmd" | tr -s '[:space:]' ' ')
+u=${c//\"/}; u=${u//\'/}; u=${u//\\/}
 
 # Regexes live in variables: inside [[ =~ ]] bash would otherwise parse ; & | as shell syntax.
 S='(^|[ ;&|(])'   # start of a command word
 E='([ ;&|)]|$)'   # end of a token
 
 re_rm_root="${S}rm -[a-zA-Z]*r[a-zA-Z]* (/|~|\\\$HOME|\\.|\\*)${E}"
-re_force_push="git push.*( --force| -f${E}|--force-with-lease| [+][^ ;&|])"   # incl. +refspec force
-re_push_main="git push.*( |:)(main|master)${E}"
+re_force_push="git push[^;&|]*( --force| -[a-zA-Z]*f[a-zA-Z]*${E}| --mirror${E}| [+][^ ;&|])"   # -fu, +refspec
+re_push_main="git push[^;&|]*( |:)(main|master)${E}"
 re_history="git (reset --hard|clean -[a-z]*f|filter-branch|filter-repo)"
 re_bypass="(--no-verify|core\\.hooksPath|SKIP_STOP_VERIFY=1|--dangerously-skip-permissions)"
 re_pipe_sh="(curl|wget)[^|]*\\| ?(sudo )?(ba|z)?sh${E}"
@@ -38,14 +39,13 @@ re_lock="\\.aiops/state/test-lock"
 re_write_op="(>|${S}(sed -i|tee|mv|cp|rm|truncate|perl -pi)${E})"
 
 [[ "$c" =~ $re_rm_root ]]    && block "recursive delete of root/home/cwd"
-[[ "$c" =~ $re_force_push ]] && block "force push" "create a new commit (or git revert) and push normally."
-(( enabled )) && [[ "$c" =~ $re_push_main ]] && block "direct push to main/master" "push a feature branch and open a PR (/zouj-ai-sdlc:pr)."
+[[ "$u" =~ $re_force_push ]] && block "force push" "create a new commit (or git revert) and push normally."
+(( enabled )) && [[ "$u" =~ $re_push_main ]] && block "direct push to main/master" "push a feature branch and open a PR (/zouj-ai-sdlc:pr)."
 [[ "$c" =~ $re_history ]]    && block "history/worktree destruction" "use git revert or git stash; ask the human if history must change."
 [[ "$c" =~ $re_bypass ]]     && block "attempt to bypass hooks or permissions"
 [[ "$c" =~ $re_pipe_sh ]]    && block "piping remote script to shell" "download the script, show it for review, then run it."
 # Secret reads: match on a quote-free copy with the .env templates removed word by word (not the whole command
 # exempted), and treat glob words that would match .env (`.e?v`, `.en*`) as .env.
-u=${c//\"/}; u=${u//\'/}; u=${u//\\/}
 u=$(printf '%s' "$u" | sed -E 's/\.env\.(example|sample|template)([^A-Za-z0-9_.]|$)/ \2/g')
 if [[ "$u" =~ $re_read_env || "$u" =~ $re_redirect_env ]]; then
   block "reading .env secrets" "use .env.example for variable names; never read real secrets."

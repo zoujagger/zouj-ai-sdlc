@@ -121,6 +121,18 @@ class ShellHooks(RepoCase):
                 self.assertEqual(self.bash(cmd), 2, (repo_state, cmd))
             self.assertEqual(self.bash("cat .env.example"), 0)
 
+    def test_safety_variants(self):
+        dep = lambda cmd: self.run_hook("guard-deploy.sh", {"tool_name": "Bash", "tool_input": {"command": cmd}})  # noqa: E731
+        for cmd in ('make deploy ENV="prod"', "make deploy ENV='production'", 'kubectl --context "prod" apply -f k8s/'):
+            self.assertEqual(dep(cmd), 2, cmd)
+        self.assertEqual(dep('make deploy ENV="staging"'), 0)
+        for cmd in ("git push origin '+main'", 'git push "+feat/x"', "git push -fu origin x", "git push -uf origin x",
+                    "git push --mirror", "git push --mirror origin", "git push \"--force\" origin x"):
+            self.assertEqual(self.bash(cmd), 2, cmd)
+        for cmd in ("git push -u origin feat/x", "git push --follow-tags origin feat/x",
+                    "git push -u origin feat/x && rm -f /tmp/y"):
+            self.assertEqual(self.bash(cmd), 0, cmd)
+
     def test_version_matches_changelog(self):
         import re
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]

@@ -282,6 +282,17 @@ class BashGuard(RepoCase):
                     "x=1; echo $x", "export PATH=$PATH:/opt/bin"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_no_false_positives(self):
+        self.to_execution()
+        for cmd in ("echo $HOME close the door", '[ "$CLAUDECODE" = 1 ] && echo inside',
+                    "git commit -m 'Close: AIOps-x Approval flow'", "echo $(date) approve later",
+                    "test $CLAUDE_CODE_CHILD_SESSION = 1", "git log --grep AIOps-Approval"):
+            self.assertFalse(self.blocked(cmd), cmd)
+        for cmd in ("s=sdlc; $s approve 0001 plan", "x=1 && ${s}lc close 0001", "sudo $s approve 0001 plan",
+                    "echo $($s approve 0001 plan)", "CLAUDECODE= make test", "git commit -m 'AIOps-Approval : x'",
+                    "git commit -m \"$(printf 'AIOps-%s: plan 0001' Approval)\""):
+            self.assertTrue(self.blocked(cmd), cmd)
+
     def test_cd_is_tracked_when_resolving_targets(self):
         self.write("intent", INTENT)
         for cmd in ("cd src && sed -i s/Draft/Approved/ ../.aiops/0001-csv-export/intent.md",

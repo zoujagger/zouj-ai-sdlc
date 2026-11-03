@@ -236,7 +236,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Files: `lib/sdlc_engine/guards.py` (`_heredoc_marks`: skip `$((…))`/`((…))` and `$'…'`)
   - Test first: `tests/test_guards.py::BashGuard::test_heredoc_marker_in_arithmetic_or_ansi_c` → `echo $((1<<EOF))` followed by a write is allowed today
   - Covers: AC-26
-- [~] **S29**: The remaining `.aiops` integrity forms
+- [x] **S29**: The remaining `.aiops` integrity forms
   - Files: `lib/sdlc_engine/guards.py`:
     - patch headers up to tab or space; `-p0`/`--directory`
     - `git apply`/`am` from stdin is refused in initialized repos
@@ -245,7 +245,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
     - brace expansion of targets; `VAR=value` assignments earlier in the same command are substituted
   - Test first: `tests/test_guards.py::BashGuard::test_aiops_integrity_remaining_forms` → `tar -C .aiops -xf x` and `rm -rf {.aiops,x}` are allowed today
   - Covers: AC-27
-- [ ] **S30**: Safety variants and false positives
+- [x] **S30**: Safety variants and false positives
   - Files:
     - `hooks/guard-deploy.sh`: quotes are stripped before matching.
     - `hooks/guard-bash.sh`: force-push checks run on the unquoted copy; also `-[a-z]*f`, and `--mirror`.
@@ -326,3 +326,4 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
 | 2026-11-02 | S17, S19, S21, S24 | Unlogged in round 1: S17 touched `evals/_lib/repo.sh` and `tests/test_cli.py` (not `cli.py`); S19 added `test_scaffold_gate_verifies_base`; S21 touched `hooks/lib.sh`; S24 changed `approve()`'s refusal text and edited `skills/init`, `skills/using-zouj-ai-sdlc` | found by review round 2 | `de58a62`, `f1e5c0e`, `d35068d`, `ecd8f70` |
 | 2026-11-02 | — | **Human decision:** this repo uses `approval_key_policy: "any"` with the existing passphrase-less key instead of a dedicated or protected signing key ("keep commit simple"). Approvals go through `!` again. Residual: anything running as the user can sign approvals here | human-owned config, set by zoujagger in a signed commit | `c74a836` |
 | 2026-11-02 | — | Review round 2 returned CHANGES_REQUESTED (79/100). The spec was amended (R-12, AC-23..AC-29) and re-approved; the plan was amended with S25-S32 | the human chose to fix round 2 inside 0002 | `0ee464b`, `d8f1f54`, `8185ac6` |
+| 2026-11-03 | S29 | Plain `patch` gets the same inspection as `git apply` (piped input refused, `patch <file in .aiops>` blocked), and the S29 commit left the step at `[~]` (ticked with S30) | the same bypass existed through `patch`; the tick was missed | `69c2d6f` |
