@@ -125,7 +125,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
     doctor summary, exits 0, and `socket.socket` is patched to raise, proving there's no network use. Red: there's
     no command.
   - Covers: AC-13
-- [ ] **S11**: The `/zouj-ai-sdlc:setup` skill; init points to setup
+- [x] **S11**: The `/zouj-ai-sdlc:setup` skill; init points to setup
   - Files: `skills/setup/SKILL.md` (create), `skills/init/SKILL.md` (modify)
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_setup_skill_follows_the_playbook`:
     - the skill exists with frontmatter

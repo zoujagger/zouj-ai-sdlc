@@ -252,6 +252,21 @@ class ShellHooks(RepoCase):
         for rel in ("README.md", "skills/intent/SKILL.md", "skills/plan/SKILL.md", "skills/using-zouj-ai-sdlc/SKILL.md"):
             self.assertIn("python3 -I <plugin>/bin/sdlc approve", (ROOT / rel).read_text(), rel)
 
+    def test_setup_skill_follows_the_playbook(self):
+        import re
+        skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
+        self.assertRegex(skill, r"(?s)^---\nname: setup\ndescription: .+\ndisable-model-invocation: true\n")
+        self.assertIn("sdlc setup", skill)
+        self.assertLess(skill.index("--dry-run"), skill.index("--yes"))          # preview before any write
+        self.assertIn("confirm", skill.lower())
+        self.assertIn("your own terminal", skill)                               # human-owned steps go to the human
+        self.assertIn("never", skill.lower())
+        self.assertIsNone(re.search(r"--no-hooks|advisory mode|skip the gates|disable the gates", skill, re.I))
+        self.assertIn("same in every profile", skill)
+        init = (ROOT / "skills" / "init" / "SKILL.md").read_text()
+        self.assertIn("/zouj-ai-sdlc:setup", init)
+        self.assertNotIn("every plugin hook here is a no-op", init)              # safety guards run in every repo
+
     def test_version_matches_changelog(self):
         import re
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
