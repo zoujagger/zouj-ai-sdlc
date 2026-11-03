@@ -442,13 +442,33 @@ PWD_RE = re.compile(r"\$\{PWD\}|\$PWD\b|\$\(\s*pwd\s*\)|`\s*pwd\s*`|(?<![\w/])~\
 GLOB_CHARS = re.compile(r"[*?\[]")
 
 
+BRACE_RE = re.compile(r"(?<!\$)\{([^{}]*,[^{}]*)\}")
+ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+VAR_RE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
+DECLARERS = {"export", "declare", "typeset", "local", "readonly"}
+
+
+def _braces(word):
+    """Bash brace expansion of `{a,b}` lists, innermost first (a superset is fine here; `${…}` is left alone)."""
+    m = BRACE_RE.search(word)
+    if not m:
+        return [word]
+    out = []
+    for alt in m.group(1).split(","):
+        out += [w for w in _braces(word[:m.start()] + alt + word[m.end():]) if w not in out]
+    return out
+
+
 def _expand(target, cwd):
-    """A write target as the shell would see it: $PWD / $(pwd) / ~+ resolved, globs expanded against the tree."""
-    t = PWD_RE.sub(lambda _m: str(cwd), target)
-    if not GLOB_CHARS.search(t):
-        return [t]
-    pattern = t if Path(t).is_absolute() else str(Path(cwd) / t)
-    return glob.glob(pattern) or [t]
+    """A write target as the shell would see it: $PWD / $(pwd) / ~+ resolved, braces and globs expanded."""
+    out = []
+    for t in _braces(PWD_RE.sub(lambda _m: str(cwd), target)):
+        if not GLOB_CHARS.search(t):
+            out.append(t)
+            continue
+        pattern = t if Path(t).is_absolute() else str(Path(cwd) / t)
+        out += glob.glob(pattern) or [t]
+    return out
 
 
 def _find_hits_aiops(args, cwd, root):
@@ -457,8 +477,9 @@ def _find_hits_aiops(args, cwd, root):
     if not any(a in FIND_ACTIONS for a in args):
         return False
     starts = args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))] or ["."]
-    names = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-name", "-iname")]
-    paths = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-path", "-ipath", "-wholename")]
+    names = [(args[i + 1], a == "-iname") for i, a in enumerate(args[:-1]) if a in ("-name", "-iname")]
+    paths = [(args[i + 1], a.startswith("-i")) for i, a in enumerate(args[:-1])
+             if a in ("-path", "-ipath", "-wholename", "-iwholename")]
     aiops = root / ".aiops"
     for start in starts:
         rel = _rel(root, start, cwd)
@@ -474,23 +495,79 @@ def _find_hits_aiops(args, cwd, root):
         entries = [aiops] + list(aiops.rglob("*"))
         for e in entries:
             shown = f"{start.rstrip('/')}/{e.relative_to(base).as_posix()}"
-            if any(fnmatchcase(e.name, n) for n in names) or any(fnmatchcase(shown, q) for q in paths):
+            if any(_fnmatch(e.name, n, ci) for n, ci in names) or any(_fnmatch(shown, q, ci) for q, ci in paths):
                 return True
     return False
 
 
-PATCH_PATH_RE = re.compile(r"^(?:diff --git a/(\S+) b/(\S+)|--- a/(\S+)|\+\+\+ b/(\S+)|rename (?:from|to) (\S+))$", re.M)
+def _fnmatch(name, pattern, ci):
+    """find's matching: -name/-path are case-sensitive, their -i* forms are not."""
+    return fnmatchcase(name.lower(), pattern.lower()) if ci else fnmatchcase(name, pattern)
 
 
-def _patch_touches_aiops(args, cwd, root):
-    for a in args:
-        f = Path(cwd) / a
-        if not a.startswith("-") and f.is_file():
-            text = f.read_text(errors="replace")
-            for m in PATCH_PATH_RE.finditer(text):
-                if any(g and _aiops_protected(g) for g in m.groups()):
-                    return True
-    return False
+PATCH_PATH_RE = re.compile(r"^(?:diff --git a/(\S+) b/(\S+)|(?:---|\+\+\+) ([^\t\n ]+)|rename (?:from|to) (\S+))", re.M)
+PATCH_VALUE_OPTS = {"-p", "-o", "--output", "-r", "--reject-file", "-B", "--prefix", "-D", "--ifdef", "-F", "--fuzz",
+                    "-z", "--suffix", "-V", "--version-control", "--exclude", "--include"}
+AM_CONTROL = {"--continue", "--abort", "--skip", "--quit", "--show-current-patch", "--resolved", "-r"}
+
+
+def _patch_check(args, cwd, root, git_am=False):
+    """Why applying this patch is refused: "aiops" if it could write into the .aiops tree (any `-pN` strip level,
+    under any `--directory`/`-d`), "stdin" if the patch can't be read, else None."""
+    if git_am and any(a in AM_CONTROL or a.startswith("--show-current-patch") for a in args):
+        return None
+    dirs, files, stdin, i = [""], [], False, 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith(("--directory=", "--input=")):
+            (dirs if a.startswith("--d") else files).append(a.split("=", 1)[1])
+        elif a in ("-d", "--directory", "-i", "--input") and i + 1 < len(args):
+            (dirs if a in ("-d", "--directory") else files).append(args[i + 1])
+            i += 1
+        elif re.match(r"^-[di].+", a):
+            (dirs if a[1] == "d" else files).append(a[2:])
+        elif a in PATCH_VALUE_OPTS:
+            i += 1
+        elif a == "-":
+            stdin = True
+        elif not a.startswith("-"):
+            files.append(a)
+        i += 1
+    for f in files:
+        rel = _rel(root, f, cwd)
+        if rel and _aiops_protected(rel):
+            return "aiops"                             # `patch .aiops/…/plan.md < x`: the file patched in place
+    readable = [Path(cwd) / f for f in files if (Path(cwd) / f).is_file()]
+    if stdin or not readable:
+        return "stdin"
+    for f in readable:
+        for m in PATCH_PATH_RE.finditer(f.read_text(errors="replace")):
+            for g in filter(None, m.groups()):
+                parts = g.split("/")
+                for k in range(len(parts)):            # every -pN strip level
+                    for d in dirs:
+                        rel = _rel(root, "/".join(filter(None, [d] + parts[k:])), cwd)
+                        if rel and _aiops_protected(rel):
+                            return "aiops"
+    return None
+
+
+def _extract_dirs(name, args):
+    """Where `tar -x` / `unzip` extract to ("." when no directory is given), or [] if the command doesn't extract."""
+    if name == "unzip":
+        if any(a in ("-l", "-t", "-v", "-Z", "-p") for a in args):
+            return []
+        dirs = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "-d"] + [a[2:] for a in args if a.startswith("-d")
+                                                                              and len(a) > 2]
+        return dirs or ["."]
+    if name == "tar":
+        if not any(a in ("--extract", "--get") or re.match(r"^-[A-Za-z]*x", a) for a in args) \
+                and not (args and not args[0].startswith("-") and "x" in args[0]):
+            return []
+        dirs = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-C", "--directory")] + \
+            [a.split("=", 1)[1] for a in args if a.startswith("--directory=")]
+        return dirs or ["."]
+    return []
 
 
 SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.hookspath)$", re.I)
@@ -533,7 +610,14 @@ def _in_plugin(target, cwd, root):
 
 
 def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
+    assigned = {}
     for words, redirs in segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
+        words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]
+                         for ws in (words, redirs))
+        bare = [w for w in (words[1:] if words[:1] and words[0] in DECLARERS else words) if not w.startswith("-")]
+        if bare and not redirs and all(ASSIGN_RE.match(w) for w in bare):   # `d=.aiops; rm -rf $d`
+            assigned.update(w.split("=", 1) for w in bare)
+            continue
         words = _strip_prefix(words)
         if words and words[0] == "cd":
             dest = next((a for a in words[1:] if not a.startswith("-")), "~")
@@ -551,9 +635,8 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
         if words and Path(words[0]).name == "find" and _find_hits_aiops(words[1:], cwd, root):
             return _block("artifacts", "this `find` would delete or rewrite part of the .aiops tree.",
                           "narrow it (e.g. `-not -path './.aiops/*'`), or ask the human to remove artifacts.")
-        if words and Path(words[0]).name == "tar" and words[1:2] and "x" in words[1].lstrip("-"):
-            tdir = next((words[i + 1] for i, a in enumerate(words[:-1]) if a in ("-C", "--directory")), None)
-            targets += [tdir] if tdir else []
+        if words:
+            targets += _extract_dirs(Path(words[0]).name, words[1:])
         for t in targets:
             if t.startswith("/dev/"):
                 continue
@@ -580,6 +663,11 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
         if not words:
             continue
         name, args = Path(words[0]).name, words[1:]
+        why = _patch_check(args, cwd, root) if name == "patch" else None
+        if why:
+            return _block("artifacts", "this `patch` touches .aiops/, which bypasses the gate guard." if why == "aiops"
+                          else "`patch` from a pipe can't be inspected for .aiops/ changes.",
+                          "edit artifacts with the Edit/Write tools, or pass the patch file by name (`-i` or `<`).")
         if name == "gh" and args[:1] == ["api"] and any(re.search(r"/pulls/\d+/merge\b|/merges\b", a) for a in args):
             return _block("final gate", "merging through the GitHub API is the human's decision.",
                           "leave the PR for a CODEOWNER to review and merge.")
@@ -588,9 +676,11 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             if sub == "config" and _git_config_writes_signing(rest):
                 return _block("toolchain", "git signing / hook settings are human-owned (they decide who signs approvals).",
                               "ask the human to change git config themselves (globally).")
-            if sub in ("apply", "am") and _patch_touches_aiops(rest, gcwd, root):
-                return _block("artifacts", f"`git {sub}` with a patch touching .aiops/ bypasses the gate guard.",
-                              "edit artifacts with the Edit/Write tools.")
+            why = _patch_check(rest, gcwd, root, git_am=sub == "am") if sub in ("apply", "am") else None
+            if why:
+                return _block("artifacts", f"`git {sub}` with a patch touching .aiops/ bypasses the gate guard."
+                              if why == "aiops" else f"`git {sub}` from stdin can't be inspected for .aiops/ changes.",
+                              "edit artifacts with the Edit/Write tools, or apply a patch file by name.")
             if sub in GIT_TREE_WRITERS:
                 hit = next((r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-"))
                             if r and _aiops_protected(r)), None)
@@ -640,7 +730,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             return _block("read-only lock", f"`{name} {sub}` changes dependencies: {reason}.", lock_procedure(st))
         if name == "make" and any(a in MAKE_WRITERS for a in args):
             return _block("read-only lock", f"`make {' '.join(args)}` rewrites code: {reason}.", lock_procedure(st))
-        if name in ("patch", "unzip") or (name == "tar" and args and "x" in args[0]):
+        if name in ("patch", "unzip") or (name == "tar" and _extract_dirs(name, args)):
             return _block("read-only lock", f"`{name}` writes files: {reason}.", lock_procedure(st))
     return None
 

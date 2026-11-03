@@ -208,6 +208,29 @@ class BashGuard(RepoCase):
                     "ls .ai*", "find .aiops -name '*.md'"):
             self.assertFalse(self.blocked(cmd), cmd)
 
+    def test_aiops_integrity_remaining_forms(self):
+        self.to_execution()
+        (self.root / ".aiops" / "state" / "test-lock").write_text("x")
+        (self.root / "tab.patch").write_text("--- a/.aiops/0001-csv-export/plan.md\t2026-01-01 00:00:00\n"
+                                             "+++ b/.aiops/0001-csv-export/plan.md\t2026-01-01 00:00:00\n")
+        (self.root / "p0.patch").write_text("--- .aiops/0001-csv-export/plan.md\n+++ .aiops/0001-csv-export/plan.md\n")
+        (self.root / "rel.patch").write_text("--- a/plan.md\n+++ b/plan.md\n")
+        (self.root / "ok.patch").write_text("--- a/src/app.py\n+++ b/src/app.py\n")
+        (self.root / "build").mkdir()
+        for cmd in ("git apply tab.patch", "git apply -p0 p0.patch", "patch -p0 < p0.patch", "patch -i tab.patch",
+                    "git apply --directory=.aiops/0001-csv-export rel.patch", "patch -d .aiops/0001-csv-export < rel.patch",
+                    "cat ok.patch | git apply", "git apply -", "git am < /dev/stdin", "cat ok.patch | patch -p1",
+                    "tar -C .aiops -xf x.tar", "tar --extract -f x.tar --directory=.aiops/state", "tar xf x.tar -C .aiops",
+                    "cd .aiops && tar -xf /tmp/x.tar", "unzip x.zip -d .aiops", "unzip -o x.zip -d .aiops/state",
+                    "find . -iname TEST-LOCK -delete", "find . -ipath '*/.AIOPS/*' -delete",
+                    "rm -rf {.aiops,x}", "rm -rf .aiops/{state,config}", "d=.aiops; rm -rf $d",
+                    "d=.aiops/state && rm -rf ${d}/test-lock", "export d=.aiops; mv $d /tmp/a"):
+            self.assertTrue(self.blocked(cmd), cmd)
+        for cmd in ("git apply ok.patch", "patch -p1 < ok.patch", "git am --abort", "git apply --directory=src rel.patch",
+                    "tar -C build -xf x.tar", "tar -C .aiops -cf /tmp/a.tar .", "tar -tf x.tar", "unzip x.zip -d build",
+                    "find . -iname '*.PYC' -delete", "rm -rf {build,dist}", "d=build; rm -rf $d", "x=1; echo $x"):
+            self.assertFalse(self.blocked(cmd), cmd)
+
     def test_engine_cannot_be_disguised(self):
         self.to_execution()
         for cmd in ("env -u CLAUDECODE sdlc approve 0001 plan", "unset CLAUDECODE", "unset FOO CLAUDE_CODE_CHILD_SESSION",

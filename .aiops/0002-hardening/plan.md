@@ -236,7 +236,7 @@ signer list is being introduced and needs CODEOWNERS review. This only happens o
   - Files: `lib/sdlc_engine/guards.py` (`_heredoc_marks`: skip `$((…))`/`((…))` and `$'…'`)
   - Test first: `tests/test_guards.py::BashGuard::test_heredoc_marker_in_arithmetic_or_ansi_c` → `echo $((1<<EOF))` followed by a write is allowed today
   - Covers: AC-26
-- [ ] **S29**: The remaining `.aiops` integrity forms
+- [~] **S29**: The remaining `.aiops` integrity forms
   - Files: `lib/sdlc_engine/guards.py`:
     - patch headers up to tab or space; `-p0`/`--directory`
     - `git apply`/`am` from stdin is refused in initialized repos
