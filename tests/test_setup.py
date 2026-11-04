@@ -562,6 +562,23 @@ class Unreviewed(SetupCase):
         self.assertIn("Review", steps)
         self.assertIn(".aiops/config/allowed-signers", steps)
 
+    def test_setup_s_own_files_are_not_flagged_on_a_rerun(self):
+        """Round 8 F2: before the commit, a second run (or the human's run after the agent's) recognises setup's own
+        files and still prints the commit step."""
+        flows = ((({"CLAUDECODE": "1"}, "solo"), ({}, "solo")),                   # the documented agent -> human flow
+                 (({}, "team"), ({}, "team")))                                      # a human rerun before committing
+        for first, second in flows:
+            with self.subTest(first=first, second=second):
+                shutil.rmtree(self.root / ".aiops", ignore_errors=True)
+                self.assertEqual(self.setup_run("--profile", first[1], "--yes", env=first[0]).returncode, 0)
+                r = self.setup_run("--profile", second[1], "--yes", env=second[0])
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertNotRegex(r.stdout, r"(?m)^  ! \.(aiops|claude|github)/")  # none of setup's files flagged
+                self.assertNotIn("Review before committing", r.stdout)
+                commit, _ = self.commit_step(r.stdout)
+                for rel in (".aiops/config.json", ".claude/settings.json", "CLAUDE.md", ".gitignore"):
+                    self.assertIn(rel, commit, rel)
+
     def test_staged_trust_file_is_flagged_and_never_committed(self):
         """Round 8 MEDIUM: a key staged with git plumbing (the file on disk still equals HEAD) is flagged, and the
         printed commit step commits only setup's files, never the rest of the index."""

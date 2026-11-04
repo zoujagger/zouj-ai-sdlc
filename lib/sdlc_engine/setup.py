@@ -197,18 +197,52 @@ def inventory(root):
     return rows
 
 
+def _uncommitted(root, rel):
+    """True if root/rel is not in HEAD as it is on disk (untracked, or changed since HEAD; no HEAD counts)."""
+    return git(root, "ls-files", "--error-unmatch", "--", rel) is None or \
+        git(root, "diff", "--quiet", "HEAD", "--", rel) is None
+
+
+def _as_setup_writes(root, rel):
+    """True if root/rel holds exactly what setup writes there: the scaffold template (release-pinned) or, for
+    config.json, the template with one profile's keys. Setup's own files from an earlier run look like this."""
+    try:
+        data = (root / rel).read_bytes()
+    except OSError:
+        return False
+    template = (cli.TEMPLATES / "scaffold" / rel).read_bytes().replace(cli.REF_PLACEHOLDER.encode(),
+                                                                       f"v{cli.plugin_version()}".encode())
+    if data == template:
+        return True
+    if rel != ".aiops/config.json":
+        return False
+    try:
+        cfg = json.loads(data)
+    except ValueError:
+        return False
+    return any(cfg == {**json.loads(template), **PROFILE_CONFIG[p]} for p in PROFILES)
+
+
 def unreviewed(root):
-    """Human-owned scaffold files that exist but aren't committed as they are (untracked, or changed since HEAD). Setup
-    didn't write them and no review has seen them: the agent may have planted one while the guards were off (a key in
-    allowed-signers would make CI trust it), so the human reviews them and they stay out of the commit setup suggests."""
+    """Human-owned scaffold files that no commit has as they are, holding something setup doesn't write, or staged
+    content that isn't on disk (git plumbing). The agent may have planted one while the guards were off (a key in
+    allowed-signers would make CI trust it), so the human reviews them and they stay out of the commit setup suggests.
+    "Committed" counts as reviewed: a file the agent committed before setup is a documented residual."""
     out = []
     for act, rel in cli.init_actions(root):
-        if act == "keep" and cli.HUMAN_OWNED_RE.match(rel) and (root / rel).is_file():
-            if git(root, "ls-files", "--error-unmatch", "--", rel) is None or \
-                    git(root, "diff", "--quiet", "HEAD", "--", rel) is None or \
-                    git(root, "diff", "--cached", "--quiet", "HEAD", "--", rel) is None:   # staged, not on disk
-                out.append(rel)
+        if act != "keep" or not cli.HUMAN_OWNED_RE.match(rel) or not (root / rel).is_file():
+            continue
+        staged_off_disk = git(root, "diff", "--cached", "--quiet", "HEAD", "--", rel) is None and \
+            git(root, "diff", "--quiet", "--", rel) is None
+        if staged_off_disk or (_uncommitted(root, rel) and not _as_setup_writes(root, rel)):
+            out.append(rel)
     return out
+
+
+def uncommitted_scaffold(root):
+    """Every scaffold file (and .gitignore) on disk that no commit has as it is: what the commit step lists."""
+    rels = [rel for act, rel in cli.init_actions(root) if act != "symlink"] + [".gitignore"]
+    return [rel for rel in rels if (root / rel).is_file() and _uncommitted(root, rel)]
 
 
 def plan(root, profile):
@@ -225,8 +259,7 @@ def plan(root, profile):
                         if approvals.running_under_agent() else f"profile {profile}: {PROOF[profile]}")
             out.append(("+", rel, note))
         elif rel in review:
-            out.append(("!", rel, "exists but was never committed, and setup didn't write it: review it before "
-                                  "committing"))
+            out.append(("!", rel, "not in any commit yet, and not what setup writes: review it before committing"))
         else:
             out.append(("=", rel, "kept"))
     for rel, (_old, _new, keys) in owned_changes(root, profile).items():
@@ -331,7 +364,7 @@ def main(root, args):
                   .rstrip("\n"))
     review = unreviewed(root)
     if review:                                    # shown before any confirmation (and in --dry-run)
-        print("Review before committing: human-owned, not written by setup, never committed")
+        print("Review before committing: human-owned, not in any commit yet, not what setup writes")
         for rel in review:
             template = (cli.TEMPLATES / "scaffold" / rel).read_text()
             print("".join(difflib.unified_diff(template.splitlines(True), (root / rel).read_text().splitlines(True),
@@ -404,13 +437,13 @@ def apply(root, profile, actions, stack=None, review=()):
         print(f"  + {rel}")
     for rel in changed:
         print(f"  ~ {rel}")
-    human_steps(root, profile, pending, written, review)
+    human_steps(root, profile, pending, review)
     print("Doctor")
     cli.cmd_doctor(root, [])
     return 0
 
 
-def human_steps(root, profile, pending, written=(), review=()):
+def human_steps(root, profile, pending, review=()):
     """What only the human can do: install the plugin, set up signing, own .aiops/, apply changes to human-owned
     files, commit, and start the first intent."""
     steps = ["In Claude Code (or just reopen Claude Code here: the project settings offer the plugin):\n"
@@ -445,13 +478,14 @@ def human_steps(root, profile, pending, written=(), review=()):
             steps.append(f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
                          f"       {snippet}")
     if review:                                    # unreviewed(), taken before setup wrote anything
-        steps.append("Review these human-owned files yourself before committing them (setup didn't write them, and no "
-                     "commit has them yet; an unexpected key in allowed-signers would let CI trust it):\n       "
+        steps.append("Review these human-owned files yourself before committing them (no commit has them yet, and they "
+                     "hold something setup doesn't write; an unexpected key in allowed-signers would let CI trust it):"
+                     "\n       "
                      + "\n       ".join(review))
-    files = sorted(set(written) - set(review))
+    files = sorted(set(uncommitted_scaffold(root)) - set(review))
     if files:                                     # exactly these paths: never `git add -A`, never the rest of the index
         paths = " ".join(shlex.quote(f) for f in files)
-        steps.append(f"Commit what setup wrote:\n       git add -- {paths} && git commit -m \"chore: adopt zouj-ai-sdlc "
+        steps.append(f"Commit the scaffold:\n       git add -- {paths} && git commit -m \"chore: adopt zouj-ai-sdlc "
                      f"(profile {config(root)['profile']})\" -- {paths}")
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     print("Human steps")
