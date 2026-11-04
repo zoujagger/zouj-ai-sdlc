@@ -22,21 +22,31 @@ TIMEOUT = 5
 
 
 def _run(cmd, path, timeout, cwd=None):
-    """Combined stdout+stderr of cmd with PATH=path, or None if it can't run or doesn't finish in time."""
-    exe = shutil.which(cmd[0], path=path)
+    """Combined stdout+stderr of cmd with PATH=path, or None if it can't run or doesn't finish in time. stdin is
+    closed: a tool never reads the human's terminal (a passphrase, a confirmation)."""
+    exe = cmd[0] if os.path.isabs(cmd[0]) else shutil.which(cmd[0], path=path)
     if not exe:
         return None
     try:
         r = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True, timeout=timeout, cwd=cwd,
-                           env={**os.environ, "PATH": path})
+                           stdin=subprocess.DEVNULL, env={**os.environ, "PATH": path})
     except (OSError, subprocess.TimeoutExpired):
         return None
     return (r.returncode, (r.stdout or "") + (r.stderr or ""))
 
 
+def _outside_repo(path, root):
+    """PATH without its directories inside the repo (an activated .venv/bin, ./bin, a relative entry): the agent can
+    write there, and preflight runs in the human's session."""
+    real = Path(root).resolve()
+    keep = [d for d in path.split(os.pathsep)
+            if d and Path(d).resolve() != real and real not in Path(d).resolve().parents]
+    return os.pathsep.join(keep)
+
+
 def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
     """[(status, label, fix)] with status ✓ (ok), ! (warning, setup continues) or ✗ (setup stops)."""
-    path = path if path is not None else os.environ.get("PATH", "")
+    path = _outside_repo(path if path is not None else os.environ.get("PATH", ""), root)
     v = tuple(version or sys.version_info[:3])
     rows = []
     for tool in ("git", "make"):
@@ -70,7 +80,7 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
         rows.append(("!", "gh (optional: push, PRs, issues)", "install the GitHub CLI"))
 
     if shutil.which("git", path=path):
-        res = _run(["git", "config", "--get-all", "credential.helper"], path, timeout, cwd=root)
+        res = _run([approvals.GIT, "config", "--get-all", "credential.helper"], path, timeout, cwd=root)
         ok = bool(res and res[0] == 0 and res[1].strip())
         rows.append(("✓" if ok else "!", "git credential helper" + ("" if ok else " (git push over https will fail)"),
                      "" if ok else "gh auth setup-git (or configure any git credential helper)"))
@@ -85,17 +95,26 @@ OWNED_JSON = (".aiops/config.json", ".claude/settings.json")
 
 
 def owned_json_rows(root):
-    """✗ for an existing human-owned JSON file that doesn't parse: setup would otherwise skip it silently (and read
-    the default profile in its place). The human fixes it; setup never rewrites a file it can't read."""
+    """✗ for an existing human-owned JSON file that doesn't parse, isn't an object, or has a marketplace key that
+    isn't an object: setup would otherwise skip it silently (and read the default profile in its place) or fail on
+    it. The human fixes it; setup never rewrites a file it can't read."""
     rows = []
     for rel in OWNED_JSON:
         f = root / rel
         if not f.is_file():
             continue
+        fix = f"fix {rel} by hand (it's human-owned), then rerun"
         try:
-            json.loads(f.read_text())
+            data = json.loads(f.read_text())
         except (OSError, ValueError) as exc:
-            rows.append(("✗", f"{rel} isn't valid JSON ({exc})", f"fix {rel} by hand (it's human-owned), then rerun"))
+            rows.append(("✗", f"{rel} isn't valid JSON ({exc})", fix))
+            continue
+        if not isinstance(data, dict):
+            rows.append(("✗", f"{rel} isn't a JSON object (it holds a {type(data).__name__})", fix))
+            continue
+        for key in MARKETPLACE:
+            if key in data and not isinstance(data[key], dict):
+                rows.append(("✗", f"{rel}: {key} isn't a JSON object", fix))
     return rows
 
 
@@ -146,10 +165,12 @@ PROOF = {"solo": "typed phrase + an unsigned approval commit", "team": "an SSH-s
 
 
 def _json(path):
+    """The JSON object in path, or None (missing, invalid, or not an object; owned_json_rows reports those)."""
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
     except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def inventory(root):
@@ -330,25 +351,34 @@ def _confirm():
 
 def apply(root, profile, actions, stack=None):
     creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
-    cli.apply_init(root, creates)
     created = {rel for _, rel in creates}
-    if ".aiops/config.json" in created and not approvals.running_under_agent():
-        # a human's new config takes the profile; the agent's is exactly init's, and the profile is a human step
-        f = root / ".aiops" / "config.json"
-        cli.write_file(root, ".aiops/config.json",
-                       (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode())
-    if stack and "Makefile" in created:
-        wired = cli._wire_stack(root, stack)
+    written, changed, wired = [], [], None
+    try:
+        cli.apply_init(root, creates, written)
+        if ".aiops/config.json" in created and not approvals.running_under_agent():
+            # a human's new config takes the profile; the agent's is exactly init's, and the profile is a human step
+            f = root / ".aiops" / "config.json"
+            cli.write_file(root, ".aiops/config.json",
+                           (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode())
+        if stack and "Makefile" in created:
+            wired = cli._wire_stack(root, stack)
+        pending = owned_changes(root, profile)
+        if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it
+            for rel, (_old, new, _keys) in pending.items():   # the diff was shown in the plan, before the question
+                cli.write_file(root, rel, new.encode())
+                written.append(rel)
+                changed.append(rel)
+            pending = {}
+    except OSError as exc:
+        print(cli.write_failure(exc, written), file=sys.stderr)
+        return 1
+    if wired is not None:
         print(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
     print("Applied")
     for rel in sorted(created):
         print(f"  + {rel}")
-    pending = owned_changes(root, profile)
-    if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it, showing each diff
-        for rel, (_old, new, _keys) in pending.items():   # the diff was shown in the plan, before the question
-            cli.write_file(root, rel, new.encode())
-            print(f"  ~ {rel}")
-        pending = {}
+    for rel in changed:
+        print(f"  ~ {rel}")
     human_steps(root, profile, pending)
     print("Doctor")
     cli.cmd_doctor(root, [])

@@ -387,8 +387,16 @@ def symlink_refusal(root, actions):
             "and run again. Nothing was written:\n  " + "\n  ".join(links)) if links else None
 
 
-def apply_init(root, actions):
-    """Copy the "create" files of init_actions() into root, pinning consumer CI to this plugin's release."""
+def write_failure(exc, written):
+    """The message for a write that failed part-way: what failed, and what had already been written."""
+    return (f"✗ {exc}. Files written before the error: {', '.join(written) or 'none'}. Nothing else was written; fix "
+            "the cause and run again.")
+
+
+def apply_init(root, actions, written=None):
+    """Copy the "create" files of init_actions() into root, pinning consumer CI to this plugin's release. Each file
+    written is appended to `written`, so a caller can report them if a later write fails."""
+    written = [] if written is None else written
     scaffold = TEMPLATES / "scaffold"
     for act, rel in actions:
         if act != "create":
@@ -397,6 +405,7 @@ def apply_init(root, actions):
         if REF_PLACEHOLDER.encode() in data:
             data = data.replace(REF_PLACEHOLDER.encode(), f"v{plugin_version()}".encode())
         write_file(root, rel, data, (scaffold / rel).stat().st_mode & 0o777)
+        written.append(rel)
     if symlink_on_path(root, ".aiops/state"):
         raise OSError(".aiops/state is behind a symlink; refusing to create it")
     (root / ".aiops" / "state").mkdir(parents=True, exist_ok=True)
@@ -405,6 +414,7 @@ def apply_init(root, actions):
     if ".aiops/state/" not in lines:
         write_file(root, ".gitignore", ("\n".join(lines + ["", "# zouj-ai-sdlc engine state (active intent, test lock)",
                                                            ".aiops/state/"]).lstrip("\n") + "\n").encode())
+        written.append(".gitignore")
 
 
 def cmd_init(root, args):
@@ -422,7 +432,12 @@ def cmd_init(root, args):
     if refusal:
         out(refusal, sys.stderr)
         return 1
-    apply_init(root, actions)
+    written = []
+    try:
+        apply_init(root, actions, written)
+    except OSError as exc:
+        out(write_failure(exc, written), sys.stderr)
+        return 1
     created = [rel for act, rel in actions if act == "create"]
     skipped = [rel for act, rel in actions if act == "keep"]
     owned = [rel for act, rel in actions if act == "owned"]

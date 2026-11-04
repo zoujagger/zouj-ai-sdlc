@@ -339,6 +339,25 @@ class Owned(SetupCase):
                 self.assertEqual(self.setup_run("--profile", "strict", "--dry-run").returncode, 1)
                 f.write_text(good)
 
+    def test_json_that_isnt_an_object_is_refused(self):
+        """Round 5: valid JSON of the wrong shape gets a ✗ row, never a traceback."""
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        for rel, bad in ((".aiops/config.json", "1\n"), (".aiops/config.json", "[]\n"),
+                         (".claude/settings.json", "[]\n"),
+                         (".claude/settings.json", '{"extraKnownMarketplaces": "x"}\n'),
+                         (".claude/settings.json", '{"enabledPlugins": 1}\n')):
+            with self.subTest(file=rel, content=bad):
+                f = self.root / rel
+                good = f.read_text()
+                f.write_text(bad)
+                for args in (("--profile", "strict", "--yes"), ("--dry-run",)):
+                    r = self.setup_run(*args)
+                    self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                    self.assertNotIn("Traceback", r.stderr)
+                    self.assertIn(f"✗ {rel}", r.stdout)
+                self.assertEqual(f.read_text(), bad)                                    # left for the human
+                f.write_text(good)
+
     def test_human_merges_only_marketplace_keys(self):
         cfg, settings = self.alpha1_repo()
         r = self.setup_run("--profile", "solo", "--yes")                            # a human, in a terminal
@@ -429,6 +448,63 @@ class Symlinks(SetupCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(target.read_text(), "mine\n")
         self.assertIn("REVIEW.md", (self.root / "REVIEW.md").read_text())
+
+
+class WriteErrors(SetupCase):
+    """Round 5: a failed write is reported with what was already written, never as a traceback."""
+
+    def test_init_force_over_a_directory(self):
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        (self.root / "REVIEW.md").unlink()
+        (self.root / "REVIEW.md").mkdir()
+        r = self.run_sdlc("init", "--force")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertIn("REVIEW.md", r.stderr)
+        self.assertIn("written before the error", r.stderr)
+
+    def test_setup_reports_a_failed_write(self):
+        import contextlib
+        import io
+        from sdlc_engine import setup
+        real, calls = cli.write_file, []
+
+        def flaky(root, rel, data, mode=0o644):
+            calls.append(rel)
+            if len(calls) == 3:
+                raise OSError(f"{rel} is a symlink; refusing to write through it")
+            return real(root, rel, data, mode)
+        err, out = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "write_file", flaky), mock.patch.object(setup, "preflight", return_value=[]), \
+                contextlib.redirect_stderr(err), contextlib.redirect_stdout(out):
+            code = setup.main(self.root, ["--profile", "team", "--yes"])
+        self.assertEqual(code, 1, out.getvalue() + err.getvalue())
+        self.assertIn(calls[2], err.getvalue())
+        self.assertIn("written before the error", err.getvalue())
+        for rel in calls[:2]:
+            self.assertIn(rel, err.getvalue())
+
+
+class PreflightTools(SetupCase):
+    """Round 5: preflight never runs a tool from a PATH directory inside the repo, nor hands it the human's stdin."""
+
+    def test_planted_tools_are_not_run(self):
+        planted = self.root / ".venv" / "bin"
+        planted.mkdir(parents=True)
+        log = self.root.parent / f"{self.root.name}.planted.log"
+        self.addCleanup(lambda: log.unlink(missing_ok=True))
+        for name in ("gh", "claude", "git"):
+            stub(planted, name, f'echo "{name} $@" >> "{log}"')
+        outside = self.bin_with()
+        (outside / "gh").write_text(f'#!/bin/sh\ncat >> "{log}.stdin"\n'
+                                    '[ "$1 $2" = "auth status" ] && echo "  - Token scopes: \'repo\', \'workflow\'"\nexit 0\n')
+        self.addCleanup(lambda: Path(f"{log}.stdin").unlink(missing_ok=True))
+        r = self.run_sdlc("setup", "--dry-run", "--profile", "team", stdin="my secret\n",
+                          env={"PATH": f"{planted}:{outside}"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(log.exists(), log.read_text() if log.exists() else "")       # nothing planted ran
+        self.assertIn("✓ gh logged in", r.stdout)                                     # the real one did
+        self.assertEqual(Path(f"{log}.stdin").read_text(), "")                         # without the human's stdin
 
 
 class Roots(SetupCase):

@@ -61,9 +61,11 @@ def config(root):
     f = root / ".aiops" / "config.json"
     if f.is_file():
         try:
-            cfg.update(json.loads(f.read_text()))
+            data = json.loads(f.read_text())
         except ValueError:
-            pass
+            data = None
+        if isinstance(data, dict):          # invalid JSON, or JSON that isn't an object, reads as the defaults
+            cfg.update(data)
     return cfg
 
 
