@@ -129,6 +129,38 @@ class Plan(SetupCase):
         self.assertIn("nothing was written", r.stdout)
         self.assertEqual(self.snapshot(), before)
 
+    def test_arguments_parsed_once_and_checked_up_front(self):
+        """Round 4: one parser; --stack is a preset name only; checked before preflight, dry run included."""
+        before = self.snapshot()
+        evil = self.root.parent / f"{self.root.name}.evil"
+        for args, says in ((("--profile", "solo", "--yes", "--stack", str(evil)), "unknown stack"),
+                           (("--dry-run", "--stack", "bogus"), "unknown stack"),
+                           (("--stack", "--dry-run", "--profile", "solo"), "unknown stack '--dry-run'"),
+                           (("--profile",), "--profile needs a value"),
+                           (("--profile=solo", "--yes"), "unknown option '--profile=solo'")):
+            r = self.setup_run(*args)
+            self.assertEqual(r.returncode, 1, (args, r.stdout + r.stderr))
+            self.assertIn(says, r.stderr, args)
+            self.assertNotIn("dry run", r.stdout, args)
+            self.assertEqual(r.stdout, "", args)                          # refused before preflight
+        r = self.run_sdlc("init", "--stack", str(evil))
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_unknown_stored_profile(self):
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        cfg = self.root / ".aiops" / "config.json"
+        for value in ('"bogus"', "null"):
+            cfg.write_text('{"commit_approvals": true, "require_signed_approvals": true, "profile": ' + value + "}\n")
+            r = self.setup_run("--dry-run")
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertIn(".aiops/config.json", r.stderr)
+            self.assertIn("solo, team or strict", r.stderr)
+            d = self.run_sdlc("doctor")
+            self.assertEqual(d.returncode, 1, d.stdout)
+            self.assertRegex(d.stdout, r"✗ profile: (bogus|None)")
+
 
 class Apply(SetupCase):
     def fresh_repo(self, name):

@@ -291,6 +291,8 @@ def _wire_stack(root, stack):
 
 
 REF_PLACEHOLDER = "__ZOUJ_SDLC_REF__"
+PROFILES = ("solo", "team", "strict")
+STACKS = ("python", "node", "go")             # the presets in templates/stacks/; --stack takes only these names
 
 
 def plugin_version():
@@ -391,7 +393,7 @@ def apply_init(root, actions):
 def cmd_init(root, args):
     stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
     force = "--force" in args
-    if stack and not (TEMPLATES / "stacks" / f"{stack}.recipes").is_file():
+    if stack and stack not in STACKS:
         out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
         return 1
     actions = init_actions(root, force, agent=approvals.running_under_agent())
@@ -519,8 +521,10 @@ def cmd_doctor(root, args):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")
     if initialized(root):
         cfg = config(root)
-        out(f"  ✓ profile: {cfg['profile']} (approval_key_policy: {cfg.get('approval_key_policy')}, "
-            f"signed approvals: {'yes' if cfg.get('require_signed_approvals') else 'no'})")
+        row(cfg["profile"] in PROFILES, f"profile: {cfg['profile']} (approval_key_policy: "
+            f"{cfg.get('approval_key_policy')}, signed approvals: {'yes' if cfg.get('require_signed_approvals') else 'no'})",
+            'set "profile" in .aiops/config.json to solo, team or strict (human-owned), or run '
+            "`sdlc setup --profile <p>` in your own terminal")
         covered, msg = codeowners_cover_aiops(root), "CODEOWNERS covers /.aiops/"
         fix = "add `/.aiops/ @<approver>` to .github/CODEOWNERS (human-owned) and require CODEOWNER review on main"
         if cfg["profile"] == "strict":                 # strict: a CODEOWNER must review every change to .aiops/

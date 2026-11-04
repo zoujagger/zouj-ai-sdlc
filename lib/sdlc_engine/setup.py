@@ -16,7 +16,7 @@ from pathlib import Path
 from . import approvals, cli
 from .machine import config, initialized
 
-PROFILES = ("solo", "team", "strict")
+PROFILES = cli.PROFILES
 TIMEOUT = 5
 
 
@@ -225,41 +225,49 @@ def _with_marketplace(settings):
     return merged
 
 
-def _choices(args):
-    profile = args[args.index("--profile") + 1] if "--profile" in args[:-1] else None
-    return profile, "--dry-run" in args, "--yes" in args
+OPTIONS = {"--profile": PROFILES, "--stack": cli.STACKS, "--dry-run": None, "--yes": None}   # option: its values
 
 
-OPTIONS = {"--profile": True, "--stack": True, "--dry-run": False, "--yes": False}   # option: takes a value
-
-
-def _unknown_option(args):
-    """The first argument that isn't a known option (or the value of one), else None."""
-    i = 0
+def parse(args):
+    """({option: value, or True for a flag}, None), or (None, why) for an unknown option or value. The only parser:
+    every later step reads its result, so a value can't also count as a flag."""
+    opts, i = {}, 0
     while i < len(args):
-        if args[i] not in OPTIONS:
-            return args[i]
-        i += 2 if OPTIONS[args[i]] else 1
-    return None
+        name = args[i]
+        if name not in OPTIONS:
+            return None, (f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack python|node|go, "
+                          "--dry-run and --yes")
+        allowed = OPTIONS[name]
+        if allowed is None:
+            opts[name], i = True, i + 1
+            continue
+        if i + 1 == len(args):
+            return None, f"{name} needs a value ({', '.join(allowed)})"
+        if args[i + 1] not in allowed:
+            return None, f"unknown {name[2:]} {args[i + 1]!r} ({', '.join(allowed)})"
+        opts[name], i = args[i + 1], i + 2
+    return opts, None
 
 
 def main(root, args):
-    bad = _unknown_option(args)
-    if bad is not None:
-        print(f"unknown option {bad!r}; setup takes --profile solo|team|strict, --stack python|node|go, --dry-run "
-              "and --yes. Nothing was written.", file=sys.stderr)
+    opts, why = parse(args)
+    if why:
+        print(f"{why}. Nothing was written.", file=sys.stderr)
         return 1
-    profile, dry_run, yes = _choices(args)
-    if profile is not None and profile not in PROFILES:
-        print(f"unknown profile {profile!r} (solo, team, strict)", file=sys.stderr)
-        return 1
+    profile, dry_run, yes = opts.get("--profile"), "--dry-run" in opts, "--yes" in opts
     tty = _is_tty()
     if profile is None and not dry_run and not tty:
         print("setup needs choices and there's no terminal to ask them; nothing was written. Run again with:\n"
               "  sdlc setup --profile solo|team|strict --yes   (or --dry-run to preview)")
         return 2
+    if profile is None and dry_run:
+        profile = config(root)["profile"]
+        if profile not in PROFILES:
+            print(f".aiops/config.json has profile {profile!r}; it must be solo, team or strict. Fix it (human-owned) "
+                  "or pass --profile; nothing was written.", file=sys.stderr)
+            return 1
     if profile is None:
-        profile = config(root)["profile"] if dry_run else _ask_profile()
+        profile = _ask_profile()
     rows = preflight(root, profile)
     show("Preflight", rows)
     if blocking(rows):
@@ -292,7 +300,7 @@ def main(root, args):
         print("not confirmed: nothing was written. Re-run with --yes to apply without the question."
               if tty else "no terminal to confirm: nothing was written. Re-run with --yes to apply.")
         return 2
-    return apply(root, profile, actions, args)
+    return apply(root, profile, actions, opts.get("--stack"))
 
 
 def _is_tty():
@@ -313,11 +321,7 @@ def _confirm():
         return False
 
 
-def apply(root, profile, actions, args):
-    stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
-    if stack and not (cli.TEMPLATES / "stacks" / f"{stack}.recipes").is_file():
-        print(f"unknown stack {stack!r} (python, node, go); nothing was written.", file=sys.stderr)
-        return 1
+def apply(root, profile, actions, stack=None):
     creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
     cli.apply_init(root, creates)
     created = {rel for _, rel in creates}
