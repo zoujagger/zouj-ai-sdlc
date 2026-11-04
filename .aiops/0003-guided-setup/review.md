@@ -1,137 +1,138 @@
 ---
 id: 0003
 verdict: CHANGES_REQUESTED
-commit: 8323aa8b85e0eb0a6eed4f4e75ffda9a1475aa4e
-score: 84/100
+commit: 29d9527b34cd887d778afeb756c5513093c5e445
+score: 89/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-04
 ---
 
-# Review: Guided setup and first-run onboarding (roadmap phase 1), round 4
+# Review: Guided setup and first-run onboarding (roadmap phase 1), round 5
 
-<!-- State 5 PRE-REVIEW, round 4 (after S15, the sandbox removal). Compiled only from the three fresh-context persona
-     reports (base main @ 429614a, head 8323aa8). Rounds 1 (76), 2 (80) and 3 (78) are in git history. The human
-     decides what happens next. -->
+<!-- State 5 PRE-REVIEW, round 5 (after H1–H4). Compiled only from the three fresh-context persona reports (base main
+     @ 429614a, head 29d9527). Rounds 1 (76), 2 (80), 3 (78) and 4 (84) are in git history. The human decides what
+     happens next. -->
 
 ## Summary
-The sandbox is gone, and so are all the round-3 findings.
-- **Verifier:** VERIFIED. All 15 ACs pass and their 25 proof tests pass. S15's `NoSandbox` is red on its parent
-  (reproduced by two reviewers).
-- **Checks:** `make check` (139 tests), `make build` / `claude plugin validate .` (2 unrelated warnings: root
-  CLAUDE.md, no icon) and `sdlc validate --all --ci --base main` all pass.
-- **Confirmed sound:** the `"sk"` CI audit, the refusal of unknown key policies and unknown options, preflight never
-  printing tokens, and `sdlc feedback` making no network calls.
+No reviewer found a BLOCKER, CRITICAL or HIGH finding.
+- **Verifier:** VERIFIED. All 15 ACs have passing tests, and the H1–H4 proof tests are red on their parents.
+- **Code reviewer:** no BLOCKER or HIGH, 1 MEDIUM. It asks for that MEDIUM to be fixed before a PASS.
+- **Security reviewer:** PASS, 20/25, 1 MEDIUM and 3 LOW.
+- **Round-4 fixes:** all hold.
+  - H1: links are refused, a link swapped in mid-write fails, and a hard link is replaced (exploit attempts by two
+    reviewers).
+  - H2: under the agent, a new config gets init's defaults.
+  - H3: one argument parser.
+  - H4: the docs.
+- **Checks:** `make check` (148 tests), `make build` and `claude plugin validate .` pass. The 2 validator warnings
+  are unrelated: a root CLAUDE.md that isn't loaded, and no icon.
 
-One HIGH finding remains. It isn't new in S15: it is in the scaffold writer that F2 changed.
-- **[HIGH] Scaffold writes follow symlinks.** `apply_init` checks `HUMAN_OWNED_RE` against the scaffold path, then
-  writes through whatever is at that path.
-  - **Under the agent:** `ln -s .claude/settings.json REVIEW.md && sdlc init --force` overwrites the project's
-    settings with REVIEW.md text. That defeats F2. Reproduced by the security reviewer, and independently while
-    compiling this review.
-  - **Outside the repo:** the same route reaches a file outside the repo (`~/.gitconfig`). A symlinked directory
-    (`scripts -> ~/.local/bin`) makes setup create a file on PATH.
-  - **Limit:** the content is always the fixed scaffold text, so the agent can destroy or plant files but not run
-    code it chose.
-
-Verdict: **CHANGES_REQUESTED, 84/100.**
-- Verifier: VERIFIED.
-- Code reviewer: no BLOCKER/HIGH, 1 MEDIUM.
-- Security reviewer: FAIL (1 HIGH, 2 LOW).
+Verdict: **CHANGES_REQUESTED, 89/100.** The score clears 80 and there is no HIGH. But the verdict rule needs every
+AC ✅, and AC-8 is still partial. The partial is the deferred FAIL-review case: no test shows that a FAIL review keeps
+the intent at state 5. Two MEDIUMs are also open:
+- **[MEDIUM, docs]** Since H2, setup run through the skill (`/zouj-ai-sdlc:setup solo`) creates a **team** config, and
+  solo is only a human step. The README's "Just looking?" alternative, install path A and the quick reference still
+  promise the skill route. A trial user would hit signing.
+- **[MEDIUM, security]** setup and init scaffold any directory, including one that isn't a git repo:
+  `machine.project_root` falls back to the current directory. So `cd ~ && sdlc setup --profile team --yes` under the
+  agent creates `~/.claude/settings.json`, which is a toolchain path "never written by agents". From `~/.claude` it
+  creates `~/.claude/CLAUDE.md`, which loads in every session.
+  - The content is the fixed scaffold, and no existing file is overwritten.
+  - This was already the case for `init` on main.
+  - It contradicts the spec's "setup only ever writes in the repo it runs in".
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
 |---|---|---|
-| AC-1 | ✅ met | `tests/test_setup.py:106`, `:20`; a manual dry run takes 1.26 s |
-| AC-2 | ✅ met | `tests/test_setup.py:150` (status reads "No intents yet") |
-| AC-3 | ✅ met | `tests/test_setup.py:178` |
-| AC-4 | ⚠️ partial | `tests/test_setup.py:204` holds for existing files. A **missing** `config.json` in an initialized repo is created by the agent with the agent's profile (solo), not the scaffold's (MEDIUM below) |
-| AC-5 | ✅ met | `tests/test_setup.py:272`, `:217`, `:245`, `:256` (values compared as parsed JSON, the plan's interpretation) |
-| AC-6 | ✅ met | `tests/test_setup.py:120` |
+| AC-1 | ✅ met | `tests/test_setup.py:109`; checked by hand under a pty (1.23 s) |
+| AC-2 | ✅ met | `tests/test_setup.py:185` (status reads "No intents yet") |
+| AC-3 | ✅ met | `tests/test_setup.py:213` (human rerun; an agent rerun isn't idempotent, LOW below) |
+| AC-4 | ✅ met | `tests/test_setup.py:239`, `:252` (missing config, initialized and fresh) |
+| AC-5 | ✅ met | `tests/test_setup.py:327`, `:272` |
+| AC-6 | ✅ met | `tests/test_setup.py:123` |
 | AC-7 | ✅ met | `tests/test_engine.py:513`, `:392`; `tests/test_playbook.py:83-86` |
-| AC-8 | ⚠️ partial | `tests/test_playbook.py:123-129`; the FAIL-review case is a deferred alpha.3 known issue |
-| AC-9 | ✅ met | `tests/test_cli.py:59` |
-| AC-10 | ✅ met | `tests/test_setup.py:297`, `:309`; red on the parent; no sandbox code, template or offer left |
-| AC-11 | ✅ met | `tests/test_setup.py:72` |
-| AC-12 | ✅ met | `tests/test_shell_hooks.py:270`, `:255` |
-| AC-13 | ✅ met | `tests/test_setup.py:323` |
-| AC-14 | ✅ met | `tests/test_shell_hooks.py:302`; `make build` |
-| AC-15 | ✅ met | `tests/test_cli.py:153`, `tests/test_setup.py:167` |
+| AC-8 | ⚠️ partial | `tests/test_playbook.py:77-130` covers the PASS walk; no test that a FAIL review stays at state 5 (verifier: met; code reviewer: partial) |
+| AC-9 | ✅ met | `tests/test_cli.py` `Init::test_scaffold_offers_the_plugin` |
+| AC-10 | ✅ met | `tests/test_setup.py:422`, `:434` |
+| AC-11 | ✅ met | `tests/test_setup.py:75` |
+| AC-12 | ✅ met | `tests/test_shell_hooks.py` `test_onboarding_docs`, `test_setup_skill_follows_the_playbook` |
+| AC-13 | ✅ met | `tests/test_setup.py:448` |
+| AC-14 | ✅ met | `test_version_matches_changelog`; `make build` |
+| AC-15 | ✅ met | `tests/test_cli.py` `Lifecycle::test_strict_requires_codeowners`; `tests/test_setup.py:202` |
 
 ## Security
-- **[HIGH] Scaffold writes follow symlinks** (`lib/sdlc_engine/cli.py:320-337` `apply_init`: `shutil.copy2` and the
-  `.gitignore` write; `setup.py:318` the config write; `setup.py:328` the owned-file writes).
-  - Fix:
-    - Refuse to write when the destination, or any parent up to the repo root, is a symlink, or when it resolves
-      outside the root.
-    - Apply `HUMAN_OWNED_RE` to the resolved relative path.
-    - Create files with `O_CREAT|O_EXCL|O_NOFOLLOW`; for `--force`, unlink and recreate.
-    - Add tests for a symlinked file, a symlinked directory and a dangling link.
-- **[MEDIUM] The agent can write a solo `config.json` into an initialized repo that has none** (`setup.py:313-318`,
-  `:181-184`).
-  - Such a repo runs on the team defaults, and `sdlc init` run by the agent would write the scaffold (team) config.
-    Setup writes `PROFILE_CONFIG[profile]` instead, so R-4 ("only what init writes") is broken.
-  - Local only: CI reads the base ref's config.
-  - Fix: under the agent, a new config gets the scaffold default (team). Any other profile is printed as a human
-    step. Add an `Owned::` test.
-- **[LOW]**
-  - `--stack` accepts any path (`--stack /tmp/x/evil` reads `/tmp/x/evil.recipes` into a new Makefile). Allow only
-    `python`, `node` or `go`.
-  - The MEDIUM above, seen from a fresh repo: there the agent's `--profile solo --yes` is the only consent. Same fix.
+- **[MEDIUM] setup and init write outside any repo** (`machine.py:47-51`, `setup.py:252`, `:324-336`).
+  - Fix: refuse when `git rev-parse --show-toplevel` fails, when the root is `$HOME`, `~/.claude` or the plugin, or
+    when any target matches the toolchain paths. Add tests for each.
+- **[LOW] Preflight runs `git`/`gh`/`claude` from PATH** (`setup.py:23-33`). An agent-planted `.venv/bin/gh` runs when
+  the human runs setup, with the human's terminal on stdin.
+  - Fix: use `machine.GIT`; skip PATH directories inside the repo for `gh`/`claude`; use `stdin=DEVNULL`.
+- **[LOW] Interpreter env-stripping.** It lets the agent run setup as a "human" and change the working-tree config.
+  This residual risk is already documented (`docs/architecture.md:38`, `:51`), and CI reads the base ref.
+  - Fix: state it in the skill and the spec.
+- **[LOW] Case-sensitive `no-touch-required`** in the `"sk"` audit (approvals.py). OpenSSH may match the option
+  case-insensitively; the reviewer didn't confirm this.
+  - Fix: lowercase the option names before comparing.
+  - Note: `allowed-signers` is human-owned, read from the base ref, and under CODEOWNERS.
 
 Spec flags:
 
 | Flag | Mitigated? |
 |---|---|
 | Solo approvals are unsigned | **yes**, stated |
-| Setup writing `.claude/settings.json` | **partially**: setup itself merges only the pinned marketplace keys and never writes it under the agent, but `init --force` through a symlink overwrites it (HIGH) |
-| Profile changes through setup | **yes for an existing config; no for a missing one** (MEDIUM) |
-| `gh auth status` / `claude --version` | **yes** |
-| No sandbox; setup writes only in its repo | **partially**: the sandbox is gone and unknown options are refused, but symlinks lead outside the repo (HIGH) |
+| Setup writing `.claude/settings.json` | **yes in the repo; no for `$HOME`** (MEDIUM) |
+| Profile changes through setup | **yes**, within the documented env-marker residual risk |
+| `gh auth status` / `claude --version` | **yes** (binary resolution: LOW) |
+| No sandbox; setup writes only in its repo | **partially**: a non-repo directory becomes the root (MEDIUM) |
 | `sdlc feedback` | **yes** |
 
 ## Plan conformance
-- S1–S15 are all ticked, and each matches a commit. The S15 diff matches the plan, and its deviation entry is
-  accurate.
-- The human decisions are logged: the sandbox removal, the unapproved deferral (380ac27), and the re-approvals
-  (1f5c938, 73f7add, 68bedf9).
+- S1–S15 are ticked and each maps to a commit.
+- The fix rounds (F1–F6, G1–G2, H1–H4) and every human decision are in the Deviation log. The H1–H4 entries match
+  their diffs.
 - **Inaccurate claims:**
-  - The CHANGELOG says "nothing suggests `--force` any more", but `templates/scaffold/Makefile:7` and `cli.py:360`
-    still do.
-  - The roadmap's Phase 1 lists a scope choice and an init confirmation that didn't ship.
+  - The README, the setup skill and the quick reference claim a solo setup through the skill (MEDIUM, docs).
+  - The CHANGELOG says "nothing suggests `--force`", but `init` still tells the *human* to run `sdlc init --force`
+    for owned files. Also, its "re-run with --stack" hint doesn't work on a rerun.
 
 ## Test-first evidence
-- Every step commit (S1–S15) and every fix commit (F1–F6, G1–G2) has `Red:` and `Green:` lines.
-- S12 is a logged pin with a mutation check.
-- Red on the parent, confirmed: S15 (two reviewers), plus S3, S4, S6, S8, S10, S13, S14, F2 and F3 (verifier spot
-  checks).
+- Every commit has `Red:` and `Green:` lines.
+- Red on the parent, confirmed:
+  - H1, H2, H3 and H4 (by both the verifier and the code reviewer)
+  - S15, F2–F6 and G2 (verifier)
 - **Gaps:**
-  - no test for symlinked scaffold destinations or for a missing config under the agent
-  - the suite leaks side directories into `/tmp` (a known issue)
-  - `ruff` and `shellcheck` aren't installed locally, so `make lint` skipped them. CI runs them. A manual scan found
-    no unused imports from S15.
+  - AC-8's FAIL-review case
+  - JSON that parses but isn't an object
+  - an agent rerun
+  - setup in a non-repo directory
+  - the docs' skill route versus the profile result
+  - the `/tmp` side-directory leak (a known issue)
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 36 | AC-4 partial (missing config); AC-8 partial (deferred) |
-| Security | 25 | 17 | 1 HIGH (symlinked writes), 1 MEDIUM (agent's solo config), 2 LOW |
-| Test quality & test-first | 20 | 18 | red confirmed throughout; the new routes are untested; temp leaks |
-| Plan conformance | 10 | 9 | the CHANGELOG `--force` claim; roadmap lines |
-| Maintainability | 5 | 4 | two argument parsers that can disagree; `KeyError` on an unknown stored profile |
-| **Total** | 100 | **84** | **CHANGES_REQUESTED** (a HIGH finding; AC-4 partial) |
+| Spec conformance | 40 | 38 | AC-8 partial (the FAIL-review case) |
+| Security | 25 | 20 | 1 MEDIUM (writes outside a repo), 3 LOW |
+| Test quality & test-first | 20 | 18 | red confirmed for every fix; the gaps above |
+| Plan conformance | 10 | 9 | docs claims after H2; the `--force` line |
+| Maintainability | 5 | 4 | some error paths still end in tracebacks |
+| **Total** | 100 | **89** | **CHANGES_REQUESTED** (AC-8 partial; two MEDIUMs open) |
 
-### Fixes requested
-- **HIGH:** no scaffold or setup write follows a symlink or leaves the repo, with tests.
-- **MEDIUM:** under the agent, a new `config.json` gets the scaffold (team) values; any other profile is a human
-  step. With a test.
+### Fixes requested for a PASS
+- **AC-8:** a playbook test where a FAIL `review.md` keeps the intent at state 5, in each profile.
+- **MEDIUM, docs:** say that a profile other than team is applied by the human's own terminal run. Fix the README
+  recipe, path A, the quick reference, the skill's step 1 and the agent-run human step. Add a docs test.
+- **MEDIUM, security:** setup and init refuse a root that isn't a git work tree, and `$HOME`, `~/.claude` and the
+  plugin directory. With tests.
 
-### Minor and low (the human decides: fix now or alpha.3 known issues)
+### LOW and MINOR (the human decides: fix now or alpha.3 known issues)
 - **Setup:**
-  - `--stack` accepts only `python`, `node` or `go`.
-  - An unknown stored profile gives a `✗` row instead of a `KeyError` traceback, and doctor flags it.
-  - Parse the arguments once.
+  - JSON that isn't an object gets a `✗` row instead of a traceback.
+  - An agent rerun says "nothing for the agent to write".
+  - Write errors are caught, listing what was written.
+  - Preflight's binary resolution, with `stdin=DEVNULL`.
+- **Approvals:** compare `no-touch-required` case-insensitively.
 - **Docs:**
-  - The recipe uses `<plugin>/bin/sdlc` (or `/zouj-ai-sdlc:setup solo`) and adds "commit the scaffold".
-  - The `--force` hints and the CHANGELOG claim agree.
-  - The CHANGELOG headings, the `--profile=x` known issue and the release date are fixed.
-  - The roadmap's Phase 1 lines match what shipped.
+  - The CHANGELOG `--force` wording and the `init --stack` hint.
+  - The TROUBLESHOOTING "Setup says ✗" list.
+  - The env-marker residual risk in the skill and the spec.
