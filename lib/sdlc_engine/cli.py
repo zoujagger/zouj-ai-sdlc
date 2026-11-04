@@ -472,6 +472,12 @@ def cmd_doctor(root, args):
         fix = "add `/.aiops/ @<approver>` to .github/CODEOWNERS (human-owned) and require CODEOWNER review on main"
         if cfg["profile"] == "strict":                 # strict: a CODEOWNER must review every change to .aiops/
             row(covered, msg, fix)
+        if cfg.get("approval_key_policy") == "sk":   # strict: only touch keys may be allow-listed
+            f = root / ".aiops" / "config" / "allowed-signers"
+            weak = approvals.non_touch_signers(f.read_text() if f.is_file() else "")
+            row(not weak, "allowed-signers: strict accepts only sk- keys that need a touch"
+                + (f" ({len(weak)} other: {', '.join(w.split()[0] for w in weak[:3])})" if weak else ""),
+                "replace those entries with sk- keys, without no-touch-required (human-owned, via a reviewed PR)")
         else:
             out(f"  {'✓' if covered else '!'} {msg}" + ("" if covered else f" (recommended)\n      fix: {fix}"))
     if initialized(root) and config(root).get("require_signed_approvals"):

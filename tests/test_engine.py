@@ -389,6 +389,30 @@ class Approvals(RepoCase):
         errors = approvals.audit(self.root, self.d, "spec")
         self.assertTrue(errors and "must change only" in errors[0], errors)
 
+    def test_audit_requires_a_touch_key_under_strict(self):
+        cfg = self.root / ".aiops" / "config.json"
+        self.write("intent", INTENT)
+        self.approve("intent")                                # signed by the ordinary (allow-listed) test key
+        self.assertEqual(approvals.audit(self.root, self.d, "intent"), [])        # team/any: accepted
+        # the matching that would accept a real sk- touch key: git's signer fingerprint equals the allow-listed entry's
+        sha = git(self.root, "log", "-1", "--format=%H")
+        fp = git(self.root, "-c", f"gpg.ssh.allowedSignersFile={self.signers}", "log", "-1", "--format=%GK", sha)
+        _line, _opts, ktype, key = approvals.signer_entries(self.signers.read_text())[0]
+        self.assertTrue(fp.startswith("SHA256:"), fp)
+        self.assertEqual(approvals._fingerprint(ktype, key), fp)
+        cfg.write_text('{"approval_key_policy": "sk", "profile": "strict"}')
+        errors = approvals.audit(self.root, self.d, "intent")                     # strict: CI refuses it too
+        self.assertTrue(errors and "sk-" in errors[0], errors)
+        # the allow-list itself: ordinary keys, and sk- keys that skip the touch, are flagged under strict
+        blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
+        weak = approvals.non_touch_signers(self.signers.read_text() +
+                                           f'b@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n'
+                                           f'c@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n')
+        self.assertEqual([w.split()[0] for w in weak], ["owner@example.com", "b@example.com"])
+        r = self.run_sdlc("doctor")
+        self.assertIn("✗ allowed-signers: strict accepts only sk- keys", r.stdout)
+        self.assertEqual(r.returncode, 1)
+
     def test_audit_requires_allow_listed_signer(self):
         from helpers import allowed_signer_line, signing_key
         cfg = self.root / ".aiops" / "config.json"
