@@ -61,7 +61,10 @@ first approved intent with one guided, rerunnable command, and the playbook work
   symlink nor a hard link can send it to another file, inside or outside the repo.
 - **Run by the agent, setup creates `config.json` exactly as `init` does** (team defaults); another profile is printed
   as a human step.
-- **`init` and `setup` scaffold only the top of a git repository,** never `$HOME`, `~/.claude` or a folder on PATH.
+- **`init` and `setup` scaffold only the top of a git repository,** never `$HOME`, `~/.claude` or a folder on PATH,
+  and refuse git's `GIT_DIR`/`GIT_WORK_TREE`-style variables. The pre-bash guard lets the agent run them only in its
+  session's repo. Run by the agent, `init --force` keeps every file the guard won't let the agent write (protected
+  paths, the read-only lock).
 - **Preflight never runs a tool from a PATH folder inside the repo** (an agent could plant one there), runs git by
   its absolute path, and gives the tools it runs no stdin.
 - **`no-touch-required` is matched in any letter case** in `allowed-signers`, by doctor, `approve` and the CI audit.

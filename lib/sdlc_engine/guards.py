@@ -370,13 +370,35 @@ def _git_changed(root, staged_only):
     return [ln if staged_only else ln[3:].split(" -> ")[-1] for ln in out.splitlines()]
 
 
+SCAFFOLD_RE = re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*(init|setup)\b")
+RELOCATE_RE = re.compile(r"(^|[\s;&|(])(cd|pushd|popd)(\s|$)|\bGIT_[A-Z_]+=|(^|\s)-C(\s|$)")
+
+
+def _scaffold_elsewhere(cwd, plain):
+    """The agent's `sdlc init|setup` runs only in this session's repo. The hook knows the session's project
+    (CLAUDE_PROJECT_DIR); the CLI, started from the agent's shell, doesn't. So a command that moves (cd, pushd, -C) or
+    points git elsewhere (GIT_*=) is refused, and so is one whose working directory is in another repo."""
+    session = os.environ.get("CLAUDE_PROJECT_DIR")
+    if not session or not SCAFFOLD_RE.search(plain):
+        return None
+    if RELOCATE_RE.search(plain) or project_root(cwd) != project_root(session):
+        return _block("scaffold", "`sdlc init|setup` run by the agent may scaffold only this session's repo "
+                      f"({project_root(session)}), from there, without cd, -C or GIT_* variables.",
+                      "run it from the project as a command of its own; another repo is set up by the human in "
+                      "their own terminal.")
+    return None
+
+
 def check_bash(data):
     cmd = (data.get("tool_input") or {}).get("command", "")
     cwd = data.get("cwd") or "."
+    plain = re.sub(r"[\\'\"]", "", cmd)
+    elsewhere = _scaffold_elsewhere(cwd, plain)     # before the initialized check: the other repo may not be
+    if elsewhere:
+        return elsewhere
     root = project_root(cwd)
     if not initialized(root) or not cmd.strip():
         return None
-    plain = re.sub(r"[\\'\"]", "", cmd)
     if TRAILER_RE.search(plain) or (FORMAT_TRAILER_RE.search(plain) and "Approval" in plain
                                     and re.search(r"\bgit\b", plain)):   # also printf- or variable-built
         return _block("human gate", "approval commits are created only by a human approval.",

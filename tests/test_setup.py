@@ -519,8 +519,8 @@ class Roots(SetupCase):
             git(d, "init", "-q", "-b", "main")
         return d
 
-    def refused(self, cwd, home=None, says=""):
-        env = {**self.env, "PATH": str(self.bin_with())}
+    def refused(self, cwd, home=None, says="", extra=None):
+        env = {**self.env, "PATH": str(self.bin_with()), **(extra or {})}
         if home:
             env["HOME"] = str(home)
         for args in (("init",), ("setup", "--profile", "team", "--yes"), ("setup", "--dry-run", "--profile", "team")):
@@ -549,6 +549,38 @@ class Roots(SetupCase):
         localbin.mkdir(parents=True)
         git(localbin, "init", "-q", "-b", "main")
         self.refused(localbin, home=home, says="toolchain")
+
+    def test_git_location_variables_are_refused(self):
+        """Round 6 MEDIUM: GIT_DIR / GIT_WORK_TREE would point the "top of a repo" check at another directory."""
+        target = self.side("redirected")                                          # not a repo
+        dotgit = str(self.root / ".git")
+        self.refused(target, says="GIT_DIR", extra={"GIT_DIR": dotgit})
+        self.refused(target, says="GIT_DIR", extra={"GIT_DIR": dotgit, "GIT_WORK_TREE": str(target)})
+        self.refused(self.root, says="GIT_WORK_TREE", extra={"GIT_WORK_TREE": str(target)})
+
+    def test_guard_keeps_agent_scaffolding_in_the_session_repo(self):
+        """Round 6 MEDIUM: the pre-bash guard (it knows the session's project) refuses the agent's init/setup elsewhere."""
+        import os
+        from sdlc_engine import guards
+        other = self.side("other", repo=True)                                     # another of the user's repos
+        sub = self.root / "pkg"
+        sub.mkdir()
+
+        def check(cwd, cmd):
+            with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": str(self.root)}):
+                return guards.check_bash({"tool_input": {"command": cmd}, "cwd": str(cwd)})
+        for cwd, cmd in ((other, "sdlc setup --profile team --yes"),
+                         (self.root, f"cd {other} && sdlc init"),
+                         (self.root, "pushd ../x; sdlc setup --yes"),
+                         (self.root, f"GIT_DIR={other}/.git GIT_WORK_TREE=. sdlc setup --profile team --yes"),
+                         (self.root, f"sdlc init -C {other}"),
+                         (self.root, f"/opt/plugin/bin/sdlc init --force; cd {other}; true")):
+            self.assertIsNotNone(check(cwd, cmd), (cwd, cmd))
+        for cwd, cmd in ((self.root, "sdlc setup --profile team --yes"),
+                         (sub, "/opt/plugin/bin/sdlc setup --dry-run --profile team"),
+                         (self.root, "sdlc status"),
+                         (other, "sdlc status")):
+            self.assertIsNone(check(cwd, cmd), (cwd, cmd))
 
     def test_subdirectory_of_a_repo_is_fine(self):
         sub = self.root / "pkg"

@@ -304,10 +304,18 @@ def plugin_version():
 HUMAN_OWNED_RE = re.compile(r"^(\.aiops/config(\.json$|/)|\.claude/|(\.github/|docs/)?CODEOWNERS$|\.github/workflows/)")
 
 
+GIT_LOCATION_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES")
+
+
 def scaffold_root_problem(root):
     """Why init/setup must not scaffold root, else None. Only the top of a git work tree is scaffolded (no fallback to
     the current directory), and never the home directory, ~/.claude or a toolchain path (shell startup, PATH,
-    installed plugins): files there run, or load, in every session of the human's."""
+    installed plugins): files there run, or load, in every session of the human's. git's location variables are
+    refused: they would make any directory look like the top of a repo."""
+    pointed = [v for v in GIT_LOCATION_VARS if os.environ.get(v)]
+    if pointed:
+        return (f"{', '.join(pointed)} {'is' if len(pointed) == 1 else 'are'} set, which points git at another "
+                "repository or work tree; unset it and run from the repo itself")
     top = git(root, "rev-parse", "--show-toplevel")
     if not top or Path(top).resolve() != root.resolve():
         return f"{root} is not the top of a git repository; run `git init` there first (init and setup write only inside a repo)"
