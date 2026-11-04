@@ -431,6 +431,11 @@ def human_steps(root, profile, pending, written=(), review=()):
     for rel, (_old, _new, keys) in pending.items():   # under the agent: the human applies these
         snippet = json.dumps(keys, indent=2).replace("\n", "\n       ")
         if rel == ".aiops/config.json":
+            current = config(root)["profile"]
+            if current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):   # solo < team < strict
+                steps.append(f"Downgrade requested by the agent's run ({current} to {profile}): approvals would be "
+                             f"proven by {PROOF[profile]} instead of {PROOF[current]}. Skip the next step unless you "
+                             "asked for it.")
             steps.append(f"Apply profile {profile} in your own terminal (.aiops/config.json is human-owned; setup run "
                          f"by the agent leaves it at init's defaults). Run, then confirm the diff:\n"
                          f"       {shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}\n"
@@ -445,7 +450,7 @@ def human_steps(root, profile, pending, written=(), review=()):
     files = sorted(set(written) - set(review))
     if files:                                     # exactly what setup wrote: never `git add -A`
         steps.append("Commit what setup wrote:\n       git add -- " + " ".join(shlex.quote(f) for f in files)
-                     + f' && git commit -m "chore: adopt zouj-ai-sdlc (profile {profile})"')
+                     + f' && git commit -m "chore: adopt zouj-ai-sdlc (profile {config(root)["profile"]})"')
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     print("Human steps")
     for i, step in enumerate(steps, 1):

@@ -274,6 +274,23 @@ class Owned(SetupCase):
         self.assertEqual(json.loads((self.root / ".aiops" / "config.json").read_text())["profile"], "solo",
                          human.stdout + human.stderr)
 
+    def test_agent_downgrade_is_labelled_and_the_commit_names_the_real_profile(self):
+        """Round 7 LOW/MINOR: a weaker profile the agent asked for is called a downgrade, and the suggested commit
+        message names the profile config.json actually has."""
+        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})       # fresh repo: team written
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        steps = r.stdout.split("Human steps\n", 1)[1]
+        self.assertIn("Downgrade requested by the agent's run (team to solo)", steps)
+        self.assertIn('"chore: adopt zouj-ai-sdlc (profile team)"', steps)
+        self.assertNotIn("(profile solo)", steps)
+        r = self.setup_run("--profile", "strict", "--dry-run", env={"CLAUDECODE": "1"})  # stronger: no label
+        self.assertNotIn("Downgrade", r.stdout)
+        shutil.rmtree(self.root / ".aiops")
+        human = self.setup_run("--profile", "solo", "--yes")                             # the human's own choice
+        steps = human.stdout.split("Human steps\n", 1)[1]
+        self.assertNotIn("Downgrade", steps)
+        self.assertIn('"chore: adopt zouj-ai-sdlc (profile solo)"', steps)
+
     def test_agent_hands_the_profile_to_the_human_and_reruns_cleanly(self):
         """Round 5: the agent's run names the terminal command for the profile; its rerun has nothing to write."""
         r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})
