@@ -74,6 +74,25 @@ class Init(RepoCase):
             self.assertIn(rel, r.stdout)                                          # listed for the human
         self.assertIn("pytest -q", (self.root / "Makefile").read_text())         # still wired: make check is real
 
+    def test_agent_init_force_keeps_protected_paths_when_unlocked(self):
+        """Review 0003 round 7 MEDIUM: protected paths are kept by their own rule, not only through the lock."""
+        self.assertEqual(self.run_sdlc("init", "--stack", "python").returncode, 0)
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text(json.dumps({**json.loads(cfg.read_text()), "lock_when_idle": False}) + "\n")   # code unlocked
+        extra = self.root / ".aiops" / "config" / "protected-paths"
+        extra.write_text(extra.read_text() + "Makefile the wired contract is human-owned here\n")
+        kept = {"Makefile": (self.root / "Makefile").read_text(),
+                "governance/managed-settings.example.json": '{"mine": true}\n'}
+        for rel, text in kept.items():
+            (self.root / rel).write_text(text)
+        (self.root / "CLAUDE.md").write_text("mine\n")                           # unlocked, unprotected: reset
+        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for rel, text in kept.items():
+            self.assertEqual((self.root / rel).read_text(), text, rel)
+            self.assertIn(rel, r.stdout)
+        self.assertNotEqual((self.root / "CLAUDE.md").read_text(), "mine\n")
+
     def test_scaffold_offers_the_plugin(self):
         before = json.loads((Path(__file__).resolve().parents[1] / "templates" / "scaffold" / ".claude" /
                              "settings.json").read_text())["permissions"]["deny"]

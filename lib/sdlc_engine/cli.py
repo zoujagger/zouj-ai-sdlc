@@ -14,8 +14,8 @@ from pathlib import Path
 
 from . import approvals, guards
 from . import artifacts as A
-from .machine import (KINDS, PLUGIN_ROOT, SCHEMAS, active_dir, config, evaluate, find_dir, git, initialized,
-                      intent_dirs, project_root)
+from .machine import (KINDS, PLUGIN_ROOT, SCHEMAS, active_dir, config, evaluate, find_dir, git, glob_hit, globs,
+                      initialized, intent_dirs, project_root)
 from .schema import validate
 
 TEMPLATES = PLUGIN_ROOT / "templates"
@@ -369,8 +369,13 @@ def write_file(root, rel, data, mode=0o644):
 
 
 def _agent_blocked(root, rel):
-    """True if the guard would block the agent's own Write of root/rel (protected paths, default or the repo's, and the
-    read-only lock): `init --force` run by the agent may not reset more than the agent could write itself."""
+    """True if the guards would block the agent's own Write of root/rel: `init --force` run by the agent may not reset
+    more than the agent could write itself. That is two hooks' rules: check_edit (engine paths, artifacts, the
+    read-only lock) and guard-files.sh (protected-paths, default and the repo's, and secret-paths)."""
+    if glob_hit(rel, globs(root, "protected-paths")):
+        return True
+    if not guards._secret_template(rel) and glob_hit(rel, globs(root, "secret-paths")):
+        return True
     return guards.check_edit({"tool_name": "Write", "cwd": str(root),
                               "tool_input": {"file_path": str(root / rel), "content": ""}}) is not None
 
