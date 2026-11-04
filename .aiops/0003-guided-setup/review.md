@@ -1,138 +1,144 @@
 ---
 id: 0003
-verdict: CHANGES_REQUESTED
-commit: 29d9527b34cd887d778afeb756c5513093c5e445
-score: 89/100
+verdict: PASS
+commit: a61904182a8ef3da91b8c73729092217ed7614ec
+score: 90/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-04
 ---
 
-# Review: Guided setup and first-run onboarding (roadmap phase 1), round 5
+# Review: Guided setup and first-run onboarding (roadmap phase 1), round 6
 
-<!-- State 5 PRE-REVIEW, round 5 (after H1–H4). Compiled only from the three fresh-context persona reports (base main
-     @ 429614a, head 29d9527). Rounds 1 (76), 2 (80), 3 (78) and 4 (84) are in git history. The human decides what
-     happens next. -->
+<!-- State 5 PRE-REVIEW, round 6 (after J1–J6). Compiled only from the three fresh-context persona reports (base main
+     @ 429614a, head a619041). Rounds 1–5 (76, 80, 78, 84, 89) are in git history. The human decides what happens
+     next. -->
 
 ## Summary
-No reviewer found a BLOCKER, CRITICAL or HIGH finding.
-- **Verifier:** VERIFIED. All 15 ACs have passing tests, and the H1–H4 proof tests are red on their parents.
-- **Code reviewer:** no BLOCKER or HIGH, 1 MEDIUM. It asks for that MEDIUM to be fixed before a PASS.
-- **Security reviewer:** PASS, 20/25, 1 MEDIUM and 3 LOW.
-- **Round-4 fixes:** all hold.
-  - H1: links are refused, a link swapped in mid-write fails, and a hard link is replaced (exploit attempts by two
-    reviewers).
-  - H2: under the agent, a new config gets init's defaults.
-  - H3: one argument parser.
-  - H4: the docs.
-- **Checks:** `make check` (148 tests), `make build` and `claude plugin validate .` pass. The 2 validator warnings
-  are unrelated: a root CLAUDE.md that isn't loaded, and no icon.
+Every AC is met, and no reviewer found a BLOCKER, CRITICAL or HIGH. The score is 90.
+- **Verifier:** VERIFIED. 15/15 ACs. The J2–J6 proof tests are red on their parents, and J1's mutation check
+  catches a broken engine.
+- **Code reviewer:** no BLOCKER, HIGH or MAJOR; 2 LOW and 3 MINOR. All ACs ✅; AC-8 is no longer partial.
+- **Security reviewer:** PASS, 19/25; 2 MEDIUM and 1 LOW.
+- **Checks:** `make check` (158 tests), `make build` and `claude plugin validate .` pass, and so does
+  `sdlc validate 0003`. The 2 validator warnings are unrelated: a root CLAUDE.md that isn't loaded, and no icon.
 
-Verdict: **CHANGES_REQUESTED, 89/100.** The score clears 80 and there is no HIGH. But the verdict rule needs every
-AC ✅, and AC-8 is still partial. The partial is the deferred FAIL-review case: no test shows that a FAIL review keeps
-the intent at state 5. Two MEDIUMs are also open:
-- **[MEDIUM, docs]** Since H2, setup run through the skill (`/zouj-ai-sdlc:setup solo`) creates a **team** config, and
-  solo is only a human step. The README's "Just looking?" alternative, install path A and the quick reference still
-  promise the skill route. A trial user would hit signing.
-- **[MEDIUM, security]** setup and init scaffold any directory, including one that isn't a git repo:
-  `machine.project_root` falls back to the current directory. So `cd ~ && sdlc setup --profile team --yes` under the
-  agent creates `~/.claude/settings.json`, which is a toolchain path "never written by agents". From `~/.claude` it
-  creates `~/.claude/CLAUDE.md`, which loads in every session.
-  - The content is the fixed scaffold, and no existing file is overwritten.
-  - This was already the case for `init` on main.
-  - It contradicts the spec's "setup only ever writes in the repo it runs in".
+Verdict: **PASS, 90/100.** These findings stay open for the human's merge decision:
+- **[MEDIUM] Agent `init --force` resets protected paths the guard won't let it write.**
+  - Under the agent, `--force` keeps only the hard-coded human-owned list (`HUMAN_OWNED_RE`). It ignores the default
+    and repo `protected-paths` (`governance/*`, a repo-protected `Makefile`) and the read-only lock.
+  - The reviewer reset a wired, protected Makefile to the stub recipes, after which `make check` passed trivially.
+  - The content is the fixed scaffold, and the reset shows in the PR diff.
+- **[MEDIUM] The J3 root check can be redirected.**
+  - `GIT_DIR`/`GIT_WORK_TREE`, `git init <ancestor>`, or a `cd` into another of the user's repos lets the agent
+    scaffold another directory or repo: its `.claude/settings.json`, or a parent `CLAUDE.md` that loads in every child
+    project. The guard blocks a direct write to those files.
+  - `$HOME`, `~/.claude` and toolchain paths stay refused, and the content is the fixed scaffold.
+  - The code reviewer rated the same route LOW.
+- **Open question on `strict`, not verified here.** The security reviewer saw OpenSSH 10.2 reject `no-touch-required`
+  in `allowed_signers` as an unknown option (it is an `authorized_keys` option). If so, that option never appears in
+  a valid signers file. Strict's "a touch per signature" then rests on whether `ssh-keygen -Y verify` checks the
+  user-presence flag of `sk-` signatures, which needs a FIDO device to test.
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
 |---|---|---|
-| AC-1 | ✅ met | `tests/test_setup.py:109`; checked by hand under a pty (1.23 s) |
-| AC-2 | ✅ met | `tests/test_setup.py:185` (status reads "No intents yet") |
-| AC-3 | ✅ met | `tests/test_setup.py:213` (human rerun; an agent rerun isn't idempotent, LOW below) |
-| AC-4 | ✅ met | `tests/test_setup.py:239`, `:252` (missing config, initialized and fresh) |
-| AC-5 | ✅ met | `tests/test_setup.py:327`, `:272` |
-| AC-6 | ✅ met | `tests/test_setup.py:123` |
-| AC-7 | ✅ met | `tests/test_engine.py:513`, `:392`; `tests/test_playbook.py:83-86` |
-| AC-8 | ⚠️ partial | `tests/test_playbook.py:77-130` covers the PASS walk; no test that a FAIL review stays at state 5 (verifier: met; code reviewer: partial) |
-| AC-9 | ✅ met | `tests/test_cli.py` `Init::test_scaffold_offers_the_plugin` |
-| AC-10 | ✅ met | `tests/test_setup.py:422`, `:434` |
-| AC-11 | ✅ met | `tests/test_setup.py:75` |
-| AC-12 | ✅ met | `tests/test_shell_hooks.py` `test_onboarding_docs`, `test_setup_skill_follows_the_playbook` |
-| AC-13 | ✅ met | `tests/test_setup.py:448` |
-| AC-14 | ✅ met | `test_version_matches_changelog`; `make build` |
-| AC-15 | ✅ met | `tests/test_cli.py` `Lifecycle::test_strict_requires_codeowners`; `tests/test_setup.py:202` |
+| AC-1 | ✅ met | `tests/test_setup.py:110`, `:20`; own runs (0.35–1.2 s) |
+| AC-2 | ✅ met | `tests/test_setup.py:186`; the README recipe run end to end ("No intents yet"; read-only proven through the pre-edit hook) |
+| AC-3 | ✅ met | `tests/test_setup.py:214` |
+| AC-4 | ✅ met | `tests/test_setup.py:240`, `:253`, `:273`; hashes unchanged under the agent |
+| AC-5 | ✅ met | `tests/test_setup.py:362`, `:288` (values compared as parsed JSON, the plan's interpretation) |
+| AC-6 | ✅ met | `tests/test_setup.py:124` |
+| AC-7 | ✅ met | `tests/test_engine.py:530`, `:513` (any letter case), `:392` (CI audit and doctor ✗) |
+| AC-8 | ✅ met | `tests/test_playbook.py:115-141`: a CHANGES_REQUESTED review stays at state 5 on the branch and on main, in each profile; only PASS reaches 6 |
+| AC-9 | ✅ met | `tests/test_cli.py:59` |
+| AC-10 | ✅ met | `tests/test_setup.py:564`, `:576` |
+| AC-11 | ✅ met | `tests/test_setup.py:76`, `:492` (tools planted in the repo aren't run) |
+| AC-12 | ✅ met | `tests/test_shell_hooks.py:304`, `:255` |
+| AC-13 | ✅ met | `tests/test_setup.py:590` |
+| AC-14 | ✅ met | `tests/test_shell_hooks.py:336`; `make build` |
+| AC-15 | ✅ met | `tests/test_cli.py:153`, `tests/test_setup.py:209` (solo `!` checked by hand, not in a test) |
 
 ## Security
-- **[MEDIUM] setup and init write outside any repo** (`machine.py:47-51`, `setup.py:252`, `:324-336`).
-  - Fix: refuse when `git rev-parse --show-toplevel` fails, when the root is `$HOME`, `~/.claude` or the plugin, or
-    when any target matches the toolchain paths. Add tests for each.
-- **[LOW] Preflight runs `git`/`gh`/`claude` from PATH** (`setup.py:23-33`). An agent-planted `.venv/bin/gh` runs when
-  the human runs setup, with the human's terminal on stdin.
-  - Fix: use `machine.GIT`; skip PATH directories inside the repo for `gh`/`claude`; use `stdin=DEVNULL`.
-- **[LOW] Interpreter env-stripping.** It lets the agent run setup as a "human" and change the working-tree config.
-  This residual risk is already documented (`docs/architecture.md:38`, `:51`), and CI reads the base ref.
-  - Fix: state it in the skill and the spec.
-- **[LOW] Case-sensitive `no-touch-required`** in the `"sk"` audit (approvals.py). OpenSSH may match the option
-  case-insensitively; the reviewer didn't confirm this.
-  - Fix: lowercase the option names before comparing.
-  - Note: `allowed-signers` is human-owned, read from the base ref, and under CODEOWNERS.
+- **[MEDIUM] Agent `init --force` vs protected paths** (`lib/sdlc_engine/cli.py:304` `HUMAN_OWNED_RE`,
+  `init_actions`).
+  - Fix: under the agent, keep any existing scaffold file that matches the default or repo `protected-paths`, or that
+    the lock forbids. Or refuse `init --force` under the agent and print the command for the human. Add tests for
+    `governance/` and for a repo-protected path.
+- **[MEDIUM] Root redirection** (`cli.py:307` `scaffold_root_problem`, `machine.project_root`, `machine.git`).
+  - Fix: run the root lookup with `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE` and
+    `GIT_CEILING_DIRECTORIES` removed, and refuse when they are set.
+  - Under the agent, require the root to equal the session's project (`CLAUDE_PROJECT_DIR`'s top level).
+  - Name what remains in the threat model.
+- **[LOW] Quoted option values fool doctor's strict allow-list check** (`approvals.py:365` `signer_entries`).
+  - Example: `namespaces="git, sk-ssh-ed25519@openssh.com <blob> x" ssh-ed25519 <key>` is accepted by OpenSSH,
+    yet doctor shows strict ✓.
+  - CI fails safe: there is no fingerprint match, so the signer is refused.
+  - Fix: parse options with OpenSSH quoting, and treat unparseable lines as non-touch.
+- **Residual, documented:** an interpreter that strips the env markers runs setup "as the human" locally. CI reads
+  the base ref (`skills/setup/SKILL.md`, `docs/architecture.md`).
 
 Spec flags:
 
 | Flag | Mitigated? |
 |---|---|
 | Solo approvals are unsigned | **yes**, stated |
-| Setup writing `.claude/settings.json` | **yes in the repo; no for `$HOME`** (MEDIUM) |
-| Profile changes through setup | **yes**, within the documented env-marker residual risk |
-| `gh auth status` / `claude --version` | **yes** (binary resolution: LOW) |
-| No sandbox; setup writes only in its repo | **partially**: a non-repo directory becomes the root (MEDIUM) |
+| Setup writing `.claude/settings.json` | **yes in the repo** (only the pinned marketplace keys; untouched under the agent); **not in another repo** reached by the root redirection (MEDIUM) |
+| Profile changes through setup | **yes**, within the documented env-marker residual |
+| `gh auth status` / `claude --version` | **yes** (in-repo PATH skipped, stdin closed) |
+| No sandbox; setup writes only in its repo | **partially**: symlinks, `$HOME`, `~/.claude` and toolchain roots are refused, but the root can be redirected, and agent `--force` resets protected paths (MEDIUMs) |
 | `sdlc feedback` | **yes** |
 
 ## Plan conformance
 - S1–S15 are ticked and each maps to a commit.
-- The fix rounds (F1–F6, G1–G2, H1–H4) and every human decision are in the Deviation log. The H1–H4 entries match
-  their diffs.
-- **Inaccurate claims:**
-  - The README, the setup skill and the quick reference claim a solo setup through the skill (MEDIUM, docs).
-  - The CHANGELOG says "nothing suggests `--force`", but `init` still tells the *human* to run `sdlc init --force`
-    for owned files. Also, its "re-run with --stack" hint doesn't work on a rerun.
+- The fix rounds (F1–F6, G1–G2, H1–H4, J1–J6) and every human decision are in the Deviation log. J1–J6 were checked
+  against their diffs.
+- **Partly overstated:**
+  - J3 says it "closes the fallback to the current directory", but `GIT_DIR` reopens it.
+  - J4 says "write errors are reported", but a non-UTF-8 `.gitignore` still ends in a traceback.
+- **Docs:**
+  - A stale CHANGELOG known issue (the FAIL-review test exists now).
+  - The "PATH" known issue predates J4.
+  - TROUBLESHOOTING's "(and `init`)" covers more stop reasons than `init` checks.
 
 ## Test-first evidence
-- Every commit has `Red:` and `Green:` lines.
-- Red on the parent, confirmed:
-  - H1, H2, H3 and H4 (by both the verifier and the code reviewer)
-  - S15, F2–F6 and G2 (verifier)
+- Every J commit has `Red:` and `Green:` lines. Both reviewers ran each fix's proof tests on its parent:
+  - J2: 2 failures
+  - J3: 3 of 4 (the subdirectory test is a regression guard)
+  - J4: 7 failures and 1 error
+  - J5: 2 failures
+  - J6: 2 failures
+- J1 is a logged pin; its mutation check fails all three profiles (`6 != 5`).
 - **Gaps:**
-  - AC-8's FAIL-review case
-  - JSON that parses but isn't an object
-  - an agent rerun
-  - setup in a non-repo directory
-  - the docs' skill route versus the profile result
-  - the `/tmp` side-directory leak (a known issue)
+  - a `GIT_DIR`-redirected root
+  - a non-UTF-8 `.gitignore`
+  - the human-step wording when a config already existed
+  - AC-15's solo `!` row
+  - the playbook test drives `approvals.approve`, not the prompt hook
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 38 | AC-8 partial (the FAIL-review case) |
-| Security | 25 | 20 | 1 MEDIUM (writes outside a repo), 3 LOW |
-| Test quality & test-first | 20 | 18 | red confirmed for every fix; the gaps above |
-| Plan conformance | 10 | 9 | docs claims after H2; the `--force` line |
-| Maintainability | 5 | 4 | some error paths still end in tracebacks |
-| **Total** | 100 | **89** | **CHANGES_REQUESTED** (AC-8 partial; two MEDIUMs open) |
+| Spec conformance | 40 | 39 | all ACs met; the "writes only in its repo" flag is still bypassable |
+| Security | 25 | 19 | 2 MEDIUM, 1 LOW; no CRITICAL or HIGH |
+| Test quality & test-first | 20 | 19 | red on the parent confirmed for J2–J6; J1's mutation check; the gaps above |
+| Plan conformance | 10 | 9 | J3/J4 claims slightly overstated; stale docs lines |
+| Maintainability | 5 | 4 | `setup.main` is long; one decode error still ends in a traceback |
+| **Total** | 100 | **90** | **PASS** |
 
-### Fixes requested for a PASS
-- **AC-8:** a playbook test where a FAIL `review.md` keeps the intent at state 5, in each profile.
-- **MEDIUM, docs:** say that a profile other than team is applied by the human's own terminal run. Fix the README
-  recipe, path A, the quick reference, the skill's step 1 and the agent-run human step. Add a docs test.
-- **MEDIUM, security:** setup and init refuse a root that isn't a git work tree, and `$HOME`, `~/.claude` and the
-  plugin directory. With tests.
-
-### LOW and MINOR (the human decides: fix now or alpha.3 known issues)
-- **Setup:**
-  - JSON that isn't an object gets a `✗` row instead of a traceback.
-  - An agent rerun says "nothing for the agent to write".
-  - Write errors are caught, listing what was written.
-  - Preflight's binary resolution, with `stdin=DEVNULL`.
-- **Approvals:** compare `no-touch-required` case-insensitively.
-- **Docs:**
-  - The CHANGELOG `--force` wording and the `init --stack` hint.
-  - The TROUBLESHOOTING "Setup says ✗" list.
-  - The env-marker residual risk in the skill and the spec.
+### Open for the human (fix before merge, or alpha.3 known issues)
+- **MEDIUM:**
+  - agent `init --force` vs protected paths and the lock
+  - the root redirection
+- **The `strict` open question:** does `ssh-keygen -Y verify` enforce the touch, given that `no-touch-required`
+  isn't valid in `allowed_signers`?
+- **LOW:**
+  - doctor's quoted-option parse
+  - a non-UTF-8 `.gitignore` traceback
+  - strict's signing help suggests a passphrase key (doctor, `approve`)
+- **MINOR:**
+  - the human-step wording when a config already existed
+  - the stale and outdated CHANGELOG known issues
+  - TROUBLESHOOTING's "(and `init`)"
+- **Already listed as known issues:**
+  - an agent run prints the current profile's signing steps
+  - "Already set up" prints no Doctor section
