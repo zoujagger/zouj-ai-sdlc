@@ -335,8 +335,8 @@ class SandboxRace(SetupCase):
         git(self.root, "add", "-A")
         git(self.root, "commit", "-q", "--allow-empty", "-m", "base")
         head, before = git(self.root, "rev-parse", "HEAD"), self.snapshot()
-        box = self.root.parent / f"{self.root.name}.racebox"
-        box.mkdir()                                                              # an empty target is allowed
+        box = self.root.parent / f"{self.root.name}.raceparent" / "racebox"     # a private parent, not /tmp itself
+        box.mkdir(parents=True)                                                  # an empty target is allowed
         real = shutil.copytree
 
         def swap_then_copy(*args, **kw):                                         # the first write into the build
@@ -359,6 +359,54 @@ class SandboxRace(SetupCase):
         plain.mkdir()
         self.assertEqual(setup.sandbox(plain, str(plain / "try")), 0)
         self.assertEqual(git(plain / "try", "branch", "--show-current"), "main")
+
+
+class SandboxRaceDeeper(SetupCase):
+    """Round 2: the agent swaps the build directory itself, or its parent, right after `git init`."""
+
+    def run_with_swap(self, swap):
+        from sdlc_engine import setup
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", "base")
+        head, before = git(self.root, "rev-parse", "HEAD"), self.snapshot()
+        parent = self.root.parent / f"{self.root.name}.p"
+        parent.mkdir()
+        box = parent / "box"
+        real, done = shutil.copytree, []
+
+        def copy(*args, **kw):                                                   # the first write after git init
+            if not done:
+                done.append(True)
+                swap(parent)
+            return real(*args, **kw)
+        cwd = Path.cwd()
+        with mock.patch.object(setup.shutil, "copytree", copy):
+            code = setup.sandbox(self.root, str(box))
+        self.assertEqual(Path.cwd(), cwd)                                        # the working directory is restored
+        self.assertEqual(self.snapshot(), before)                                # nothing written into the real repo
+        self.assertEqual(git(self.root, "rev-parse", "HEAD"), head)              # and nothing committed there
+        return code
+
+    def test_build_dir_swapped_for_a_symlink(self):
+        import os
+
+        def swap(parent):
+            build = next(p for p in parent.iterdir() if p.name.startswith(".sdlc-sandbox-"))
+            os.rename(build, parent / "moved-away")
+            os.symlink(self.root, build)                                         # the build name now points at the repo
+        self.assertEqual(self.run_with_swap(swap), 1)                            # detected, refused
+
+    def test_parent_swapped_for_a_symlink(self):
+        import os
+
+        def swap(parent):
+            build = next(p for p in parent.iterdir() if p.name.startswith(".sdlc-sandbox-"))
+            decoy = parent.parent / f"{parent.name}.decoy"
+            decoy.mkdir()
+            os.symlink(self.root, decoy / build.name)                            # same build name, into the repo
+            os.rename(parent, parent.parent / f"{parent.name}.moved")
+            os.symlink(decoy, parent)                                            # the parent path now leads there
+        self.run_with_swap(swap)
 
 
 class Feedback(RepoCase):

@@ -9,10 +9,10 @@ import difflib
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from . import approvals, cli
@@ -238,10 +238,11 @@ def _in_git_work_tree(path):
 def sandbox(root, target):
     """A throwaway, committed repo with the solo scaffold and a Draft sample intent, outside the calling repo.
 
-    Race-free: everything is built in a fresh private directory (mkdtemp: 0700, unpredictable name) next to the
-    target, then moved into place with one os.rename. rename never follows a symlink: if the target was swapped
-    for one meanwhile, it fails, and nothing was written through it. The commit adds an explicit file list after
-    checking that git's toplevel is the build directory."""
+    Race-free against a same-user agent that renames or swaps paths while it runs: the parent directory is opened
+    once (O_NOFOLLOW) and the build directory is created and entered through that handle. Every write and git call
+    is then relative to the pinned working directory, so no path is resolved again. git's toplevel is checked by
+    inode, and the final rename goes through the parent's handle, after checking the build name still is the same
+    directory. A swapped build directory or parent makes it fail or land at the original place, never elsewhere."""
     raw = Path(target).expanduser()
     if raw.is_symlink():
         print(f"refusing {raw}: it is a symlink; give a plain path for the sandbox.", file=sys.stderr)
@@ -255,17 +256,38 @@ def sandbox(root, target):
         print(f"refusing {box}: it exists and is not empty; nothing was written.", file=sys.stderr)
         return 1
     box.parent.mkdir(parents=True, exist_ok=True)
-    build = Path(tempfile.mkdtemp(prefix=".sdlc-sandbox-", dir=box.parent))
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    home = os.open(".", os.O_RDONLY | os.O_DIRECTORY)
+    pfd = os.open(box.parent, flags)
+    name, bfd = f".sdlc-sandbox-{secrets.token_hex(8)}", None
     try:
-        _build_sandbox(build)
-        if box.exists() and not box.is_symlink():
-            os.rmdir(box)                                  # an empty directory; fails if anything appeared in it
-        os.rename(build, box)                              # never follows a symlink planted at the target
+        os.mkdir(name, 0o700, dir_fd=pfd)
+        bfd = os.open(name, flags, dir_fd=pfd)
+        os.fchdir(bfd)                                     # from here on: the pinned directory, by inode
+        _build_sandbox(os.fstat(bfd))
+        if not _same(os.stat(name, dir_fd=pfd, follow_symlinks=False), os.fstat(bfd)):
+            raise OSError("the build directory was renamed or replaced while it was being built")
+        try:
+            os.rmdir(box.name, dir_fd=pfd)                 # an empty target directory; a symlink isn't removed
+        except FileNotFoundError:
+            pass
+        os.rename(name, box.name, src_dir_fd=pfd, dst_dir_fd=pfd)   # never follows a symlink at either name
     except (OSError, subprocess.CalledProcessError) as exc:
-        shutil.rmtree(build, ignore_errors=True)
-        print(f"sandbox not created ({exc}); nothing was written outside a temporary directory, which was removed.",
+        if bfd is not None:
+            _empty_pinned(bfd)
+            try:                                           # remove the emptied build directory if the name is still it
+                if _same(os.stat(name, dir_fd=pfd, follow_symlinks=False), os.fstat(bfd)):
+                    os.rmdir(name, dir_fd=pfd)
+            except OSError:
+                pass
+        print(f"sandbox not created ({exc}); nothing was written outside its own temporary directory.",
               file=sys.stderr)
         return 1
+    finally:
+        os.fchdir(home)
+        for fd in (home, pfd, bfd):
+            if fd is not None:
+                os.close(fd)
     print(f"""Sandbox ready: {box}
   A committed repo on main with the solo scaffold, a tiny app (src/greet.py) and a Draft sample intent 0001.
   Walk the playbook there:
@@ -277,26 +299,44 @@ def sandbox(root, target):
     return 0
 
 
-def _build_sandbox(build):
-    run = lambda *a: subprocess.run([approvals.GIT, *a], cwd=build, capture_output=True, text=True, check=True)  # noqa: E731
+def _same(a, b):
+    return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
+
+
+def _empty_pinned(bfd):
+    """Best-effort cleanup of a failed build, through its handle (never through a path that might now point elsewhere)."""
+    try:
+        os.fchdir(bfd)
+        for entry in os.listdir("."):
+            if os.path.isdir(entry) and not os.path.islink(entry):
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                os.unlink(entry)
+    except OSError:
+        pass
+
+
+def _build_sandbox(pinned):
+    """Build in the current working directory (the pinned build directory), with relative paths only."""
+    here = Path(".")
+    run = lambda *a: subprocess.run([approvals.GIT, *a], capture_output=True, text=True, check=True)  # noqa: E731
     run("init", "-q", "-b", "main")
-    shutil.copytree(SANDBOX / "files", build, dirs_exist_ok=True)
-    cli.apply_init(build, cli.init_actions(build))
-    cfg = build / ".aiops" / "config.json"
+    shutil.copytree(SANDBOX / "files", here, dirs_exist_ok=True)
+    cli.apply_init(here, cli.init_actions(here))
+    cfg = here / ".aiops" / "config.json"
     cfg.write_text(json.dumps({**(_json(cfg) or {}), **PROFILE_CONFIG["solo"]}, indent=2) + "\n")
-    cli._wire_stack(build / "Makefile", "sandbox", SANDBOX / "sandbox.recipes")
-    intent = build / ".aiops" / "0001-greet-in-languages"
+    cli._wire_stack(here / "Makefile", "sandbox", SANDBOX / "sandbox.recipes")
+    intent = here / ".aiops" / "0001-greet-in-languages"
     intent.mkdir()
     (intent / "intent.md").write_text((SANDBOX / "intent-0001.md").read_text()
                                       .replace("__DATE__", datetime.date.today().isoformat()))
-    (build / ".aiops" / "state" / "active").write_text("0001\n")
+    (here / ".aiops" / "state" / "active").write_text("0001\n")
     top = run("rev-parse", "--show-toplevel").stdout.strip()
-    if Path(top).resolve() != build.resolve():
-        raise OSError(f"git toplevel is {top}, not the sandbox build directory")
-    files = sorted(str(f.relative_to(build)) for f in build.rglob("*")
-                   if f.is_file() and not f.is_symlink() and f.relative_to(build).parts[0] != ".git"
-                   and f.relative_to(build).parts[:2] != (".aiops", "state"))
-    who = [] if subprocess.run([approvals.GIT, "config", "user.email"], cwd=build, capture_output=True).returncode == 0 \
+    if not (_same(os.stat(top), pinned) and _same(os.stat("."), pinned)):
+        raise OSError(f"git's toplevel {top} isn't the pinned sandbox build directory")
+    files = sorted(str(f) for f in here.rglob("*")
+                   if f.is_file() and not f.is_symlink() and f.parts[0] != ".git" and f.parts[:2] != (".aiops", "state"))
+    who = [] if subprocess.run([approvals.GIT, "config", "user.email"], capture_output=True).returncode == 0 \
         else ["-c", "user.name=zouj-ai-sdlc sandbox", "-c", "user.email=sandbox@localhost"]
     run("add", "--", *files)
     run(*who, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "chore: zouj-ai-sdlc sandbox (solo profile)")
