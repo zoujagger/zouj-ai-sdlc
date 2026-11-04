@@ -7,9 +7,9 @@ initiator: zoujagger
 source: docs/roadmap.md (Phase 1, approved 2026-11-03); comparison with github.com/affaan-m/ECC's install experience
 created: 2026-11-03
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-03T20:12:07Z
+approved-at: 2026-11-04T12:41:24Z
 approved-via: cli
-approved-sha256: 9c6f43fc25e7c50519743fcf3a5a5f7989a7b7568d3b71c54f9c4a2ad9b812ed
+approved-sha256: 7ab715aa0c03fedbef384ee7c154df8558501687ccc42e3b23952c3cf96906fd
 ---
 
 # Intent: Guided setup and first-run onboarding (roadmap phase 1)
