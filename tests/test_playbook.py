@@ -112,6 +112,18 @@ class Playbook(SetupCase):
         self.assertEqual(state(), 5)
         git(d, "add", "-A")
         git(d, "commit", "-qm", "feat: csv export")
+        # a failing review keeps it at state 5, even once that review reaches main
+        (intent / "review.md").write_text(REVIEW.format(id="0001", verdict="CHANGES_REQUESTED",
+                                                        commit=git(d, "rev-parse", "HEAD")))
+        git(d, "add", "-A")
+        git(d, "commit", "-qm", "docs(aiops): review 0001 (changes requested)")
+        self.assertEqual(state(), 5)
+        base = git(d, "rev-parse", "main")
+        git(d, "switch", "-q", "main")
+        git(d, "merge", "-q", "--no-ff", "-m", "merge", "feat/0001-csv-export")
+        self.assertEqual(state(), 5, profile)                            # FAIL on main is not DONE
+        git(d, "reset", "-q", "--hard", base)                            # undo that merge (test only)
+        git(d, "switch", "-q", "feat/0001-csv-export")
         (intent / "review.md").write_text(REVIEW.format(id="0001", verdict="PASS", commit=git(d, "rev-parse", "HEAD")))
         git(d, "add", "-A")
         git(d, "commit", "-qm", "docs(aiops): review 0001")
