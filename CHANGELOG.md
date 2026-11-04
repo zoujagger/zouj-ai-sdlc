@@ -43,6 +43,39 @@ first approved intent with one guided, rerunnable command, and the playbook work
   written.
 - CODEOWNERS placeholders (`@your-org/...`) no longer count as owners.
 
+### Security (review round 1 of this release)
+- **The sandbox build can't be redirected.** `sdlc setup --sandbox` builds in a private temporary directory, checks
+  git's toplevel, commits an explicit file list and moves the result into place with one rename. A target swapped for
+  a symlink mid-build makes it fail instead of writing into another repo.
+- **`sdlc init --force` run by the agent keeps human-owned files:** `.aiops/config.json`, `.aiops/config/`,
+  `.claude/`, CODEOWNERS and `.github/workflows/`. It lists them for the human, and nothing suggests `--force` any more.
+- **`strict` is enforced in CI.** Under `approval_key_policy: "sk"`, the audit requires each approval to be signed by an
+  allow-listed `sk-` key without `no-touch-required`, and doctor flags any other allowed signer.
+- **The marketplace snippet and install commands are pinned** to the release tag (`ref`, `owner/repo@ref`). README and
+  SECURITY.md state what enabling the plugin trusts. Setup compares the snippet's values, so an older ref or a fork
+  shows as `!` and is proposed as a change.
+- **Setup shows the diffs before you confirm,** dry run included. An invalid-JSON `config.json` or `settings.json`
+  stops setup with `✗` instead of being skipped.
+
+### Known issues (planned for 0.2.0-alpha.3)
+- **After setup:** a default setup (no `--stack`) ends with doctor's "Makefile contract wired" ✗, and rerunning setup
+  with `--stack` can't add the stack once everything else is in place. Wire the recipes by hand for now.
+- **Argument parsing:** `--profile=x` isn't recognised, `--sandbox --yes` reads `--yes` as the directory, `--stack` is
+  ignored with `--sandbox` and isn't checked in `--dry-run`, unknown flags are ignored, Ctrl-D at the profile question
+  shows a traceback, and `--yes` on a terminal without `--profile` still asks.
+- **Output:**
+  - The plan doesn't list `.gitignore`.
+  - The "Already set up" path prints no Doctor section.
+  - Doctor's profile row can disagree with the actual keys.
+  - Under the agent, a requested profile change prints the signing steps of the *current* profile.
+- **Tools and paths:** preflight finds `gh` and `claude` through PATH. `sdlc feedback` reduces only the repo and home
+  paths.
+- **Docs and tests:**
+  - TROUBLESHOOTING says "human gate" where merge blocks say "final gate".
+  - The README's engine and configuration lists miss `setup`, `feedback` and `profile`.
+  - The playbook test doesn't cover a FAIL review staying at state 5.
+  - The `"sk"` doctor case is covered only through `signing_problem`.
+
 ### Upgrading from 0.2.0-alpha.1
 Nothing changes until you run `sdlc setup`. A config without `profile` reads as `team`. To record your profile, run
 `sdlc setup --profile solo|team|strict` in your own terminal and confirm the diff.

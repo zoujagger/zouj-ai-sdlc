@@ -4,7 +4,8 @@
     "zouj": {
       "source": {
         "source": "github",
-        "repo": "zoujagger/zouj-ai-sdlc"
+        "repo": "zoujagger/zouj-ai-sdlc",
+        "ref": "__ZOUJ_SDLC_REF__"
       }
     }
   },

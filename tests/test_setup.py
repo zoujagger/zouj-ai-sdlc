@@ -160,7 +160,7 @@ class Apply(SetupCase):
                 self.assertIn("pytest -q", (d / "Makefile").read_text())
                 self.assertIn(".aiops/state/", (d / ".gitignore").read_text())
                 steps = r.stdout.split("Human steps\n", 1)[1].split("\nDoctor\n", 1)[0]
-                self.assertIn("/plugin marketplace add zoujagger/zouj-ai-sdlc", steps)
+                self.assertIn(f"/plugin marketplace add zoujagger/zouj-ai-sdlc@v{cli.plugin_version()}", steps)
                 self.assertIn("/plugin install zouj-ai-sdlc@zouj", steps)
                 self.assertEqual("git config --global user.signingkey" in steps, profile != "solo")
                 self.assertEqual("ed25519-sk" in steps, profile == "strict")
@@ -242,6 +242,17 @@ class Owned(SetupCase):
         self.assertIn("--- a/.claude/settings.json", seen["text"])
         self.assertEqual((cfg.read_bytes(), settings.read_bytes()), before)
 
+    def test_stale_or_foreign_marketplace_is_proposed(self):
+        from sdlc_engine import setup
+        cfg, settings = self.alpha1_repo()
+        for source in ({"source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0-alpha.1"},   # older
+                       {"source": "github", "repo": "someone/zouj-ai-sdlc-fork"}):                     # a fork
+            with self.subTest(source=source):
+                settings.write_text(json.dumps({**self.CUSTOM, "extraKnownMarketplaces": {"zouj": {"source": source}},
+                                                "enabledPlugins": {"zouj-ai-sdlc@zouj": True}}))
+                self.assertIn(".claude/settings.json", setup.owned_changes(self.root, "team"))
+                self.assertTrue(any(st == "!" for st, _, _ in setup.inventory(self.root)))
+
     def test_invalid_json_is_refused(self):
         self.assertEqual(self.run_sdlc("init").returncode, 0)
         for rel in (".aiops/config.json", ".claude/settings.json"):
@@ -264,7 +275,7 @@ class Owned(SetupCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         merged = json.loads(settings.read_text())
         self.assertEqual(merged["extraKnownMarketplaces"]["zouj"]["source"],
-                         {"source": "github", "repo": "zoujagger/zouj-ai-sdlc"})
+                         {"source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": f"v{cli.plugin_version()}"})
         self.assertIs(merged["enabledPlugins"]["zouj-ai-sdlc@zouj"], True)
         for key, value in self.CUSTOM.items():                                      # permissions, hooks, the rest
             self.assertEqual(merged[key], value, key)

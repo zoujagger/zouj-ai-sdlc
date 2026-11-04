@@ -128,7 +128,11 @@ PROFILE_CONFIG = {
     "team": {"profile": "team", "require_signed_approvals": True, "commit_approvals": True, "approval_key_policy": "human"},
     "strict": {"profile": "strict", "require_signed_approvals": True, "commit_approvals": True, "approval_key_policy": "sk"},
 }
-MARKETPLACE = {"extraKnownMarketplaces": {"zouj": {"source": {"source": "github", "repo": "zoujagger/zouj-ai-sdlc"}}},
+# Pinned to this release: enabling the plugin trusts github.com/zoujagger/zouj-ai-sdlc at that ref, and its hooks run
+# as the user, so the ref moves only through a reviewed change (rerunning setup after an upgrade proposes it).
+REF = f"v{cli.plugin_version()}"
+MARKETPLACE = {"extraKnownMarketplaces": {"zouj": {"source": {"source": "github", "repo": "zoujagger/zouj-ai-sdlc",
+                                                              "ref": REF}}},
                "enabledPlugins": {"zouj-ai-sdlc@zouj": True}}
 GATES = """Gates
   The AI-Native SDLC Playbook workflow, the same in every profile:
@@ -158,9 +162,14 @@ def inventory(root):
     else:
         rows.append(("·", "not initialized (no .aiops/)", ""))
     settings = _json(root / ".claude" / "settings.json")
-    has = bool(settings and all(k in settings and all(kk in settings[k] for kk in v) for k, v in MARKETPLACE.items()))
-    rows.append(("✓" if has else "·", "project offers the plugin (.claude/settings.json marketplace keys)"
-                 if has else "project doesn't offer the plugin yet (.claude/settings.json)", ""))
+    zouj = ((settings or {}).get("extraKnownMarketplaces") or {}).get("zouj")
+    if settings and _with_marketplace(settings) == settings:
+        rows.append(("✓", f"project offers the plugin, pinned to {REF} (.claude/settings.json)", ""))
+    elif zouj:
+        rows.append(("!", f"project offers the plugin from {json.dumps(zouj.get('source'))}, not the official "
+                     f"{REF} source (setup proposes the change)", ""))
+    else:
+        rows.append(("·", "project doesn't offer the plugin yet (.claude/settings.json)", ""))
     user = _json(Path.home() / ".claude" / "settings.json") or {}
     enabled = bool((user.get("enabledPlugins") or {}).get("zouj-ai-sdlc@zouj"))
     rows.append(("✓" if enabled else "·", "plugin enabled in ~/.claude/settings.json" if enabled
@@ -198,13 +207,19 @@ def owned_changes(root, profile):
             changes[".aiops/config.json"] = (f.read_text(), json.dumps({**cfg, **want}, indent=2) + "\n", want)
     f = root / ".claude" / "settings.json"
     settings = _json(f)
-    if settings is not None and not all(k in settings and all(kk in settings[k] for kk in v)
-                                        for k, v in MARKETPLACE.items()):
-        merged = dict(settings)
-        for key, value in MARKETPLACE.items():
-            merged[key] = {**(merged.get(key) or {}), **value}
-        changes[".claude/settings.json"] = (f.read_text(), json.dumps(merged, indent=2) + "\n", MARKETPLACE)
+    if settings is not None:
+        merged = _with_marketplace(settings)
+        if merged != settings:                 # missing, or another source/ref (an older release, a fork)
+            changes[".claude/settings.json"] = (f.read_text(), json.dumps(merged, indent=2) + "\n", MARKETPLACE)
     return changes
+
+
+def _with_marketplace(settings):
+    """settings with the official, pinned marketplace keys set; every other key is kept as it is."""
+    merged = dict(settings)
+    for key, value in MARKETPLACE.items():
+        merged[key] = {**(merged.get(key) or {}), **value}
+    return merged
 
 
 def _choices(args):
@@ -388,7 +403,7 @@ def human_steps(root, profile, pending):
     """What only the human can do: install the plugin, set up signing, own .aiops/, apply changes to human-owned
     files, commit, and start the first intent."""
     steps = ["In Claude Code (or just reopen Claude Code here: the project settings offer the plugin):\n"
-             "       /plugin marketplace add zoujagger/zouj-ai-sdlc\n"
+             f"       /plugin marketplace add zoujagger/zouj-ai-sdlc@{REF}\n"
              "       /plugin install zouj-ai-sdlc@zouj"]
     if profile in ("team", "strict") and approvals.signing_problem(root):
         key = "~/.ssh/aiops_signing_sk" if profile == "strict" else "~/.ssh/aiops_signing"

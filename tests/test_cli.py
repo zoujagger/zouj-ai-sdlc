@@ -61,10 +61,17 @@ class Init(RepoCase):
                              "settings.json").read_text())["permissions"]["deny"]
         self.assertEqual(self.run_sdlc("init").returncode, 0)
         settings = json.loads((self.root / ".claude" / "settings.json").read_text())
-        self.assertEqual(settings["extraKnownMarketplaces"]["zouj"]["source"],
-                         {"source": "github", "repo": "zoujagger/zouj-ai-sdlc"})
+        from helpers import ROOT
+        version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+        self.assertEqual(settings["extraKnownMarketplaces"]["zouj"]["source"],      # pinned to this release
+                         {"source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": f"v{version}"})
         self.assertIs(settings["enabledPlugins"]["zouj-ai-sdlc@zouj"], True)
         self.assertEqual(settings["permissions"]["deny"], before)                # deny rules unchanged
+        readme, security = (ROOT / "README.md").read_text(), (ROOT / "SECURITY.md").read_text()
+        self.assertIn(f"/plugin marketplace add zoujagger/zouj-ai-sdlc@v{version}", readme)
+        self.assertIn(f'"ref": "v{version}"', readme)
+        for doc in (readme, security):                                            # the trust model, stated
+            self.assertIn("trusts github.com/zoujagger/zouj-ai-sdlc at that ref", doc)
         self.assertNotIn("allow", settings["permissions"])                        # no permission is granted
 
     def test_scaffold_pins_and_protects(self):
