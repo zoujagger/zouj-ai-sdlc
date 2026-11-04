@@ -291,6 +291,76 @@ class Owned(SetupCase):
         self.assertIn("nothing to write", rerun.stdout)
 
 
+class Symlinks(SetupCase):
+    """Round 4 HIGH: no scaffold or setup write follows a symlink or a hard link, inside or outside the repo."""
+
+    def outside(self):
+        d = self.root.parent / f"{self.root.name}.outside"
+        d.mkdir()
+        self.addCleanup(shutil.rmtree, d, True)
+        return d
+
+    def scaffolded(self):
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "scaffold")
+        return self.snapshot(), (self.root / ".claude" / "settings.json").read_bytes()
+
+    def test_agent_force_through_a_link_to_a_human_owned_file(self):
+        before, settings = self.scaffolded()
+        (self.root / "REVIEW.md").unlink()
+        (self.root / "REVIEW.md").symlink_to(".claude/settings.json")
+        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("REVIEW.md", r.stderr)
+        self.assertIn("symlink", r.stderr)
+        self.assertEqual((self.root / ".claude" / "settings.json").read_bytes(), settings)
+        self.assertTrue((self.root / "REVIEW.md").is_symlink())                   # refused before any write
+
+    def test_link_to_a_file_outside_the_repo(self):
+        self.scaffolded()
+        target = self.outside() / "gitconfig"
+        target.write_text("[user]\n\tname = me\n")
+        (self.root / "REVIEW.md").unlink()
+        (self.root / "REVIEW.md").symlink_to(target)
+        r = self.run_sdlc("init", "--force")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(target.read_text(), "[user]\n\tname = me\n")
+
+    def test_linked_directory_and_dangling_link_in_a_fresh_repo(self):
+        out = self.outside()
+        (self.root / "scripts").symlink_to(out)                                   # a directory on PATH, say
+        (self.root / "ops").mkdir()
+        (self.root / "ops" / "bands.yaml").symlink_to(out / "planted")            # dangling
+        before = self.snapshot()
+        for args in (("init",), ("setup", "--profile", "solo", "--yes")):
+            r = self.run_sdlc(*args, env={"CLAUDECODE": "1", "PATH": str(self.bin_with())})
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("scripts", r.stdout + r.stderr)
+            self.assertEqual(sorted(p.name for p in out.iterdir()), [])           # nothing created outside
+            self.assertEqual(self.snapshot(), before)                             # nor inside: refused up front
+
+    def test_writer_refuses_a_link_that_appears_after_the_preview(self):
+        out = self.outside()
+        actions = cli.init_actions(self.root)                                     # previewed while still safe
+        (self.root / "scripts").symlink_to(out)
+        with self.assertRaises(OSError):
+            cli.apply_init(self.root, actions)
+        self.assertEqual(sorted(p.name for p in out.iterdir()), [])
+
+    def test_hard_link_is_replaced_not_written_through(self):
+        self.scaffolded()
+        target = self.outside() / "notes"
+        target.write_text("mine\n")
+        (self.root / "REVIEW.md").unlink()
+        import os
+        os.link(target, self.root / "REVIEW.md")
+        r = self.run_sdlc("init", "--force")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(target.read_text(), "mine\n")
+        self.assertIn("REVIEW.md", (self.root / "REVIEW.md").read_text())
+
+
 class NoSandbox(SetupCase):
     """The sandbox was removed (review round 3): setup writes only in the repo it runs in; the README has a recipe."""
 

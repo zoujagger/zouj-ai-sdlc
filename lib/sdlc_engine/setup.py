@@ -179,7 +179,9 @@ def plan(root, profile):
     """[(mark, rel, note)]: `+` create, `~` change (shown as a diff), `=` unchanged."""
     out = []
     for act, rel in cli.init_actions(root):
-        if act == "create":
+        if act == "symlink":
+            out.append(("✗", rel, f"{cli.symlink_on_path(root, rel)} is a symlink: remove it, setup won't write through links"))
+        elif act == "create":
             note = f"profile {profile}: {PROOF[profile]}" if rel == ".aiops/config.json" else ""
             out.append(("+", rel, note))
         else:
@@ -273,6 +275,9 @@ def main(root, args):
             print("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}", f"b/{rel}"))
                   .rstrip("\n"))
     print(GATES.format(proof=PROOF[profile]))
+    if any(mark == "✗" for mark, _, _ in actions):
+        print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
+        return 1
     if dry_run:
         print("dry run: nothing was written.")
         return 0
@@ -315,9 +320,10 @@ def apply(root, profile, actions, args):
     created = {rel for _, rel in creates}
     if ".aiops/config.json" in created:                 # a new config takes the profile; an existing one is human-owned
         f = root / ".aiops" / "config.json"
-        f.write_text(json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n")
+        cli.write_file(root, ".aiops/config.json",
+                       (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode())
     if stack and "Makefile" in created:
-        wired = cli._wire_stack(root / "Makefile", stack)
+        wired = cli._wire_stack(root, stack)
         print(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
     print("Applied")
     for rel in sorted(created):
@@ -325,7 +331,7 @@ def apply(root, profile, actions, args):
     pending = owned_changes(root, profile)
     if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it, showing each diff
         for rel, (_old, new, _keys) in pending.items():   # the diff was shown in the plan, before the question
-            (root / rel).write_text(new)
+            cli.write_file(root, rel, new.encode())
             print(f"  ~ {rel}")
         pending = {}
     human_steps(root, profile, pending)

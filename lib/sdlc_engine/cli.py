@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -273,19 +274,19 @@ def cmd_unlock(root, args):
     return 0
 
 
-def _wire_stack(makefile, stack):
+def _wire_stack(root, stack):
     recipes = {}
     for line in (TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and not parts[0].startswith("#"):
             recipes[parts[0]] = parts[1]
-    src, wired = makefile.read_text(), []
+    src, wired = (root / "Makefile").read_text(), []
     for target, cmd in recipes.items():
         src, n = re.subn(rf'^\t@echo "\[{target}\] not configured - edit Makefile"$', "\t" + cmd.replace("\\", "\\\\"),
                          src, flags=re.M)
         if n:
             wired.append(target)
-    makefile.write_text(src)
+    write_file(root, "Makefile", src.encode())
     return wired
 
 
@@ -301,20 +302,70 @@ def plugin_version():
 HUMAN_OWNED_RE = re.compile(r"^(\.aiops/config(\.json$|/)|\.claude/|(\.github/|docs/)?CODEOWNERS$|\.github/workflows/)")
 
 
+def symlink_on_path(root, rel):
+    """The first of rel's path components below root that is a symlink (as a relative path), else None."""
+    p = root
+    for part in Path(rel).parts:
+        p = p / part
+        if p.is_symlink():
+            return str(p.relative_to(root))
+        if not p.exists():
+            return None
+    return None
+
+
+def write_file(root, rel, data, mode=0o644):
+    """Write data to root/rel without following a link: each directory is opened relative to its parent with
+    O_NOFOLLOW, and the file is removed and created anew (O_EXCL), so neither a symlink (anywhere on the path) nor a
+    hard link is written through. Raises OSError instead."""
+    *dirs, name = Path(rel).parts
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in dirs:
+            try:
+                os.mkdir(part, 0o755, dir_fd=fd)
+            except FileExistsError:
+                pass
+            sub = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = sub
+        try:
+            if stat.S_ISLNK(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
+                raise OSError(f"{rel} is a symlink; refusing to write through it")
+            os.unlink(name, dir_fd=fd)
+        except FileNotFoundError:
+            pass
+        with os.fdopen(os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=fd), "wb") as f:
+            f.write(data)
+    finally:
+        os.close(fd)
+
+
 def init_actions(root, force=False, agent=False):
     """[(action, rel)] for every scaffold file: "create" (missing, or --force) or "keep" (exists). Under the agent,
-    --force keeps existing human-owned files ("owned"). Writes nothing, so `sdlc setup` can preview exactly what
-    `init` will do."""
+    --force keeps existing human-owned files ("owned"). A file with a symlink on its path is "symlink" (init refuses to
+    run). Writes nothing, so `sdlc setup` can preview exactly what `init` will do."""
     scaffold = TEMPLATES / "scaffold"
     out = []
     for rel in sorted(str(p.relative_to(scaffold)) for p in scaffold.rglob("*") if p.is_file()):
-        if not (root / rel).exists():
+        if symlink_on_path(root, rel):
+            out.append(("symlink", rel))
+        elif not (root / rel).exists():
             out.append(("create", rel))
         elif force and agent and HUMAN_OWNED_RE.match(rel):
             out.append(("owned", rel))
         else:
             out.append(("create" if force else "keep", rel))
+    if symlink_on_path(root, ".gitignore"):
+        out.append(("symlink", ".gitignore"))
     return out
+
+
+def symlink_refusal(root, actions):
+    """The refusal message when init would write through a symlink, else None."""
+    links = [f"{rel} ({symlink_on_path(root, rel)} is a symlink)" for act, rel in actions if act == "symlink"]
+    return ("refusing to write through symlinks; init writes only regular files inside this repo. Remove these links "
+            "and run again. Nothing was written:\n  " + "\n  ".join(links)) if links else None
 
 
 def apply_init(root, actions):
@@ -323,19 +374,18 @@ def apply_init(root, actions):
     for act, rel in actions:
         if act != "create":
             continue
-        dst = root / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(scaffold / rel, dst)
-        if dst.suffix in (".yml", ".yaml", ".md", ".json"):
-            text = dst.read_text()
-            if REF_PLACEHOLDER in text:
-                dst.write_text(text.replace(REF_PLACEHOLDER, f"v{plugin_version()}"))
+        data = (scaffold / rel).read_bytes()
+        if REF_PLACEHOLDER.encode() in data:
+            data = data.replace(REF_PLACEHOLDER.encode(), f"v{plugin_version()}".encode())
+        write_file(root, rel, data, (scaffold / rel).stat().st_mode & 0o777)
+    if symlink_on_path(root, ".aiops/state"):
+        raise OSError(".aiops/state is behind a symlink; refusing to create it")
     (root / ".aiops" / "state").mkdir(parents=True, exist_ok=True)
     gi = root / ".gitignore"
-    lines = gi.read_text().splitlines() if gi.exists() else []
+    lines = gi.read_text().splitlines() if gi.is_file() and not gi.is_symlink() else []
     if ".aiops/state/" not in lines:
-        gi.write_text("\n".join(lines + ["", "# zouj-ai-sdlc engine state (active intent, test lock)", ".aiops/state/"])
-                      .lstrip("\n") + "\n")
+        write_file(root, ".gitignore", ("\n".join(lines + ["", "# zouj-ai-sdlc engine state (active intent, test lock)",
+                                                           ".aiops/state/"]).lstrip("\n") + "\n").encode())
 
 
 def cmd_init(root, args):
@@ -345,6 +395,10 @@ def cmd_init(root, args):
         out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
         return 1
     actions = init_actions(root, force, agent=approvals.running_under_agent())
+    refusal = symlink_refusal(root, actions)
+    if refusal:
+        out(refusal, sys.stderr)
+        return 1
     apply_init(root, actions)
     created = [rel for act, rel in actions if act == "create"]
     skipped = [rel for act, rel in actions if act == "keep"]
@@ -353,7 +407,7 @@ def cmd_init(root, args):
         out("Human-owned, not reset (init --force was run by the agent). To reset them, the human runs "
             "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned))
     if stack and "Makefile" in created:
-        wired = _wire_stack(root / "Makefile", stack)
+        wired = _wire_stack(root, stack)
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
     out("Created:\n  " + ("\n  ".join(created) or "(nothing)"))
     if skipped:
