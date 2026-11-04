@@ -30,7 +30,8 @@ rerunnable flow:
 
 `init` writes a project marketplace snippet, pinned to the release, so collaborators are offered the plugin. The
 README becomes task-first, with pinned commands, and troubleshooting, quick-reference and feedback surfaces are added.
-The sandbox trial repo is deferred to 0.2.0-alpha.3 (intent, 2026-11-04).
+There is no sandbox command. To try the workflow, the README shows how to set up a throwaway repo by hand (intent,
+2026-11-04).
 
 The playbook workflow is the same in every profile, and a conformance test proves it. Ships as **0.2.0-alpha.2**.
 
@@ -80,10 +81,13 @@ The playbook workflow is the same in every profile, and a conformance test prove
   - `enabledPlugins["zouj-ai-sdlc@zouj"] = true`
 
   The existing `permissions.deny` rules are kept.
-- **R-6 Sandbox: deferred to 0.2.0-alpha.3.** Not shipped in this release. `sdlc setup --sandbox` is refused with a
-  message saying so, and the docs don't offer it. Review rounds 1–3 showed that a sandbox which runs git as the human,
-  next to an agent running as the same user, needs its own design (a clean git environment, git pinned to its own
-  repository, writes that can't follow planted links).
+- **R-6 Trying it first: a README recipe, no sandbox command.**
+  - The README's "Start using" section shows how to try the workflow in a throwaway repo the user creates:
+    `mkdir`, `git init`, an empty first commit, `sdlc setup --profile solo --yes`, then `/zouj-ai-sdlc:intent`.
+  - The plugin has no sandbox code, template or option. Setup refuses any option it doesn't know (`--sandbox`
+    included), with exit 1 and nothing written.
+  - Why: review rounds 1–3 showed that a sandbox which runs git as the human, next to an agent running as the same
+    user, kept opening routes into the calling repo. A repo made by hand gives the same trial without that code.
 - **R-7 Task-first documentation.**
   - The README opens with a "Start using" table that maps tasks to commands and playbook stages, followed by pinned
     install paths:
@@ -139,9 +143,10 @@ The playbook workflow is the same in every profile, and a conformance test prove
   - the Stop hook requires `make check`
 - **AC-9:** Given `sdlc init` in a fresh repo, then `.claude/settings.json` contains the marketplace snippet and the
   unchanged `permissions.deny` list.
-- **AC-10:** Given `sdlc setup --sandbox <dir>`, then setup refuses (exit 1) with a message that the sandbox is
-  planned for 0.2.0-alpha.3, writes nothing, and the README, the quick reference and the setup skill don't offer
-  it.
+- **AC-10:** Given `sdlc setup --sandbox <dir>` (or any other unknown option), then setup refuses (exit 1), names
+  the option and the valid ones, and writes nothing (no `<dir>`, no change in the repo). The README shows the
+  throwaway-repo recipe; the README, the quick reference, the setup skill and the CLI usage don't mention
+  `--sandbox`, and `templates/sandbox/` doesn't exist.
 - **AC-11:** Given preflight on a machine where `gh` lacks the `workflow` scope or there is no credential helper,
   then those rows are `!` with the exact fix command, and setup still proceeds. Given `python3` older than 3.9 or a
   missing `git`, they are `✗` and setup stops before writing.
@@ -205,10 +210,11 @@ Skill: `/zouj-ai-sdlc:setup [profile]`.
   - **Mitigation:** setup never passes `-t`/`--show-token`, and parses only the scopes line. Outputs are filtered
     before printing.
   - **Decides:** zoujagger.
-- ⚠️ **The sandbox (deferred).**
+- ⚠️ **A sandbox command (removed).**
   - **Risk:** a same-user agent can redirect a sandbox build's git into the calling repo (through `GIT_DIR`, a
     swapped `.git` or a swapped path), as reviews 1–3 showed.
-  - **Mitigation:** not shipped in this release (R-6); `--sandbox` is refused.
+  - **Mitigation:** the sandbox is removed (R-6). Setup only ever writes in the repo it runs in, and refuses unknown
+    options.
   - **Decides:** zoujagger.
 - ⚠️ **`sdlc feedback`.**
   - **Risk:** leaking local data.
@@ -243,8 +249,10 @@ Skill: `/zouj-ai-sdlc:setup [profile]`.
   - **Driving `/plugin` from setup:** impossible, because Claude Code owns those commands. The declarative snippet
     gets the same result for collaborators.
   - **An npm or PyPI installer:** out of scope this phase (stdlib only).
-  - **An advisory "trial" profile:** rejected because it would leave the playbook. A sandbox repo for trying the
-    workflow is planned for 0.2.0-alpha.3.
+  - **An advisory "trial" profile:** rejected because it would leave the playbook.
+  - **A `--sandbox` command that builds a trial repo:** built, then removed after review round 3. Building a repo on
+    the human's behalf, as the human, next to a same-user agent couldn't be made safe at reasonable cost. The README
+    recipe gives the same trial.
 - **ADR:** none needed. Profiles don't change gate semantics.
 
 ## Rollout & rollback

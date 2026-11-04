@@ -43,10 +43,9 @@ ECC solves the same adoption problems with:
 - **Profiles** (`solo`, `team`, `strict`) change only how strongly a human approval is proven, never whether a gate
   exists or who decides.
 - A contributor who clones an initialized repo is offered the plugin automatically.
-- ~~Someone curious can **try** the full intent → … → review cycle in a throwaway sandbox repo before adopting it.~~
-  **Deferred to 0.2.0-alpha.3** (zoujagger, 2026-11-04). Three review rounds showed that a sandbox which runs git as
-  the human, next to an agent running as the same user, keeps finding new ways into the calling repo. It needs its own
-  design.
+- Someone curious can **try** the full intent → … → review cycle before adopting it. The README shows how, in a
+  throwaway repo they create themselves (`git init`, then `sdlc setup --profile solo --yes`). The plugin ships **no
+  sandbox command** (zoujagger, 2026-11-04).
 - The README starts from "what are you doing?" and gives pinned install commands. Troubleshooting, a quick reference
   and issue templates exist.
 - **The AI-Native SDLC Playbook workflow (`docs/sdlc.md`) holds in every profile and install path, and that is
@@ -88,7 +87,8 @@ ECC solves the same adoption problems with:
 - Supporting other harnesses (Codex, Cursor, …).
 - Changing the gates, the state machine or the review personas.
 - Fixing the 0.2.0-alpha.1 known issues (the CHANGELOG list); they get their own intent.
-- The `sdlc setup --sandbox` trial repo: deferred to 0.2.0-alpha.3 (see Desired outcome).
+- A sandbox command (`sdlc setup --sandbox`). It is removed, not postponed: a throwaway repo made by hand gives the
+  same trial, and building one on the user's behalf meant running git as the human next to a same-user agent.
 
 ## Open questions
 - [x] The `solo` profile: are approvals still committed? → **Yes:** a single-file approval commit, unsigned, to keep
@@ -97,5 +97,6 @@ ECC solves the same adoption problems with:
   `extraKnownMarketplaces`/`enabledPlugins` snippet into the project's `.claude/settings.json`**, and also prints the
   two `/plugin` commands (zoujagger, 2026-11-03)
 - [x] The sandbox? → **A local throwaway repo:** `sdlc setup --sandbox <dir>` with a sample intent (zoujagger,
-  2026-11-03). **Then deferred to 0.2.0-alpha.3** after review round 3 (zoujagger, 2026-11-04)
+  2026-11-03). **Then removed** after review round 3: the README's throwaway-repo recipe replaces it, and no sandbox
+  command ships (zoujagger, 2026-11-04)
 - [x] The release? → **0.2.0-alpha.2, on its own,** once it passes review (zoujagger, 2026-11-03)

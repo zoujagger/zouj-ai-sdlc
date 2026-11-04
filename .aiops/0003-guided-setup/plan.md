@@ -33,8 +33,8 @@ Build from the inside out, so every user-facing piece rests on tested engine par
      a short timeout. Tests drive them with stub executables on PATH.
    - Under the agent (`approvals.running_under_agent()`), human-owned files that already exist are never written
      (spec R-4).
-4. **The user-facing pieces:** sandbox, `feedback`, the skill, docs, and the playbook conformance test, which covers
-   all three profiles.
+4. **The user-facing pieces:** `feedback`, the skill, docs, and the playbook conformance test, which covers all three
+   profiles. (A sandbox was built in S9 and removed in S15 after review round 3.)
 5. **The release** comes last.
 
 One spec phrase is interpreted here: "`permissions`/`hooks` byte-identical" (AC-5). The settings merge loads and
@@ -170,21 +170,32 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_version_matches_changelog`, asserting
     `0.2.0-alpha.2`. Red: the version is still alpha.1.
   - Covers: AC-14
-- [ ] **S15**: Remove the sandbox from this release (deferred to 0.2.0-alpha.3; intent and spec amended 2026-11-04)
+- [ ] **S15**: Remove the sandbox; the README shows a throwaway-repo recipe instead (intent and spec amended
+  2026-11-04)
   - Files:
-    - `lib/sdlc_engine/setup.py`: `--sandbox` is refused with the alpha.3 message and writes nothing. The sandbox
-      code (`sandbox`, `_build_sandbox`, `_empty_pinned`, `_same`, `_in_git_work_tree`, `SANDBOX`) is removed.
+    - `lib/sdlc_engine/setup.py`:
+      - The sandbox code is removed: `sandbox`, `_build_sandbox`, `_empty_pinned`, `_same`, `_in_git_work_tree`,
+        `SANDBOX`, the `--sandbox` branch of `main`, and `import secrets` if unused.
+      - `main` refuses any option it doesn't know (exit 1, naming it and the valid options) before doing anything.
+    - `lib/sdlc_engine/cli.py`: the usage line drops `setup --sandbox <dir>`. `_wire_stack`'s recipes-file argument
+      goes if nothing else uses it.
     - `templates/sandbox/` (delete)
-    - `tests/test_setup.py`: the `Sandbox`, `SandboxRace` and `SandboxRaceDeeper` classes are replaced by one refusal
-      test
-    - Docs and help: `cli.py` usage, README (the "Start using" row and "Just looking?"), `COMMANDS-QUICK-REF.md`,
-      `skills/setup/SKILL.md`, CHANGELOG (Added/Security entries become a deferral note; the alpha.3 known issues
-      gain the sandbox), `docs/roadmap.md`
-  - Test first: `tests/test_setup.py::Sandbox::test_deferred_to_alpha3`:
-    - `sdlc setup --sandbox <dir>` exits 1, says "0.2.0-alpha.3", and creates nothing
-    - README, the quick reference and the setup skill don't mention `--sandbox`
+    - `tests/test_setup.py`: the `Sandbox`, `SandboxRace` and `SandboxRaceDeeper` classes are replaced by
+      `NoSandbox`
+    - Docs:
+      - README: the "Start using" row and "Just looking?" become the throwaway-repo recipe
+      - `COMMANDS-QUICK-REF.md`, `skills/setup/SKILL.md` (arguments and step 1)
+      - CHANGELOG: the sandbox Added/Security bullets are removed. The section notes that setup refuses unknown
+        options and that the README shows how to try the workflow
+      - `docs/roadmap.md`: the sandbox is dropped from Phase 1, not moved to a later phase
+  - Test first: `tests/test_setup.py::NoSandbox`:
+    - `test_unknown_option_refused`: `sdlc setup --sandbox <dir>` and `sdlc setup --bogus` exit 1, name the option,
+      create no `<dir>`, and leave `git status` clean
+    - `test_docs_offer_the_recipe_not_a_sandbox`: README, quick reference, setup skill and CLI usage don't mention
+      `--sandbox`; `templates/sandbox/` doesn't exist; the README has the `git init` + `sdlc setup --profile solo
+      --yes` recipe
 
-    Red: setup still builds the sandbox.
+    Red: setup still builds the sandbox, and the docs still offer it.
   - Covers: AC-10
 
 ## Risks
@@ -194,7 +205,8 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 | Preflight shells out to `claude`/`gh`: slow, hangs, or prints a token | medium | medium | 5 s timeout per call, never `-t`, output parsed for scopes only, stubbed in tests |
 | The settings merge reformats a user's `.claude/settings.json` | medium | low | values parse equal; only the two keys are added; the diff is shown before the human confirms; agent runs never touch it |
 | A profile accidentally weakens a gate | low | high | S12 conformance test per profile; profiles map only to `require_signed_approvals`, `commit_approvals` and `approval_key_policy` |
-| The sandbox writes outside the target or into the caller's repo | — | — | resolved by deferral: S15 removes the sandbox from this release (reviews 1–3 found same-user routes into the caller's repo) |
+| The sandbox writes outside the target or into the caller's repo | — | — | resolved by removal: S15 deletes the sandbox (reviews 1–3 found same-user routes into the caller's repo); setup writes only in the repo it runs in |
+| Removing the sandbox leaves dead code or stale doc mentions | medium | low | S15's static test checks the docs, the usage line and the template directory; `make check` (lint) flags unused imports |
 | The setup skill nudges the agent to apply human-owned changes | low | high | the skill only runs `--dry-run`, and applies after the human confirms in chat; R-4 is enforced in code, not only in the skill |
 | Running under `CLAUDECODE` in CI/evals changes behaviour | low | low | tests set and unset `CLAUDECODE` explicitly per case |
 
@@ -210,7 +222,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 | AC-7 | `tests/test_engine.py::Approvals::test_strict_policy_requires_a_touch_key` | unit | the `"sk"` policy accepts only touch `sk-` keys |
 | AC-8 | `tests/test_playbook.py::Playbook::test_solo`, `::test_team`, `::test_strict` | hook, cli | the playbook workflow holds in every profile |
 | AC-9 | `tests/test_cli.py::Init::test_scaffold_offers_the_plugin` | cli | init writes the marketplace snippet, deny list intact |
-| AC-10 | `tests/test_setup.py::Sandbox::test_deferred_to_alpha3` | cli, static | `--sandbox` is refused with the alpha.3 message, nothing is created, and the docs don't offer it |
+| AC-10 | `tests/test_setup.py::NoSandbox::test_unknown_option_refused`, `::test_docs_offer_the_recipe_not_a_sandbox` | cli, static | unknown options (`--sandbox` included) are refused with nothing written; the README gives the recipe; no sandbox mention or template remains |
 | AC-11 | `tests/test_setup.py::Preflight::test_rows_and_blocking` | cli | `!` rows with fixes; `✗` stops before writes; no token flags |
 | AC-12 | `tests/test_shell_hooks.py::ShellHooks::test_onboarding_docs`, `::test_setup_skill_follows_the_playbook` | static | task-first README, docs, templates, quick ref matches skills |
 | AC-13 | `tests/test_setup.py::Feedback::test_prints_links_offline` | cli | feedback prints links, no network |
@@ -234,3 +246,4 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 | 2026-11-04 | — | **Human decision:** review round 2 returned CHANGES_REQUESTED (80/100). F1 was incomplete (the build directory or its parent could still be swapped). Fix it properly (G1), fix the doctor regression from F5 (G2), correct the F1/CHANGELOG wording; the round-2 LOWs join the alpha.3 known issues; then review round 3 | "Fix it properly" | — |
 | 2026-11-04 | G1 | The sandbox is built through handles: the parent is opened once with `O_NOFOLLOW`, the build directory is created and entered relative to it (`os.mkdir(dir_fd=)`, `os.fchdir`), every write and git call uses relative paths, git's toplevel is checked by inode, the build name is re-checked by inode before the rename, and the rename goes through the parent handle. A failed build is emptied and removed through its handle. F1's claim "the sandbox build can't be redirected" was wrong at F1 (it covered only the target). Proof tests: `SandboxRaceDeeper::test_build_dir_swapped_for_a_symlink`, `::test_parent_swapped_for_a_symlink`. `SandboxRace` now uses a private parent (it had scanned `/tmp`, where a leftover from an intermediate run of this fix sat; removed) | review round 2 BLOCKER/HIGH: a strict→solo downgrade committed into the calling repo, reproduced by two reviewers | G1 commit |
 | 2026-11-04 | G2 | `cmd_doctor`: the CODEOWNERS `if strict … else` is self-contained again and the `"sk"` allowed-signers block follows it (F5 had put it between the `if` and its `else`). CHANGELOG: the sandbox entry now describes the handle-pinned build and says the first fix covered only the target; the round-2 LOWs are listed as alpha.3 known issues. Proof test: `Lifecycle::test_strict_requires_codeowners` (mixed profile/policy configs) | review round 2 MINOR (a regression from F5) and the inaccurate CHANGELOG claim | G2 commit |
+| 2026-11-04 | — | **Human decision:** review round 3 returned CHANGES_REQUESTED (78/100); every remaining finding is in the sandbox. Remove the sandbox entirely: no deferral and no later phase. The README shows a throwaway-repo recipe instead, and setup refuses unknown options. Intent, spec and plan were amended (S15) and need re-approval. A first amendment that deferred it to alpha.3 (380ac27) was not approved | "Drop sandbox from alpha.2", then "i do not approuve, remove sandbox" | this amendment |
