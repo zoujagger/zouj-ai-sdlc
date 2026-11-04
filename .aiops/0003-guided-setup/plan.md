@@ -5,9 +5,9 @@ status: Approved
 spec: ./spec.md
 created: 2026-11-03
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-03T20:19:34Z
+approved-at: 2026-11-04T12:41:32Z
 approved-via: cli
-approved-sha256: 21f26ea8cbacbe1fafd20fdbabf69b0cbee5239317f3b7a00fc58a453bf85d18
+approved-sha256: 27ea9e8c60e785c34a1bb9a0d1e84299f13f7745c6356e868bfd53e047983924
 ---
 
 # Plan: Guided setup and first-run onboarding (roadmap phase 1)
