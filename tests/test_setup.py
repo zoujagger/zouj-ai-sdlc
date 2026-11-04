@@ -431,6 +431,56 @@ class Symlinks(SetupCase):
         self.assertIn("REVIEW.md", (self.root / "REVIEW.md").read_text())
 
 
+class Roots(SetupCase):
+    """Round 5 MEDIUM: init and setup scaffold only the top of a git repo, never $HOME, ~/.claude or a toolchain path."""
+
+    def side(self, name, repo=False):
+        d = self.root.parent / f"{self.root.name}.{name}"                       # a sibling of the temp repo
+        d.mkdir()
+        self.addCleanup(shutil.rmtree, d, True)                                  # removes only what this test made
+        if repo:
+            git(d, "init", "-q", "-b", "main")
+        return d
+
+    def refused(self, cwd, home=None, says=""):
+        env = {**self.env, "PATH": str(self.bin_with())}
+        if home:
+            env["HOME"] = str(home)
+        for args in (("init",), ("setup", "--profile", "team", "--yes"), ("setup", "--dry-run", "--profile", "team")):
+            before = sorted(p.name for p in cwd.iterdir())
+            r = subprocess.run([sys.executable, SDLC, *args], cwd=cwd, input="", capture_output=True, text=True,
+                               env=env)
+            self.assertEqual(r.returncode, 1, (args, r.stdout + r.stderr))
+            self.assertIn(says, r.stderr, args)
+            self.assertIn("nothing was written", r.stderr.lower(), args)
+            self.assertEqual(sorted(p.name for p in cwd.iterdir()), before, args)
+
+    def test_not_a_git_repo(self):
+        self.refused(self.side("plain"), says="git init")
+
+    def test_home_and_claude_dir(self):
+        home = self.side("home", repo=True)                                      # a dotfiles repo at $HOME
+        self.refused(home, home=home, says="home directory")
+        claude = home / ".claude"
+        claude.mkdir()
+        git(claude, "init", "-q", "-b", "main")
+        self.refused(claude, home=home, says="~/.claude")
+
+    def test_toolchain_path(self):
+        home = self.side("home2")
+        localbin = home / ".local" / "bin"
+        localbin.mkdir(parents=True)
+        git(localbin, "init", "-q", "-b", "main")
+        self.refused(localbin, home=home, says="toolchain")
+
+    def test_subdirectory_of_a_repo_is_fine(self):
+        sub = self.root / "pkg"
+        sub.mkdir()
+        r = subprocess.run([sys.executable, SDLC, "setup", "--dry-run", "--profile", "team"], cwd=sub, input="",
+                           capture_output=True, text=True, env={**self.env, "PATH": str(self.bin_with())})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)                 # scaffolds the repo's top level
+
+
 class NoSandbox(SetupCase):
     """The sandbox was removed (review round 3): setup writes only in the repo it runs in; the README has a recipe."""
 

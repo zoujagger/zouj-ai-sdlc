@@ -304,6 +304,23 @@ def plugin_version():
 HUMAN_OWNED_RE = re.compile(r"^(\.aiops/config(\.json$|/)|\.claude/|(\.github/|docs/)?CODEOWNERS$|\.github/workflows/)")
 
 
+def scaffold_root_problem(root):
+    """Why init/setup must not scaffold root, else None. Only the top of a git work tree is scaffolded (no fallback to
+    the current directory), and never the home directory, ~/.claude or a toolchain path (shell startup, PATH,
+    installed plugins): files there run, or load, in every session of the human's."""
+    top = git(root, "rev-parse", "--show-toplevel")
+    if not top or Path(top).resolve() != root.resolve():
+        return f"{root} is not the top of a git repository; run `git init` there first (init and setup write only inside a repo)"
+    real, home = root.resolve(), Path.home().resolve()
+    if real == home:
+        return f"{real} is your home directory; scaffold a project repo instead"
+    if real == home / ".claude" or home / ".claude" in real.parents:
+        return f"{real} is inside ~/.claude (Claude Code's own settings and plugins); scaffold a project repo instead"
+    if guards._toolchain_path(real, real):
+        return f"{real} is a toolchain path (PATH, shell startup or installed plugins); scaffold a project repo instead"
+    return None
+
+
 def symlink_on_path(root, rel):
     """The first of rel's path components below root that is a symlink (as a relative path), else None."""
     p = root
@@ -395,6 +412,10 @@ def cmd_init(root, args):
     force = "--force" in args
     if stack and stack not in STACKS:
         out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
+        return 1
+    problem = scaffold_root_problem(root)
+    if problem:
+        out(f"refusing: {problem}. Nothing was written.", sys.stderr)
         return 1
     actions = init_actions(root, force, agent=approvals.running_under_agent())
     refusal = symlink_refusal(root, actions)

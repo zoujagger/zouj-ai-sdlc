@@ -256,6 +256,10 @@ def main(root, args):
         print(f"{why}. Nothing was written.", file=sys.stderr)
         return 1
     profile, dry_run, yes = opts.get("--profile"), "--dry-run" in opts, "--yes" in opts
+    problem = cli.scaffold_root_problem(root)
+    if problem:
+        print(f"setup stops: {problem}. Nothing was written.", file=sys.stderr)
+        return 1
     tty = _is_tty()
     if profile is None and not dry_run and not tty:
         print("setup needs choices and there's no terminal to ask them; nothing was written. Run again with:\n"
