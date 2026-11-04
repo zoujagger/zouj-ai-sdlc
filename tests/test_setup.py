@@ -665,15 +665,23 @@ class Roots(SetupCase):
                          (self.root, "HOME=/tmp/fake sdlc init --force"),
                          (self.root, f"env --chdir={other} /opt/plugin/bin/sdlc init"),
                          (self.root, f"env -C{other} /opt/plugin/bin/sdlc init"),
-                         (self.root, f"find {other} -maxdepth 1 -name .git -execdir /opt/plugin/bin/sdlc init ;")):
+                         (self.root, f"find {other} -maxdepth 1 -name .git -execdir /opt/plugin/bin/sdlc init ;"),
+                         # round 8: `sdlc init` fed to a shell or behind an unlisted runner, anywhere on the line
+                         (self.root, f"cd {other} && echo 'sdlc init' | sh"),
+                         (self.root, f"cd {other} && bash <<< 'sdlc setup --yes'"),
+                         (self.root, f"cd {other} && setarch x86_64 /opt/plugin/bin/sdlc init"),
+                         (self.root, f"cd {other} && uv run sdlc init"),
+                         (other, "echo 'sdlc init' | sh"),
+                         # the price: a line that only mentions it, next to a relocation, is refused too (split it)
+                         (self.root, 'grep -n "sdlc setup" README.md; cd docs'),
+                         (self.root, 'git log --oneline -1; echo "run sdlc init -C later"')):
             self.assertIsNotNone(check(cwd, cmd), (cwd, cmd))
         for cwd, cmd in ((self.root, "sdlc setup --profile team --yes"),
                          (sub, "/opt/plugin/bin/sdlc setup --dry-run --profile team"),
                          (self.root, "sdlc status"),
                          (other, "sdlc status"),
-                         # round 7: `sdlc setup` that isn't the command being run is not a scaffold call
-                         (self.root, 'grep -n "sdlc setup" README.md; cd docs'),
-                         (self.root, 'git log --oneline -1; echo "run sdlc init -C later"')):
+                         (self.root, 'grep -n "sdlc setup" README.md'),
+                         (self.root, "echo 'sdlc init' | sh")):                    # the session repo, no relocation
             self.assertIsNone(check(cwd, cmd), (cwd, cmd))
 
     def test_root_is_the_working_directorys_repo(self):
