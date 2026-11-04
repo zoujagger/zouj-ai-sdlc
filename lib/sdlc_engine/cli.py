@@ -297,12 +297,25 @@ def plugin_version():
     return json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
 
 
-def init_actions(root, force=False):
-    """[(action, rel)] for every scaffold file: "create" (missing, or --force) or "keep" (exists). Writes nothing,
-    so `sdlc setup` can preview exactly what `init` will do."""
+# Scaffold files that, once they exist, belong to the human: the approval proof, the signer and guard lists, Claude
+# Code settings, code ownership and CI. `--force` never overwrites them when the agent runs it.
+HUMAN_OWNED_RE = re.compile(r"^(\.aiops/config(\.json$|/)|\.claude/|(\.github/|docs/)?CODEOWNERS$|\.github/workflows/)")
+
+
+def init_actions(root, force=False, agent=False):
+    """[(action, rel)] for every scaffold file: "create" (missing, or --force) or "keep" (exists). Under the agent,
+    --force keeps existing human-owned files ("owned"). Writes nothing, so `sdlc setup` can preview exactly what
+    `init` will do."""
     scaffold = TEMPLATES / "scaffold"
-    return [("create" if force or not (root / rel).exists() else "keep", str(rel))
-            for rel in sorted(p.relative_to(scaffold) for p in scaffold.rglob("*") if p.is_file())]
+    out = []
+    for rel in sorted(str(p.relative_to(scaffold)) for p in scaffold.rglob("*") if p.is_file()):
+        if not (root / rel).exists():
+            out.append(("create", rel))
+        elif force and agent and HUMAN_OWNED_RE.match(rel):
+            out.append(("owned", rel))
+        else:
+            out.append(("create" if force else "keep", rel))
+    return out
 
 
 def apply_init(root, actions):
@@ -332,10 +345,14 @@ def cmd_init(root, args):
     if stack and not (TEMPLATES / "stacks" / f"{stack}.recipes").is_file():
         out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
         return 1
-    actions = init_actions(root, force)
+    actions = init_actions(root, force, agent=approvals.running_under_agent())
     apply_init(root, actions)
     created = [rel for act, rel in actions if act == "create"]
     skipped = [rel for act, rel in actions if act == "keep"]
+    owned = [rel for act, rel in actions if act == "owned"]
+    if owned:
+        out("Human-owned, not reset (init --force was run by the agent). To reset them, the human runs "
+            "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned))
     if stack and "Makefile" in created:
         wired = _wire_stack(root / "Makefile", stack)
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
@@ -444,7 +461,7 @@ def cmd_doctor(root, args):
         mk = (root / "Makefile").read_text()
         unwired = [t for t in ("format", "lint", "typecheck", "test", "build") if f'"[{t}] not configured' in mk]
         row(not unwired, "Makefile contract wired" + (f" (not: {', '.join(unwired)})" if unwired else ""),
-            "edit the Makefile or: sdlc init --stack python|node|go --force")
+            "edit the Makefile's recipes (presets: the plugin's templates/stacks/<python|node|go>.recipes)")
     for b in ("gh", "jq"):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")
     if initialized(root):

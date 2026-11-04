@@ -54,8 +54,8 @@ for example without a variable as the command word, or run it yourself. Please r
 
 ## The Stop hook keeps saying "Definition of done not met"
 `make check` must pass before a turn can end, whenever the working tree changed. Run `make check` and fix what fails.
-If a Makefile target still prints `not configured`, wire it (`sdlc init --stack python|node|go --force`, or edit the
-Makefile).
+If a Makefile target still prints `not configured`, wire it: edit the
+Makefile's recipes (the plugin ships presets in `templates/stacks/`).
 
 ## Setup says `✗` and "nothing was written"
 Git, make, or Python ≥ 3.9 is missing. Install it and rerun `sdlc setup`. `!` rows (claude, gh, credential helper,

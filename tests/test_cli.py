@@ -30,6 +30,32 @@ class Init(RepoCase):
         self.assertIn("wired format, lint, typecheck, test, build", r.stdout)
         self.assertIn("pytest -q", (self.root / "Makefile").read_text())
 
+    def test_agent_init_force_keeps_human_owned_files(self):
+        from helpers import ROOT
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        owned = {".aiops/config.json": '{"profile": "strict", "approval_key_policy": "sk", "main_branch": "trunk"}\n',
+                 ".aiops/config/allowed-signers": "owner@example.com namespaces=\"git\" ssh-ed25519 AAAAkey\n",
+                 ".claude/settings.json": '{"permissions": {"deny": ["Read(./x)"]}}\n',
+                 ".github/CODEOWNERS": "/.aiops/ @owner\n",
+                 ".github/workflows/aiops-gates.yml": "# customised\n"}
+        for rel, text in owned.items():
+            (self.root / rel).write_text(text)
+        (self.root / "CLAUDE.md").write_text("mine\n")                           # not human-owned
+        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for rel, text in owned.items():
+            self.assertEqual((self.root / rel).read_text(), text, rel)           # untouched under the agent
+            self.assertIn(rel, r.stdout)                                          # listed for the human
+        self.assertIn("your own terminal", r.stdout)
+        self.assertNotEqual((self.root / "CLAUDE.md").read_text(), "mine\n")     # the rest is still reset
+        r = self.run_sdlc("init", "--force")                                      # a human: as before
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("strict", (self.root / ".aiops" / "config.json").read_text())
+        # nothing tells the agent to run --force: doctor's Makefile fix and the docs
+        (self.root / "Makefile").write_text('test:\n\t@echo "[test] not configured - edit Makefile"\n')
+        self.assertNotIn("--force", self.run_sdlc("doctor").stdout)
+        self.assertNotIn("--force", (ROOT / "TROUBLESHOOTING.md").read_text())
+
     def test_scaffold_offers_the_plugin(self):
         before = json.loads((Path(__file__).resolve().parents[1] / "templates" / "scaffold" / ".claude" /
                              "settings.json").read_text())["permissions"]["deny"]
