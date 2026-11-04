@@ -24,7 +24,9 @@ There's no mode without the gates. Never offer one.
    solo developers pick `solo` and most teams `team`.
 3. **Preview.** Run `sdlc setup --profile <profile> --dry-run`. Show the human:
    - the Preflight rows marked `✗` or `!`, each with its fix
-   - the Plan (`+` creates, `~` changes an existing human-owned file)
+   - the Plan (`+` creates, `~` changes an existing human-owned file, `!` a human-owned file that no commit has and
+     that holds something setup doesn't write)
+   - the "Review before committing" section, verbatim: it shows what those `!` files contain
    - the Gates summary, verbatim
 
    If any row is `✗`, stop: setup won't write until it's fixed.

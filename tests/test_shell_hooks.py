@@ -291,6 +291,15 @@ class ShellHooks(RepoCase):
             self.assertNotIn(fixed, known, fixed)
         for still_open in ("no-touch-required", ".gitignore", "passphrase"):               # round 6, for alpha.3
             self.assertIn(still_open, known, still_open)
+        for still_open in ("update-index", "CODEOWNERS", "secret-paths"):                  # round 8, for alpha.3
+            self.assertIn(still_open, known, still_open)
+        threat_row = next(line for line in (ROOT / "docs" / "architecture.md").read_text().splitlines()
+                          if line.startswith("| The agent uses `sdlc setup`"))
+        for residual in ("{cd,", "unset CLAUDE_PROJECT_DIR", "counts as reviewed"):            # round 8 residuals
+            self.assertIn(residual, threat_row, residual)
+        for name, text in (("setup skill", (ROOT / "skills" / "setup" / "SKILL.md").read_text()),
+                           ("troubleshooting", (ROOT / "TROUBLESHOOTING.md").read_text())):
+            self.assertIn("Review before committing", text, name)                           # the plan's `!` rows
         self.assertIn("nothing suggests `--force` to the agent", alpha2)                # round 5: init tells the human
         stops = (ROOT / "TROUBLESHOOTING.md").read_text().split("## Setup says", 1)[1].split("\n## ", 1)[0]
         for reason in ("git", "make", "Python", "JSON", "symlink", "profile", "git repository", "home"):

@@ -69,7 +69,10 @@ first approved intent with one guided, rerunnable command, and the playbook work
 - **Setup never folds an unreviewed human-owned file into your commit.** A file such as `allowed-signers` that
   existed before setup and isn't committed (the agent could have planted a key while the guards were off) is shown as
   `!` with its diff against the template, named in a "review before committing" step, and left out of the commit
-  command, which now lists exactly the files setup wrote instead of `git add -A`.
+  command. That command is `git add -- <files> && git commit … -- <files>`, so it commits exactly the scaffold, never
+  `git add -A` and never the rest of the index (a key staged with git plumbing is flagged too). Setup's own files
+  from an earlier run aren't flagged, and the commit step is printed on every run. Diffs of content setup didn't
+  write escape control characters.
 - **Preflight never runs a tool from a PATH folder inside the repo** (an agent could plant one there), runs git by
   its absolute path, and gives the tools it runs no stdin.
 - **`no-touch-required` is matched in any letter case** in `allowed-signers`, by doctor, `approve` and the CI audit.
@@ -111,6 +114,11 @@ first approved intent with one guided, rerunnable command, and the playbook work
   - The test suite leaves side directories (stub tools, scratch homes) next to its temp repos in `/tmp`.
 
 - **Review round 2 (low):**
+  - The pre-bash guard allows git index plumbing (`hash-object -w`, `update-index --cacheinfo`, `git add`) on
+    protected paths such as `allowed-signers`. Setup flags and skips such staged content; a plain `git commit` would
+    still take it.
+  - Doctor's CODEOWNERS ✓ ignores a later rule without owners that uncovers part of `/.aiops/` (CI is unaffected).
+  - `init --force`'s secret-paths check (L1) has no test: no default scaffold file matches `secret-paths`.
   - Doctor misreads `allowed-signers` options quoted with spaces (a quoted value can even hide a key type from the
     strict check). That gives a false ✓ in doctor; CI fails closed.
   - The pin is a tag, not a commit sha.

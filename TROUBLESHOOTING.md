@@ -71,6 +71,13 @@ Setup stops before writing anything when:
 
 `!` rows (claude, gh, credential helper, signing) are warnings: setup continues and lists the fix.
 
+## Setup shows `!` rows in its plan and "Review before committing"
+A human-owned file (such as `.aiops/config/allowed-signers` or `.claude/settings.json`) exists, no commit has it,
+and it holds something setup doesn't write, or its staged version isn't what's on disk. Setup didn't write it and
+leaves it out of the commit command it prints. Read the diff it shows: an `allowed-signers` key you don't recognise
+must not be committed, because CI would then trust approvals signed with it. Fix or delete the file, then commit it
+yourself.
+
 ## Starting over in a repo
 Delete nothing by hand under `.aiops/`: the guards protect it, and CI audits it. To leave the workflow, remove the
 plugin (`/plugin`), then delete the scaffold files you don't want, in a reviewed commit.
