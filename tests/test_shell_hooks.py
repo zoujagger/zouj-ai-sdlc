@@ -293,6 +293,9 @@ class ShellHooks(RepoCase):
             self.assertIn(still_open, known, still_open)
         for still_open in ("update-index", "CODEOWNERS", "secret-paths"):                  # round 8, for alpha.3
             self.assertIn(still_open, known, still_open)
+        for still_open in ("skip-worktree", "filter", "git restore --staged", "git show HEAD --"):   # round 9
+            self.assertIn(still_open, known, still_open)
+        self.assertIn("**Review round 8", known)                                           # not under round 2
         threat_row = next(line for line in (ROOT / "docs" / "architecture.md").read_text().splitlines()
                           if line.startswith("| The agent uses `sdlc setup`"))
         for residual in ("{cd,", "unset CLAUDE_PROJECT_DIR", "counts as reviewed"):            # round 8 residuals

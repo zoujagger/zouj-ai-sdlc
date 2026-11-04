@@ -113,12 +113,32 @@ first approved intent with one guided, rerunnable command, and the playbook work
   - The `"sk"` doctor case is covered only through `signing_problem`.
   - The test suite leaves side directories (stub tools, scratch homes) next to its temp repos in `/tmp`.
 
-- **Review round 2 (low):**
+- **Your first "adopt" commit (review round 9).** Setup leaves unreviewed human-owned files out of the commit step it
+  prints, but an agent running as you controls `.git`, so these still get through:
+  - A `config.json` planted before `init` with one profile's keys (a downgrade to `solo`, say) passes as setup's own
+    file: no `!`, and it is in the commit step.
+  - A key staged with git plumbing is flagged, but the review shows the file on disk, not the staged content. Unstage
+    it with `git restore --staged -- <file>`.
+  - A staged key hidden with `git update-index --skip-worktree` or `--assume-unchanged` isn't flagged, and the printed
+    commit step then fails; a plain `git commit` would take the key.
+  - Repo-local git filters, attributes or hooks planted before `init` can change what the commit step commits.
+
+  **Workaround:** after committing, check what the commit really holds, whatever the index, filters or hooks did:
+  `git show HEAD -- .aiops/config .aiops/config.json .claude/settings.json .github/`. Then have the adoption PR
+  reviewed under CODEOWNERS.
+- **Review round 9 (minor):**
+  - After a human run merged keys into a committed `settings.json` or `config.json`, a rerun flags that file as "not
+    in any commit yet", which is wrong (it is in HEAD, just changed).
+  - The commit step also lists uncommitted local edits to scaffold files such as `Makefile` or `CLAUDE.md`.
+  - The pre-bash guard refuses a line that only mentions `sdlc init|setup` next to `cd` or `-C` (a commit message, a
+    `grep -C3`): split the command.
+  - The inventory prints the stored profile unescaped, and bidi overrides pass setup's escaping.
+- **Review round 8 (low):**
   - The pre-bash guard allows git index plumbing (`hash-object -w`, `update-index --cacheinfo`, `git add`) on
-    protected paths such as `allowed-signers`. Setup flags and skips such staged content; a plain `git commit` would
-    still take it.
+    protected paths such as `allowed-signers`. Setup flags such staged content (see round 9 for the gaps).
   - Doctor's CODEOWNERS ✓ ignores a later rule without owners that uncovers part of `/.aiops/` (CI is unaffected).
   - `init --force`'s secret-paths check (L1) has no test: no default scaffold file matches `secret-paths`.
+- **Review round 2 (low):**
   - Doctor misreads `allowed-signers` options quoted with spaces (a quoted value can even hide a key type from the
     strict check). That gives a false ✓ in doctor; CI fails closed.
   - The pin is a tag, not a commit sha.

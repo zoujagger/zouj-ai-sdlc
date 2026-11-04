@@ -51,6 +51,8 @@ Every block message gives the reason **and** the procedure. The common ones:
 
 **A false positive** (a safe command that's blocked): the static parser is strict on purpose. Rephrase the command,
 for example without a variable as the command word, or run it yourself. Please report it with `sdlc feedback`.
+A known one: a line that mentions `sdlc init` or `sdlc setup` next to `cd` or `-C` (a commit message, `grep -C3`) is
+refused on purpose; run it as two commands.
 
 ## The Stop hook keeps saying "Definition of done not met"
 `make check` must pass before a turn can end, whenever the working tree changed. Run `make check` and fix what fails.
@@ -76,7 +78,12 @@ A human-owned file (such as `.aiops/config/allowed-signers` or `.claude/settings
 and it holds something setup doesn't write, or its staged version isn't what's on disk. Setup didn't write it and
 leaves it out of the commit command it prints. Read the diff it shows: an `allowed-signers` key you don't recognise
 must not be committed, because CI would then trust approvals signed with it. Fix or delete the file, then commit it
-yourself.
+yourself. If the file on disk looks fine, look at what is staged too: `git diff --cached HEAD -- <file>`, and unstage
+it with `git restore --staged -- <file>`.
+
+After committing, check what the commit really holds: `git show HEAD -- .aiops/config .aiops/config.json
+.claude/settings.json .github/`. An agent running as you controls `.git` (staged content, skip-worktree flags,
+repo-local filters and hooks), so this check, and CODEOWNERS review of the PR, are what count.
 
 ## Starting over in a repo
 Delete nothing by hand under `.aiops/`: the guards protect it, and CI audits it. To leave the workflow, remove the
