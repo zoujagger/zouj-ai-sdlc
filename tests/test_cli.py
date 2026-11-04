@@ -173,6 +173,11 @@ class Lifecycle(RepoCase):
         self.assertEqual(self.run_sdlc("doctor").returncode, 1)
         owners.write_text("/.aiops/ @your-org/product\n")              # the scaffold's placeholder isn't an owner
         self.assertEqual(self.run_sdlc("doctor").returncode, 1)
+        # profile and key policy hand-edited to disagree: the CODEOWNERS row still appears exactly once
+        for conf in ('{"profile": "team", "approval_key_policy": "sk", "require_signed_approvals": false}',
+                     '{"profile": "strict", "approval_key_policy": "human", "require_signed_approvals": false}'):
+            cfg.write_text(conf)
+            self.assertEqual(self.run_sdlc("doctor").stdout.count("CODEOWNERS covers /.aiops/"), 1, conf)
 
     def test_doctor_checks_signing(self):
         from helpers import git

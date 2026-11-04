@@ -44,9 +44,11 @@ first approved intent with one guided, rerunnable command, and the playbook work
 - CODEOWNERS placeholders (`@your-org/...`) no longer count as owners.
 
 ### Security (review round 1 of this release)
-- **The sandbox build can't be redirected.** `sdlc setup --sandbox` builds in a private temporary directory, checks
-  git's toplevel, commits an explicit file list and moves the result into place with one rename. A target swapped for
-  a symlink mid-build makes it fail instead of writing into another repo.
+- **The sandbox build is pinned by directory handle.** `sdlc setup --sandbox` opens the target's parent once
+  (`O_NOFOLLOW`), creates and enters the build directory through that handle, writes and runs git only relative to it,
+  checks git's toplevel and the build directory by inode, and renames it into place through the parent handle. Swapping
+  the target, the build directory or its parent for a symlink can't redirect the build into another repo. (The first
+  fix in this release covered only the target; review round 2 caught it.)
 - **`sdlc init --force` run by the agent keeps human-owned files:** `.aiops/config.json`, `.aiops/config/`,
   `.claude/`, CODEOWNERS and `.github/workflows/`. It lists them for the human, and nothing suggests `--force` any more.
 - **`strict` is enforced in CI.** Under `approval_key_policy: "sk"`, the audit requires each approval to be signed by an
@@ -75,6 +77,15 @@ first approved intent with one guided, rerunnable command, and the playbook work
   - The README's engine and configuration lists miss `setup`, `feedback` and `profile`.
   - The playbook test doesn't cover a FAIL review staying at state 5.
   - The `"sk"` doctor case is covered only through `signing_problem`.
+
+- **Review round 2 (low):**
+  - An agent-run `init --force` still resets protected-path files outside its human-owned list, such as
+    `governance/managed-settings.example.json`.
+  - Doctor misreads `allowed-signers` options quoted with spaces. That gives a false ✓ in doctor; CI fails closed.
+  - The pin is a tag, not a commit sha.
+  - The marketplace merge drops other keys under `zouj`, such as `autoUpdate`.
+  - The settings plan note always says "add", even when it replaces an older ref or a fork.
+  - An explicit `enabledPlugins: false` is proposed again on every rerun.
 
 ### Upgrading from 0.2.0-alpha.1
 Nothing changes until you run `sdlc setup`. A config without `profile` reads as `team`. To record your profile, run
