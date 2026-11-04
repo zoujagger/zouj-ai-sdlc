@@ -44,7 +44,7 @@ with the AI-Native SDLC Playbook workflow unchanged in every profile.
 - [x] AC-15: `strict` requires CODEOWNERS on `/.aiops/` (`tests/test_cli.py:190`)
 
 ### Deviations from plan
-46 entries in [plan.md](plan.md)'s Deviation log. The main ones:
+47 entries in [plan.md](plan.md)'s Deviation log. The main ones:
 - **The sandbox (S9) was removed in S15** after three review rounds kept finding same-user routes into the caller's
   repo.
 - **Review fixes, round by round:** F1–F6, G1–G2, H1–H4, J1–J6, K1–K3, L1–L4, M1–M5, then docs only (N1, N2).
