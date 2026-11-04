@@ -562,6 +562,27 @@ class Unreviewed(SetupCase):
         self.assertIn("Review", steps)
         self.assertIn(".aiops/config/allowed-signers", steps)
 
+    def test_staged_trust_file_is_flagged_and_never_committed(self):
+        """Round 8 MEDIUM: a key staged with git plumbing (the file on disk still equals HEAD) is flagged, and the
+        printed commit step commits only setup's files, never the rest of the index."""
+        self.assertEqual(self.setup_run("--profile", "team", "--yes").returncode, 0)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "scaffold")
+        signers = self.root / ".aiops" / "config" / "allowed-signers"
+        evil = signers.read_text() + 'agent@example.com namespaces="git" ssh-ed25519 AAAAagentStaged\n'
+        blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=self.root, input=evil, text=True,
+                              capture_output=True, env=self.env).stdout.strip()
+        git(self.root, "update-index", "--cacheinfo", f"100644,{blob},.aiops/config/allowed-signers")
+        r = self.setup_run("--profile", "solo", "--yes")                           # a human changes the profile
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("! .aiops/config/allowed-signers", r.stdout)
+        commit, _steps = self.commit_step(r.stdout)
+        done = subprocess.run(["bash", "-c", commit.strip()], cwd=self.root, capture_output=True, text=True,
+                              env=self.env)                                         # the human runs the step
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertNotIn("AAAAagentStaged", git(self.root, "show", "HEAD:.aiops/config/allowed-signers"))
+        self.assertIn('"solo"', git(self.root, "show", "HEAD:.aiops/config.json"))  # setup's own change is in
+
     def test_committed_files_are_not_flagged(self):
         self.assertEqual(self.setup_run("--profile", "team", "--yes").returncode, 0)
         git(self.root, "add", "-A")

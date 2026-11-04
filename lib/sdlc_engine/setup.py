@@ -205,7 +205,8 @@ def unreviewed(root):
     for act, rel in cli.init_actions(root):
         if act == "keep" and cli.HUMAN_OWNED_RE.match(rel) and (root / rel).is_file():
             if git(root, "ls-files", "--error-unmatch", "--", rel) is None or \
-                    git(root, "diff", "--quiet", "HEAD", "--", rel) is None:
+                    git(root, "diff", "--quiet", "HEAD", "--", rel) is None or \
+                    git(root, "diff", "--cached", "--quiet", "HEAD", "--", rel) is None:   # staged, not on disk
                 out.append(rel)
     return out
 
@@ -448,9 +449,10 @@ def human_steps(root, profile, pending, written=(), review=()):
                      "commit has them yet; an unexpected key in allowed-signers would let CI trust it):\n       "
                      + "\n       ".join(review))
     files = sorted(set(written) - set(review))
-    if files:                                     # exactly what setup wrote: never `git add -A`
-        steps.append("Commit what setup wrote:\n       git add -- " + " ".join(shlex.quote(f) for f in files)
-                     + f' && git commit -m "chore: adopt zouj-ai-sdlc (profile {config(root)["profile"]})"')
+    if files:                                     # exactly these paths: never `git add -A`, never the rest of the index
+        paths = " ".join(shlex.quote(f) for f in files)
+        steps.append(f"Commit what setup wrote:\n       git add -- {paths} && git commit -m \"chore: adopt zouj-ai-sdlc "
+                     f"(profile {config(root)['profile']})\" -- {paths}")
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     print("Human steps")
     for i, step in enumerate(steps, 1):
