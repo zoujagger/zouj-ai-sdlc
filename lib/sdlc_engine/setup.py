@@ -279,7 +279,7 @@ def main(root, args):
     if profile is not None and profile not in PROFILES:
         print(f"unknown profile {profile!r} (solo, team, strict)", file=sys.stderr)
         return 1
-    tty = sys.stdin.isatty()
+    tty = _is_tty()
     if profile is None and not dry_run and not tty:
         print("setup needs choices and there's no terminal to ask them; nothing was written. Run again with:\n"
               "  sdlc setup --profile solo|team|strict --yes   (or --dry-run to preview)")
@@ -296,6 +296,13 @@ def main(root, args):
     print("Plan")
     for mark, rel, note in actions:
         print(f"  {mark} {rel}" + (f"  ({note})" if note else ""))
+    owned = owned_changes(root, profile)
+    if owned:                                     # shown before any confirmation (and in --dry-run)
+        print("Changes to human-owned files" + (": the agent can't apply these, they become your human steps"
+                                                 if approvals.running_under_agent() else ""))
+        for rel, (old, new, _keys) in owned.items():
+            print("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}", f"b/{rel}"))
+                  .rstrip("\n"))
     print(GATES.format(proof=PROOF[profile]))
     if dry_run:
         print("dry run: nothing was written.")
@@ -309,6 +316,10 @@ def main(root, args):
               if tty else "no terminal to confirm: nothing was written. Re-run with --yes to apply.")
         return 2
     return apply(root, profile, actions, args)
+
+
+def _is_tty():
+    return sys.stdin.isatty()
 
 
 def _ask_profile():
@@ -344,8 +355,7 @@ def apply(root, profile, actions, args):
         print(f"  + {rel}")
     pending = owned_changes(root, profile)
     if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it, showing each diff
-        for rel, (old, new, _keys) in pending.items():
-            print("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}", f"b/{rel}")))
+        for rel, (_old, new, _keys) in pending.items():   # the diff was shown in the plan, before the question
             (root / rel).write_text(new)
             print(f"  ~ {rel}")
         pending = {}

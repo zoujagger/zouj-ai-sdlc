@@ -214,6 +214,34 @@ class Owned(SetupCase):
         self.assertIn('"profile": "solo"', steps)
         self.assertIn('"require_signed_approvals": false', steps)
 
+    def test_diff_shown_before_confirmation(self):
+        import contextlib
+        import io
+        from sdlc_engine import setup
+        cfg, settings = self.alpha1_repo()
+        before = (cfg.read_bytes(), settings.read_bytes())
+        r = self.setup_run("--profile", "solo", "--dry-run")                      # the dry run shows the diffs too
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for rel in (".aiops/config.json", ".claude/settings.json"):
+            self.assertIn(f"--- a/{rel}", r.stdout)
+            self.assertLess(r.stdout.index(f"--- a/{rel}"), r.stdout.index("dry run: nothing was written"))
+        self.assertRegex(r.stdout, r'(?m)^\+.*"require_signed_approvals": false')
+        seen = {}
+        buf = io.StringIO()
+
+        def confirm():                                                            # what the human sees when asked
+            seen["text"] = buf.getvalue()
+            return False
+        with mock.patch.object(setup, "_is_tty", return_value=True), \
+                mock.patch.object(setup, "_confirm", confirm), \
+                mock.patch.object(setup, "preflight", return_value=[("✓", "git", "")]), \
+                contextlib.redirect_stdout(buf):
+            code = setup.main(self.root, ["--profile", "solo"])
+        self.assertEqual(code, 2)                                                 # not confirmed: nothing written
+        self.assertIn("--- a/.aiops/config.json", seen["text"])                    # the diff came before the question
+        self.assertIn("--- a/.claude/settings.json", seen["text"])
+        self.assertEqual((cfg.read_bytes(), settings.read_bytes()), before)
+
     def test_human_merges_only_marketplace_keys(self):
         cfg, settings = self.alpha1_repo()
         r = self.setup_run("--profile", "solo", "--yes")                            # a human, in a terminal
