@@ -29,8 +29,9 @@ There's no mode without the gates. Never offer one.
    If any row is `✗`, stop: setup won't write until it's fixed.
 4. **Confirm.** Ask the human to confirm the plan in chat. Without a clear yes, stop. Nothing has been written.
 5. **Apply.** Run `sdlc setup --profile <profile> --yes`.
-   - **Run by you (the agent):** setup creates only new files. It never changes an existing `.aiops/config.json` or
-     `.claude/settings.json`; it prints those changes as human steps instead.
+   - **Run by you (the agent):** setup creates only new files, exactly as `init` would. A new `.aiops/config.json`
+     gets init's defaults (`team`); any other profile is printed as a human step. It never changes an existing
+     `.aiops/config.json` or `.claude/settings.json`; it prints those changes as human steps instead.
    - **Never** write those files yourself, and never write signing keys, `allowed-signers`, CODEOWNERS owners or
      global git config.
 6. **Hand over the human steps** exactly as printed, numbered, introduced with "Run these in your own terminal:".

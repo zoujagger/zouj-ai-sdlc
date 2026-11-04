@@ -182,7 +182,10 @@ def plan(root, profile):
         if act == "symlink":
             out.append(("✗", rel, f"{cli.symlink_on_path(root, rel)} is a symlink: remove it, setup won't write through links"))
         elif act == "create":
-            note = f"profile {profile}: {PROOF[profile]}" if rel == ".aiops/config.json" else ""
+            note = ""
+            if rel == ".aiops/config.json":
+                note = (f"init's defaults; profile {profile} becomes your human step"
+                        if approvals.running_under_agent() else f"profile {profile}: {PROOF[profile]}")
             out.append(("+", rel, note))
         else:
             out.append(("=", rel, "kept"))
@@ -318,7 +321,8 @@ def apply(root, profile, actions, args):
     creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
     cli.apply_init(root, creates)
     created = {rel for _, rel in creates}
-    if ".aiops/config.json" in created:                 # a new config takes the profile; an existing one is human-owned
+    if ".aiops/config.json" in created and not approvals.running_under_agent():
+        # a human's new config takes the profile; the agent's is exactly init's, and the profile is a human step
         f = root / ".aiops" / "config.json"
         cli.write_file(root, ".aiops/config.json",
                        (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode())

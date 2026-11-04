@@ -214,6 +214,26 @@ class Owned(SetupCase):
         self.assertIn('"profile": "solo"', steps)
         self.assertIn('"require_signed_approvals": false', steps)
 
+    def test_agent_creates_a_missing_config_with_init_defaults(self):
+        """Round 4 MEDIUM: under the agent, a new config.json is what init writes (team); the profile is a human step."""
+        scaffold = json.loads((cli.TEMPLATES / "scaffold" / ".aiops" / "config.json").read_text())
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        (self.root / ".aiops" / "config.json").unlink()                             # initialized, but no config
+        for case in ("initialized repo", "fresh repo"):
+            if case == "fresh repo":
+                shutil.rmtree(self.root / ".aiops")
+            r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            cfg = json.loads((self.root / ".aiops" / "config.json").read_text())
+            self.assertEqual(cfg, scaffold, case)                                    # no solo keys written
+            steps = r.stdout.split("Human steps\n", 1)[1]
+            self.assertIn("Change .aiops/config.json yourself", steps, case)
+            self.assertIn('"require_signed_approvals": false', steps, case)
+            (self.root / ".aiops" / "config.json").unlink()
+        human = self.setup_run("--profile", "solo", "--yes")                       # a human run still applies it
+        self.assertEqual(json.loads((self.root / ".aiops" / "config.json").read_text())["profile"], "solo",
+                         human.stdout + human.stderr)
+
     def test_diff_shown_before_confirmation(self):
         import contextlib
         import io
