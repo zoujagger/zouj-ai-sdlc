@@ -48,18 +48,18 @@ ceremony comes with it. They never change *whether* a gate exists or *who* decid
 ## Roadmap
 
 ### Phase 1: 0.2.0-alpha.2, "first approved plan in 10 minutes"
-**Status:** in progress as intent `.aiops/0003-guided-setup/`; ships as 0.2.0-alpha.2.
+**Status:** built as intent `.aiops/0003-guided-setup/` (in review); ships as 0.2.0-alpha.2. Not shipped from this
+list: an install-scope choice, and a confirmation inside `init` (setup has it; `init` stays a direct command).
 1. **Guided setup: `sdlc setup`.** Stdlib Python, shipped in the plugin, rerunnable, with `--dry-run` and `--yes`.
    - **Preflight:** git, make, python ≥ 3.9, `claude` ≥ 2.1, optional `gh` (auth plus `workflow` scope), and a git
      credential helper.
-   - **Inventory:** is the plugin installed, and in which scope? Is the repo initialized?
+   - **Inventory:** is the plugin enabled for this user, or offered by the project? Is the repo initialized?
    - **Choose:**
      - a **profile**, which only sets how a human approval is proven. All profiles run the full playbook
        workflow:
        - `solo`: the typed phrase plus a single-file approval commit, no signing
        - `team`: signed approvals with a passphrase key, plus the CI audit
        - `strict`: an `sk-` key only, plus the CI audit
-     - a **scope**: user, project or local
    - **Preview, then one confirmation.** After that, run `sdlc init` and the guided signing steps the human must
      run themselves, then `sdlc doctor`.
    - Reuse `cmd_init` / `cmd_doctor` (`lib/sdlc_engine/cli.py`) and `approve_command()` / `SIGNING_HELP`
@@ -69,7 +69,7 @@ ceremony comes with it. They never change *whether* a gate exists or *who* decid
    `enabledPlugins["zouj-ai-sdlc@zouj"]`. Teammates who open the repo are offered the plugin. The README documents
    it as ECC does.
 3. **Explicit consent, ECC-style, without a gateless mode.**
-   - Before writing anything, `init` shows what the gates will enforce: the lock in states 1-3, the human
+   - Before writing anything, `setup` shows what the gates will enforce: the lock in states 1-3, the human
      approvals, the merge and deploy guards.
    - It asks once to confirm. There is no "advisory" or "no-hooks" profile, because the hooks *are* the playbook
      gates.

@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-## [0.2.0-alpha.2] - 2026-11-03
+## [0.2.0-alpha.2] - 2026-11-04
 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
 
@@ -40,14 +40,23 @@ first approved intent with one guided, rerunnable command, and the playbook work
 - `init` and `setup` share one scaffold preview (`init_actions`/`apply_init`), so setup's plan is exactly what gets
   written.
 - CODEOWNERS placeholders (`@your-org/...`) no longer count as owners.
-- `sdlc setup` refuses an option it doesn't know (exit 1, nothing written).
+- `sdlc setup` checks its arguments before anything else: an unknown option or value, a missing value or
+  `--profile=x` is refused (exit 1, nothing written), and `--stack` takes only `python`, `node` or `go` (so does
+  `init --stack`).
+- An unknown `profile` in `config.json` is a doctor `✗` and stops `setup --dry-run` with the fix, instead of a
+  traceback.
 
-### Security (review round 1 of this release)
+### Security (fixes from this release's reviews)
 - **No sandbox command.** A `--sandbox` trial-repo builder was written during this release and removed before it
   shipped: reviews showed a same-user agent could redirect its git into the calling repo. Setup writes only in the
   repo it runs in.
 - **`sdlc init --force` run by the agent keeps human-owned files:** `.aiops/config.json`, `.aiops/config/`,
   `.claude/`, CODEOWNERS and `.github/workflows/`. It lists them for the human, and nothing suggests `--force` any more.
+- **Scaffold writes never follow a link.** `init` and `setup` refuse when a scaffold file or `.gitignore` has a symlink
+  on its path, and every write opens its directories without following links and creates the file anew, so neither a
+  symlink nor a hard link can send it to another file, inside or outside the repo.
+- **Run by the agent, setup creates `config.json` exactly as `init` does** (team defaults); another profile is printed
+  as a human step.
 - **`strict` is enforced in CI.** Under `approval_key_policy: "sk"`, the audit requires each approval to be signed by an
   allow-listed `sk-` key without `no-touch-required`, and doctor flags any other allowed signer.
 - **The marketplace snippet and install commands are pinned** to the release tag (`ref`, `owner/repo@ref`). README and
@@ -59,8 +68,8 @@ first approved intent with one guided, rerunnable command, and the playbook work
 ### Known issues (planned for 0.2.0-alpha.3)
 - **After setup:** a default setup (no `--stack`) ends with doctor's "Makefile contract wired" ✗, and rerunning setup
   with `--stack` can't add the stack once everything else is in place. Wire the recipes by hand for now.
-- **Argument parsing:** `--profile=x` isn't recognised, `--stack` isn't checked in `--dry-run`, Ctrl-D at the profile
-  question shows a traceback, and `--yes` on a terminal without `--profile` still asks.
+- **Prompts:** Ctrl-D at the profile question shows a traceback, and `--yes` on a terminal without `--profile` still
+  asks.
 - **Output:**
   - The plan doesn't list `.gitignore`.
   - The "Already set up" path prints no Doctor section.
@@ -73,6 +82,7 @@ first approved intent with one guided, rerunnable command, and the playbook work
   - The README's engine and configuration lists miss `setup`, `feedback` and `profile`.
   - The playbook test doesn't cover a FAIL review staying at state 5.
   - The `"sk"` doctor case is covered only through `signing_problem`.
+  - The test suite leaves side directories (stub tools, scratch homes) next to its temp repos in `/tmp`.
 
 - **Review round 2 (low):**
   - An agent-run `init --force` still resets protected-path files outside its human-owned list, such as

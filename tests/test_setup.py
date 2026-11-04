@@ -31,6 +31,9 @@ class Init(RepoCase):
         self.assertEqual((self.root / "Makefile").read_text(), "mine:\n\techo keep\n")
         again = cli.init_actions(self.root)
         self.assertEqual({act for act, _ in again}, {"keep"})                    # a rerun plans no creation
+        rerun = self.run_sdlc("init")
+        self.assertIn("Kept existing", rerun.stdout)
+        self.assertNotIn("--force", rerun.stdout)                                # nothing suggests resetting files
 
 
 def stub(bindir, name, body):

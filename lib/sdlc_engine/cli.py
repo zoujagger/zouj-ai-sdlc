@@ -413,7 +413,7 @@ def cmd_init(root, args):
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
     out("Created:\n  " + ("\n  ".join(created) or "(nothing)"))
     if skipped:
-        out("Kept existing (compare with the plugin's templates/scaffold/ or re-run with --force):\n  "
+        out("Kept existing (compare them with the plugin's templates/scaffold/):\n  "
             + "\n  ".join(skipped))
     out("""
 zouj-ai-sdlc is now active in this repo. Next:

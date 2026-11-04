@@ -71,9 +71,11 @@ for you); Claude Code then offers the plugin to everyone who opens the repo:
 ```
 
 **Just looking?** Try it in a throwaway repo, so no real project is touched:
-`mkdir /tmp/sdlc-try && cd /tmp/sdlc-try && git init -q && git commit -q --allow-empty -m init`, then
-`sdlc setup --profile solo --yes`, open `claude` there and run `/zouj-ai-sdlc:intent "greet people in French"`. Walk
-the five states, then delete the directory.
+`mkdir /tmp/sdlc-try && cd /tmp/sdlc-try && git init -q && git commit -q --allow-empty -m init`. Set it up with
+`<plugin>/bin/sdlc setup --profile solo --yes` in that terminal (or open `claude` there and run
+`/zouj-ai-sdlc:setup solo`), then commit the scaffold: `git add -A && git commit -m "chore: adopt zouj-ai-sdlc"`.
+Start with `/zouj-ai-sdlc:intent "greet people in French"` in `claude`, walk the five states, then delete the
+directory.
 
 **Profiles** change only how a human approval is proven; the workflow and every gate are the same:
 

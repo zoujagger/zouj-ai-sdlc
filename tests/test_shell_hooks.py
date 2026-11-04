@@ -267,6 +267,23 @@ class ShellHooks(RepoCase):
         self.assertIn("/zouj-ai-sdlc:setup", init)
         self.assertNotIn("every plugin hook here is a no-op", init)              # safety guards run in every repo
 
+    def test_docs_match_what_shipped(self):
+        """Review 0003 round 4: the docs describe the code as it is."""
+        readme = (ROOT / "README.md").read_text()
+        looking = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
+        for piece in ("bin/sdlc setup --profile solo --yes", "/zouj-ai-sdlc:setup solo", "git add -A", "git commit"):
+            self.assertIn(piece, looking, piece)
+        self.assertNotIn("--force", (ROOT / "templates" / "scaffold" / "Makefile").read_text())
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        alpha2 = changelog.split("## [0.2.0-alpha.2]", 1)[1].split("\n## [", 1)[0]
+        self.assertNotIn("round 1 of this release", alpha2)
+        known = alpha2.split("### Known issues", 1)[1].split("\n### ", 1)[0]
+        for fixed in ("--profile=x", "checked in `--dry-run`", "unknown flags"):
+            self.assertNotIn(fixed, known, fixed)
+        phase1 = (ROOT / "docs" / "roadmap.md").read_text().split("### Phase 1", 1)[1].split("### Phase 2", 1)[0]
+        for unshipped in ("user, project or local", "`init` shows what the gates"):
+            self.assertNotIn(unshipped, phase1, unshipped)
+
     def test_onboarding_docs(self):
         import re
         readme = (ROOT / "README.md").read_text()
