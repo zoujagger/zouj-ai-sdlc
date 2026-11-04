@@ -286,12 +286,16 @@ class ShellHooks(RepoCase):
         alpha2 = changelog.split("## [0.2.0-alpha.2]", 1)[1].split("\n## [", 1)[0]
         self.assertNotIn("round 1 of this release", alpha2)
         known = alpha2.split("### Known issues", 1)[1].split("\n### ", 1)[0]
-        for fixed in ("--profile=x", "checked in `--dry-run`", "unknown flags"):
+        for fixed in ("--profile=x", "checked in `--dry-run`", "unknown flags",
+                      "doesn't cover a FAIL review", "still resets protected-path files"):     # fixed in rounds 5-6
             self.assertNotIn(fixed, known, fixed)
+        for still_open in ("no-touch-required", ".gitignore", "passphrase"):               # round 6, for alpha.3
+            self.assertIn(still_open, known, still_open)
         self.assertIn("nothing suggests `--force` to the agent", alpha2)                # round 5: init tells the human
         stops = (ROOT / "TROUBLESHOOTING.md").read_text().split("## Setup says", 1)[1].split("\n## ", 1)[0]
         for reason in ("git", "make", "Python", "JSON", "symlink", "profile", "git repository", "home"):
             self.assertIn(reason, stops, reason)
+        self.assertNotIn("Setup (and `init`) stop", stops)                              # init checks only some
         skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
         threats = (ROOT / "docs" / "architecture.md").read_text().split("## Threat model", 1)[1]
         for name, text in (("setup skill", skill), ("threat model", threats)):          # the env-marker residual risk

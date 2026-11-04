@@ -86,19 +86,28 @@ first approved intent with one guided, rerunnable command, and the playbook work
   - The "Already set up" path prints no Doctor section.
   - Doctor's profile row can disagree with the actual keys.
   - Under the agent, a requested profile change prints the signing steps of the *current* profile.
-- **Tools and paths:** preflight finds `gh` and `claude` through PATH. `sdlc feedback` reduces only the repo and home
-  paths.
+- **Tools and paths:** preflight finds `gh` and `claude` through PATH (folders inside the repo are skipped).
+  `sdlc feedback` reduces only the repo and home paths.
+- **`strict`, unverified:** OpenSSH may not accept `no-touch-required` in `allowed_signers` (it is an
+  `authorized_keys` option), so the doctor and CI checks for it may never fire. Whether `ssh-keygen -Y verify`
+  enforces the touch on `sk-` signatures needs a FIDO key to test.
+- **Errors and help:**
+  - A `.gitignore` that isn't UTF-8 stops `init`/`setup` with a traceback, after the scaffold files are written.
+  - Under `strict`, the signing help from doctor and `approve` still suggests a passphrase key, which strict refuses
+    (setup's own steps say `ed25519-sk`).
+  - Run by the agent on a repo that already has a config, the profile human step says "leaves it at init's
+    defaults" instead of "leaves it unchanged".
 - **Docs and tests:**
   - TROUBLESHOOTING says "human gate" where merge blocks say "final gate".
   - The README's engine and configuration lists miss `setup`, `feedback` and `profile`.
-  - The playbook test doesn't cover a FAIL review staying at state 5.
+  - The playbook test approves through `approvals.approve`, not through the prompt hook, and AC-15's solo `!` row is
+    checked by hand only.
   - The `"sk"` doctor case is covered only through `signing_problem`.
   - The test suite leaves side directories (stub tools, scratch homes) next to its temp repos in `/tmp`.
 
 - **Review round 2 (low):**
-  - An agent-run `init --force` still resets protected-path files outside its human-owned list, such as
-    `governance/managed-settings.example.json`.
-  - Doctor misreads `allowed-signers` options quoted with spaces. That gives a false ✓ in doctor; CI fails closed.
+  - Doctor misreads `allowed-signers` options quoted with spaces (a quoted value can even hide a key type from the
+    strict check). That gives a false ✓ in doctor; CI fails closed.
   - The pin is a tag, not a commit sha.
   - The marketplace merge drops other keys under `zouj`, such as `autoUpdate`.
   - The settings plan note always says "add", even when it replaces an older ref or a fork.

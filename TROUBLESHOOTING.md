@@ -58,14 +58,16 @@ If a Makefile target still prints `not configured`, wire it: edit the
 Makefile's recipes (the plugin ships presets in `templates/stacks/`).
 
 ## Setup says `✗` and "nothing was written"
-Setup (and `init`) stop before writing anything when:
+Setup stops before writing anything when:
 - **git, make, or Python ≥ 3.9 is missing.** Install it and rerun `sdlc setup`.
 - **`.aiops/config.json` or `.claude/settings.json` isn't valid JSON, isn't a JSON object**, or has a marketplace key
   that isn't an object. Fix the file by hand (it's human-owned).
-- **A scaffold file, or a folder above it, is a symlink.** Setup never writes through links: remove the link.
+- **A scaffold file, or a folder above it, is a symlink** (`init` too). Setup never writes through links: remove the
+  link.
 - **`config.json` names an unknown `profile`.** Set it to `solo`, `team` or `strict`, or pass `--profile`.
-- **The folder isn't the top of a git repository**, or it is your home directory, `~/.claude` or a folder on PATH.
-  Run `git init` in a project folder and set up there.
+- **The folder isn't the top of a git repository**, or it is your home directory, `~/.claude` or a folder on PATH,
+  or git's `GIT_DIR`/`GIT_WORK_TREE` variables are set (`init` too). Run `git init` in a project folder and set up
+  there.
 
 `!` rows (claude, gh, credential helper, signing) are warnings: setup continues and lists the fix.
 
