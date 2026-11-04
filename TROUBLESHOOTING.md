@@ -51,8 +51,9 @@ Every block message gives the reason **and** the procedure. The common ones:
 
 **A false positive** (a safe command that's blocked): the static parser is strict on purpose. Rephrase the command,
 for example without a variable as the command word, or run it yourself. Please report it with `sdlc feedback`.
-A known one: a line that mentions `sdlc init` or `sdlc setup` next to `cd` or `-C` (a commit message, `grep -C3`) is
-refused on purpose; run it as two commands.
+A known one: a line that mentions `sdlc init` or `sdlc setup` next to a directory or git-location change (`cd`,
+`pushd`, `-C`, `--chdir`, `-execdir`, `GIT_*=`, `HOME=`, `CLAUDE_PROJECT_DIR=`; a commit message, `grep -C3`), or run
+from another repo, is refused on purpose; run it as two commands.
 
 ## The Stop hook keeps saying "Definition of done not met"
 `make check` must pass before a turn can end, whenever the working tree changed. Run `make check` and fix what fails.
@@ -78,12 +79,22 @@ A human-owned file (such as `.aiops/config/allowed-signers` or `.claude/settings
 and it holds something setup doesn't write, or its staged version isn't what's on disk. Setup didn't write it and
 leaves it out of the commit command it prints. Read the diff it shows: an `allowed-signers` key you don't recognise
 must not be committed, because CI would then trust approvals signed with it. Fix or delete the file, then commit it
-yourself. If the file on disk looks fine, look at what is staged too: `git diff --cached HEAD -- <file>`, and unstage
-it with `git restore --staged -- <file>`.
+yourself. If the file on disk looks fine, look at what is staged too:
+`git --no-pager diff --cached --no-textconv --no-ext-diff HEAD -- <file>`, and unstage it with
+`git restore --staged -- <file>`.
 
-After committing, check what the commit really holds: `git show HEAD -- .aiops/config .aiops/config.json
-.claude/settings.json .github/`. An agent running as you controls `.git` (staged content, skip-worktree flags,
-repo-local filters and hooks), so this check, and CODEOWNERS review of the PR, are what count.
+An agent running as you controls `.git`: staged content, skip-worktree flags, repo-local filters, diff drivers, the
+pager and hooks. Setup's checks, and any git command you run in that checkout, can be bent by them. So:
+1. Before setting up a new repo, and before committing, look at `.git` itself: `git config --local --list` should
+   have no `filter.*`, `diff.*`, `core.pager`, `core.hooksPath` or `core.fsmonitor`; `.git/info/attributes` should be
+   missing or empty; `ls .git/hooks` should show only `*.sample` files. Remove anything you didn't put there.
+2. If a staged key won't unstage, run `git update-index --no-skip-worktree --no-assume-unchanged -- <file>` first.
+3. After committing, read every commit you are about to push:
+   `git --no-pager log --stat --patch --no-textconv --no-ext-diff origin/main..HEAD` (`--root` instead of the range in a repo with no remote yet). Check the profile in
+   `.aiops/config.json` and every key in `allowed-signers`.
+4. Before merging, read the adoption PR's full "Files changed" on GitHub, every file, ideally with a second person.
+   CODEOWNERS doesn't cover this PR: GitHub reads it from the base branch, and the adoption PR is the one that adds
+   it.
 
 ## Starting over in a repo
 Delete nothing by hand under `.aiops/`: the guards protect it, and CI audits it. To leave the workflow, remove the

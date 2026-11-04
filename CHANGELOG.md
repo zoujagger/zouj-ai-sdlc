@@ -121,17 +121,30 @@ first approved intent with one guided, rerunnable command, and the playbook work
     it with `git restore --staged -- <file>`.
   - A staged key hidden with `git update-index --skip-worktree` or `--assume-unchanged` isn't flagged, and the printed
     commit step then fails; a plain `git commit` would take the key.
-  - Repo-local git filters, attributes or hooks planted before `init` can change what the commit step commits.
+  - Repo-local git config planted before `init` (a `clean` filter, attributes, hooks) can change what the commit step
+    commits, and also what `git show`/`git diff` display (textconv, a pager) and what gets pushed (a pre-push hook).
 
-  **Workaround:** after committing, check what the commit really holds, whatever the index, filters or hooks did:
-  `git show HEAD -- .aiops/config .aiops/config.json .claude/settings.json .github/`. Then have the adoption PR
-  reviewed under CODEOWNERS.
+  **Workaround.** Anything that runs in your checkout can be bent by what the agent planted there, including the
+  commands you check with. So:
+  1. Before running setup in a repo that isn't set up yet, and again before committing, look at `.git` itself:
+     `git config --local --list` should have no `filter.*`, `diff.*`, `core.pager`, `core.hooksPath` or
+     `core.fsmonitor`; `.git/info/attributes` should be missing or empty; `ls .git/hooks` should show only
+     `*.sample` files. Remove anything you didn't put there.
+  2. If a staged key won't unstage, run `git update-index --no-skip-worktree --no-assume-unchanged -- <file>` first,
+     then `git restore --staged -- <file>`.
+  3. After committing, read every commit you are about to push, without repo-local diff drivers or pager:
+     `git --no-pager log --stat --patch --no-textconv --no-ext-diff origin/main..HEAD` (`--root` instead of the range in a repo with no remote yet). Check that `.aiops/config.json`
+     has the profile you chose and that `allowed-signers` holds only keys you know.
+  4. Before merging, read the adoption PR's full "Files changed" on GitHub, every file, ideally with a second person.
+     That view doesn't depend on your checkout (a pre-push hook could even push a different commit). CODEOWNERS
+     doesn't help here: GitHub reads it from the base branch, and the adoption PR is the one that adds it.
 - **Review round 9 (minor):**
   - After a human run merged keys into a committed `settings.json` or `config.json`, a rerun flags that file as "not
     in any commit yet", which is wrong (it is in HEAD, just changed).
   - The commit step also lists uncommitted local edits to scaffold files such as `Makefile` or `CLAUDE.md`.
-  - The pre-bash guard refuses a line that only mentions `sdlc init|setup` next to `cd` or `-C` (a commit message, a
-    `grep -C3`): split the command.
+  - The pre-bash guard refuses a line that only mentions `sdlc init|setup` next to a directory or git-location change
+    (`cd`, `pushd`, `-C`, `--chdir`, `-execdir`, `GIT_*=`, `HOME=`, `CLAUDE_PROJECT_DIR=`: a commit message, a
+    `grep -C3`), or run from another repo: split the command.
   - The inventory prints the stored profile unescaped, and bidi overrides pass setup's escaping.
 - **Review round 8 (low):**
   - The pre-bash guard allows git index plumbing (`hash-object -w`, `update-index --cacheinfo`, `git add`) on

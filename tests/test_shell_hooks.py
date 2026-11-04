@@ -293,9 +293,18 @@ class ShellHooks(RepoCase):
             self.assertIn(still_open, known, still_open)
         for still_open in ("update-index", "CODEOWNERS", "secret-paths"):                  # round 8, for alpha.3
             self.assertIn(still_open, known, still_open)
-        for still_open in ("skip-worktree", "filter", "git restore --staged", "git show HEAD --"):   # round 9
+        for still_open in ("--skip-worktree", "clean` filter", "git restore --staged"):        # round 9
             self.assertIn(still_open, known, still_open)
         self.assertIn("**Review round 8", known)                                           # not under round 2
+        self.assertIn("**Review round 9 (minor)", known)
+        trouble = (ROOT / "TROUBLESHOOTING.md").read_text()
+        # round 10: the workaround reads the commits without repo-local drivers or pager, inspects .git first, and
+        # ends on GitHub's "Files changed" (CODEOWNERS doesn't apply to the adoption PR itself)
+        for name, text in (("changelog", known), ("troubleshooting", trouble)):
+            for piece in ("git config --local --list", "--no-pager log --stat --patch --no-textconv --no-ext-diff",
+                          "Files changed", "--no-skip-worktree --no-assume-unchanged", "base branch"):
+                self.assertIn(piece, text, (name, piece))
+            self.assertNotIn("whatever the index, filters or hooks did", text, name)
         threat_row = next(line for line in (ROOT / "docs" / "architecture.md").read_text().splitlines()
                           if line.startswith("| The agent uses `sdlc setup`"))
         for residual in ("{cd,", "unset CLAUDE_PROJECT_DIR", "counts as reviewed"):            # round 8 residuals
