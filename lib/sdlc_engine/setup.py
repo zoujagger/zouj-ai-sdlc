@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from . import approvals, cli
-from .machine import config, initialized
+from .machine import config, git, initialized
 
 PROFILES = cli.PROFILES
 TIMEOUT = 5
@@ -197,9 +197,23 @@ def inventory(root):
     return rows
 
 
-def plan(root, profile):
-    """[(mark, rel, note)]: `+` create, `~` change (shown as a diff), `=` unchanged."""
+def unreviewed(root):
+    """Human-owned scaffold files that exist but aren't committed as they are (untracked, or changed since HEAD). Setup
+    didn't write them and no review has seen them: the agent may have planted one while the guards were off (a key in
+    allowed-signers would make CI trust it), so the human reviews them and they stay out of the commit setup suggests."""
     out = []
+    for act, rel in cli.init_actions(root):
+        if act == "keep" and cli.HUMAN_OWNED_RE.match(rel) and (root / rel).is_file():
+            if git(root, "ls-files", "--error-unmatch", "--", rel) is None or \
+                    git(root, "diff", "--quiet", "HEAD", "--", rel) is None:
+                out.append(rel)
+    return out
+
+
+def plan(root, profile):
+    """[(mark, rel, note)]: `+` create, `~` change (shown as a diff), `=` unchanged, `!` an existing human-owned file
+    that no commit has (shown, for the human to review)."""
+    out, review = [], unreviewed(root)
     for act, rel in cli.init_actions(root):
         if act == "symlink":
             out.append(("✗", rel, f"{cli.symlink_on_path(root, rel)} is a symlink: remove it, setup won't write through links"))
@@ -209,6 +223,9 @@ def plan(root, profile):
                 note = (f"init's defaults; profile {profile} becomes your human step"
                         if approvals.running_under_agent() else f"profile {profile}: {PROOF[profile]}")
             out.append(("+", rel, note))
+        elif rel in review:
+            out.append(("!", rel, "exists but was never committed, and setup didn't write it: review it before "
+                                  "committing"))
         else:
             out.append(("=", rel, "kept"))
     for rel, (_old, _new, keys) in owned_changes(root, profile).items():
@@ -311,6 +328,13 @@ def main(root, args):
         for rel, (old, new, _keys) in owned.items():
             print("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}", f"b/{rel}"))
                   .rstrip("\n"))
+    review = unreviewed(root)
+    if review:                                    # shown before any confirmation (and in --dry-run)
+        print("Review before committing: human-owned, not written by setup, never committed")
+        for rel in review:
+            template = (cli.TEMPLATES / "scaffold" / rel).read_text()
+            print("".join(difflib.unified_diff(template.splitlines(True), (root / rel).read_text().splitlines(True),
+                                               f"template/{rel}", rel)).rstrip("\n") or f"  (same as the template: {rel})")
     print(GATES.format(proof=PROOF[profile]))
     if any(mark == "✗" for mark, _, _ in actions):
         print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
@@ -322,13 +346,13 @@ def main(root, args):
     if not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):   # the agent never writes a ~ change
         print("Nothing for the agent to write: the ~ changes above are yours (see the human steps)." if agent and owned
               else "Already set up: nothing to write.")
-        human_steps(root, profile, owned if agent else {})
+        human_steps(root, profile, owned if agent else {}, review=review)
         return 0
     if not yes and not (tty and _confirm()):
         print("not confirmed: nothing was written. Re-run with --yes to apply without the question."
               if tty else "no terminal to confirm: nothing was written. Re-run with --yes to apply.")
         return 2
-    return apply(root, profile, actions, opts.get("--stack"))
+    return apply(root, profile, actions, opts.get("--stack"), review)
 
 
 def _is_tty():
@@ -349,7 +373,7 @@ def _confirm():
         return False
 
 
-def apply(root, profile, actions, stack=None):
+def apply(root, profile, actions, stack=None, review=()):
     creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
     created = {rel for _, rel in creates}
     written, changed, wired = [], [], None
@@ -379,13 +403,13 @@ def apply(root, profile, actions, stack=None):
         print(f"  + {rel}")
     for rel in changed:
         print(f"  ~ {rel}")
-    human_steps(root, profile, pending)
+    human_steps(root, profile, pending, written, review)
     print("Doctor")
     cli.cmd_doctor(root, [])
     return 0
 
 
-def human_steps(root, profile, pending):
+def human_steps(root, profile, pending, written=(), review=()):
     """What only the human can do: install the plugin, set up signing, own .aiops/, apply changes to human-owned
     files, commit, and start the first intent."""
     steps = ["In Claude Code (or just reopen Claude Code here: the project settings offer the plugin):\n"
@@ -414,7 +438,14 @@ def human_steps(root, profile, pending):
         else:
             steps.append(f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
                          f"       {snippet}")
-    steps.append(f'Commit: git add -A && git commit -m "chore: adopt zouj-ai-sdlc (profile {profile})"')
+    if review:                                    # unreviewed(), taken before setup wrote anything
+        steps.append("Review these human-owned files yourself before committing them (setup didn't write them, and no "
+                     "commit has them yet; an unexpected key in allowed-signers would let CI trust it):\n       "
+                     + "\n       ".join(review))
+    files = sorted(set(written) - set(review))
+    if files:                                     # exactly what setup wrote: never `git add -A`
+        steps.append("Commit what setup wrote:\n       git add -- " + " ".join(shlex.quote(f) for f in files)
+                     + f' && git commit -m "chore: adopt zouj-ai-sdlc (profile {profile})"')
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     print("Human steps")
     for i, step in enumerate(steps, 1):

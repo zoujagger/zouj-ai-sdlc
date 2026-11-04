@@ -512,6 +512,48 @@ class PreflightTools(SetupCase):
         self.assertEqual(Path(f"{log}.stdin").read_text(), "")                         # without the human's stdin
 
 
+class Unreviewed(SetupCase):
+    """Round 7 MEDIUM: a human-owned file that exists before setup and isn't committed was never reviewed (the agent
+    may have planted it while the guards were off), so setup shows it and never folds it into the commit."""
+    PLANTED = 'agent@example.com namespaces="git" ssh-ed25519 AAAAplantedByTheAgent\n'
+
+    def plant(self):
+        f = self.root / ".aiops" / "config" / "allowed-signers"
+        f.parent.mkdir(parents=True)
+        f.write_text(self.PLANTED)
+        return f
+
+    def commit_step(self, out):
+        steps = out.split("Human steps\n", 1)[1]
+        return next(line for line in steps.splitlines() if "git commit" in line), steps
+
+    def test_planted_signer_is_shown_and_left_out_of_the_commit(self):
+        self.plant()
+        for env in ({}, {"CLAUDECODE": "1"}):                                       # a human's run, the agent's run
+            with self.subTest(agent=bool(env)):
+                r = self.setup_run("--profile", "team", "--dry-run", env=env)
+                self.assertIn("! .aiops/config/allowed-signers", r.stdout)
+                self.assertIn("AAAAplantedByTheAgent", r.stdout)                    # its content is shown
+        r = self.setup_run("--profile", "team", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.root / ".aiops" / "config" / "allowed-signers").read_text(), self.PLANTED)
+        commit, steps = self.commit_step(r.stdout)
+        self.assertNotIn("git add -A", steps)
+        self.assertIn("git add --", commit)
+        self.assertIn(".aiops/config.json", commit)                                 # what setup wrote
+        self.assertNotIn("allowed-signers", commit)                                 # never the unreviewed file
+        self.assertIn("Review", steps)
+        self.assertIn(".aiops/config/allowed-signers", steps)
+
+    def test_committed_files_are_not_flagged(self):
+        self.assertEqual(self.setup_run("--profile", "team", "--yes").returncode, 0)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "scaffold")
+        r = self.setup_run("--profile", "team", "--dry-run")
+        self.assertNotIn("! .aiops/config/allowed-signers", r.stdout)
+        self.assertIn("= .aiops/config/allowed-signers", r.stdout)
+
+
 class Roots(SetupCase):
     """Round 5 MEDIUM: init and setup scaffold only the top of a git repo, never $HOME, ~/.claude or a toolchain path."""
 

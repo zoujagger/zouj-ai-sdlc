@@ -66,6 +66,10 @@ first approved intent with one guided, rerunnable command, and the playbook work
   read from the account record too, not only `$HOME`. The pre-bash guard lets the agent run them only in its
   session's repo. Run by the agent, `init --force` keeps every file the guard won't let the agent write (protected
   paths, the read-only lock).
+- **Setup never folds an unreviewed human-owned file into your commit.** A file such as `allowed-signers` that
+  existed before setup and isn't committed (the agent could have planted a key while the guards were off) is shown as
+  `!` with its diff against the template, named in a "review before committing" step, and left out of the commit
+  command, which now lists exactly the files setup wrote instead of `git add -A`.
 - **Preflight never runs a tool from a PATH folder inside the repo** (an agent could plant one there), runs git by
   its absolute path, and gives the tools it runs no stdin.
 - **`no-touch-required` is matched in any letter case** in `allowed-signers`, by doctor, `approve` and the CI audit.
