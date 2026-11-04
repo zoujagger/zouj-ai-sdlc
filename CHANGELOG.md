@@ -31,10 +31,8 @@ first approved intent with one guided, rerunnable command, and the playbook work
   showing a diff.
 - **Collaborators are offered the plugin.** The scaffold's `.claude/settings.json` carries the marketplace snippet
   (`extraKnownMarketplaces` and `enabledPlugins`).
-- **`sdlc setup --sandbox <dir>`.** A committed throwaway repo with a stdlib-only app, the `solo` scaffold and a
-  sample intent `0001`, to walk the five states safely.
 - **`sdlc feedback`.** Issue links and a doctor summary with paths reduced to the repo name; it sends nothing.
-- **Docs.** A task-first README (Start using, install paths A/B/C, profiles), `COMMANDS-QUICK-REF.md`,
+- **Docs.** A task-first README (Start using, install paths A/B/C, profiles, a throwaway-repo recipe to try it), `COMMANDS-QUICK-REF.md`,
   `TROUBLESHOOTING.md`, and the `install-problem` and `quick-feedback` issue forms.
 - **`tests/test_playbook.py`.** The full playbook walk in each profile, through the real guards and hooks.
 
@@ -42,13 +40,12 @@ first approved intent with one guided, rerunnable command, and the playbook work
 - `init` and `setup` share one scaffold preview (`init_actions`/`apply_init`), so setup's plan is exactly what gets
   written.
 - CODEOWNERS placeholders (`@your-org/...`) no longer count as owners.
+- `sdlc setup` refuses an option it doesn't know (exit 1, nothing written).
 
 ### Security (review round 1 of this release)
-- **The sandbox build is pinned by directory handle.** `sdlc setup --sandbox` opens the target's parent once
-  (`O_NOFOLLOW`), creates and enters the build directory through that handle, writes and runs git only relative to it,
-  checks git's toplevel and the build directory by inode, and renames it into place through the parent handle. Swapping
-  the target, the build directory or its parent for a symlink can't redirect the build into another repo. (The first
-  fix in this release covered only the target; review round 2 caught it.)
+- **No sandbox command.** A `--sandbox` trial-repo builder was written during this release and removed before it
+  shipped: reviews showed a same-user agent could redirect its git into the calling repo. Setup writes only in the
+  repo it runs in.
 - **`sdlc init --force` run by the agent keeps human-owned files:** `.aiops/config.json`, `.aiops/config/`,
   `.claude/`, CODEOWNERS and `.github/workflows/`. It lists them for the human, and nothing suggests `--force` any more.
 - **`strict` is enforced in CI.** Under `approval_key_policy: "sk"`, the audit requires each approval to be signed by an
@@ -62,9 +59,8 @@ first approved intent with one guided, rerunnable command, and the playbook work
 ### Known issues (planned for 0.2.0-alpha.3)
 - **After setup:** a default setup (no `--stack`) ends with doctor's "Makefile contract wired" ✗, and rerunning setup
   with `--stack` can't add the stack once everything else is in place. Wire the recipes by hand for now.
-- **Argument parsing:** `--profile=x` isn't recognised, `--sandbox --yes` reads `--yes` as the directory, `--stack` is
-  ignored with `--sandbox` and isn't checked in `--dry-run`, unknown flags are ignored, Ctrl-D at the profile question
-  shows a traceback, and `--yes` on a terminal without `--profile` still asks.
+- **Argument parsing:** `--profile=x` isn't recognised, `--stack` isn't checked in `--dry-run`, Ctrl-D at the profile
+  question shows a traceback, and `--yes` on a terminal without `--profile` still asks.
 - **Output:**
   - The plan doesn't list `.gitignore`.
   - The "Already set up" path prints no Doctor section.

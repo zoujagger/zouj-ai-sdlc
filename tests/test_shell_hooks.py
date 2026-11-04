@@ -278,7 +278,7 @@ class ShellHooks(RepoCase):
         self.assertIn("Playbook stage", start)
         install = readme.split("## Install", 1)[1].split("\n## ", 1)[0]
         for piece in ("/zouj-ai-sdlc:setup", "/plugin marketplace add zoujagger/zouj-ai-sdlc",
-                      "/plugin install zouj-ai-sdlc@zouj", '"extraKnownMarketplaces"', "--sandbox", "Official sources"):
+                      "/plugin install zouj-ai-sdlc@zouj", '"extraKnownMarketplaces"', "**Just looking?**", "Official sources"):
             self.assertIn(piece, install, piece)
         for rel in ("TROUBLESHOOTING.md", "COMMANDS-QUICK-REF.md", ".github/ISSUE_TEMPLATE/install-problem.yml",
                     ".github/ISSUE_TEMPLATE/quick-feedback.yml", ".github/ISSUE_TEMPLATE/config.yml"):

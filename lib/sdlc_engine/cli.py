@@ -36,7 +36,6 @@ Lifecycle (any user or agent)
   lock                       /fix: lock test files after the human approved the failing test
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
   setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
-  setup --sandbox <dir>      a throwaway repo with a sample intent, to try the workflow
   feedback                   issue links and a doctor summary to paste (sends nothing)
   doctor                     check tools and wiring
 
@@ -274,9 +273,9 @@ def cmd_unlock(root, args):
     return 0
 
 
-def _wire_stack(makefile, stack, recipes_file=None):
+def _wire_stack(makefile, stack):
     recipes = {}
-    for line in (recipes_file or TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
+    for line in (TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and not parts[0].startswith("#"):
             recipes[parts[0]] = parts[1]

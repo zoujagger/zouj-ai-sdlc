@@ -6,7 +6,7 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 ## Get started
 | Command | What it does |
 |---|---|
-| `/zouj-ai-sdlc:setup [solo\|team\|strict \| sandbox <dir>]` | Guided setup: checks prerequisites, previews every change and the gates, applies after you confirm, lists your human steps. Rerunnable |
+| `/zouj-ai-sdlc:setup [solo\|team\|strict]` | Guided setup: checks prerequisites, previews every change and the gates, applies after you confirm, lists your human steps. Rerunnable |
 | `/zouj-ai-sdlc:init [--stack python\|node\|go]` | The bare scaffold, without setup's guidance |
 | `/zouj-ai-sdlc:onboard` | An interactive tour of the workflow for your role |
 | `/zouj-ai-sdlc:help-me "<goal>"` | Maps what you want to do to the right command |
@@ -48,7 +48,7 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 ## Engine commands (terminal)
 | Command | What it does |
 |---|---|
-| `sdlc setup …` / `sdlc setup --sandbox <dir>` | The guided setup and the sandbox, as above |
+| `sdlc setup [--profile P] [--stack S] [--dry-run] [--yes]` | The guided setup, as above |
 | `sdlc status [--json]` · `sdlc next` | State and next step |
 | `sdlc doctor` | Checks prerequisites, the profile, signing and artifacts |
 | `sdlc feedback` | Issue links and a doctor summary to paste (sends nothing) |

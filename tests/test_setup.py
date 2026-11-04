@@ -291,122 +291,32 @@ class Owned(SetupCase):
         self.assertIn("nothing to write", rerun.stdout)
 
 
-class Sandbox(SetupCase):
-    def test_creates_committed_repo(self):
+class NoSandbox(SetupCase):
+    """The sandbox was removed (review round 3): setup writes only in the repo it runs in; the README has a recipe."""
+
+    def test_unknown_option_refused(self):
         before = self.snapshot()
         box = self.root.parent / f"{self.root.name}.sandbox"
-        r = self.setup_run("--sandbox", str(box))
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(git(box, "branch", "--show-current"), "main")
-        self.assertEqual(git(box, "status", "--porcelain"), "")                    # everything committed
-        self.assertEqual(json.loads((box / ".aiops" / "config.json").read_text())["profile"], "solo")
-        intents = sorted((box / ".aiops").glob("0001-*/intent.md"))
-        self.assertEqual(len(intents), 1, intents)
-        self.assertIn("status: Draft", intents[0].read_text())
-        env = {**self.env, "CLAUDE_PROJECT_DIR": str(box)}
-        v = subprocess.run([sys.executable, SDLC, "validate", "0001"], cwd=box, capture_output=True, text=True, env=env)
-        self.assertEqual(v.returncode, 0, v.stdout + v.stderr)
-        st = subprocess.run([sys.executable, SDLC, "status"], cwd=box, capture_output=True, text=True, env=env).stdout
-        self.assertIn("1 BRAINSTORMING", st)                                      # the sample intent is active
-        m = subprocess.run(["make", "check"], cwd=box, capture_output=True, text=True)
-        self.assertEqual(m.returncode, 0, m.stdout + m.stderr)                    # stdlib only: green anywhere
-        self.assertIn("Intent Approved 0001", r.stdout)                           # how to walk the states
-        self.assertEqual(self.snapshot(), before)                                 # the calling repo is untouched
-        # refusals: a non-empty directory, a symlink, a directory inside the calling repo
-        r = self.setup_run("--sandbox", str(box))
-        self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn("not empty", r.stdout + r.stderr)
-        link = self.root.parent / f"{self.root.name}.boxlink"
-        link.symlink_to(self.root.parent)
-        r = self.setup_run("--sandbox", str(link))
-        self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn("symlink", r.stdout + r.stderr)
-        r = self.setup_run("--sandbox", str(self.root / "box"))
-        self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn("inside this repo", r.stdout + r.stderr)
-        self.assertFalse((self.root / "box").exists())
+        for args in (("--sandbox", str(box)), ("--profile", "solo", "--yes", "--bogus")):
+            r = self.setup_run(*args)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn(f"unknown option {args[0] if args[0] == '--sandbox' else '--bogus'!r}", r.stderr)
+            self.assertIn("--profile", r.stderr)                                  # names the valid options
+            self.assertEqual(r.stdout, "")                                        # refused before preflight
+        self.assertFalse(box.exists())
+        self.assertEqual(self.snapshot(), before)                                 # nothing written
 
-
-class SandboxRace(SetupCase):
-    def test_target_swapped_for_a_symlink_mid_build(self):
-        """The agent swaps the (empty) target for a symlink to the real repo while the sandbox is being built."""
-        import os
-        from sdlc_engine import setup
-        git(self.root, "add", "-A")
-        git(self.root, "commit", "-q", "--allow-empty", "-m", "base")
-        head, before = git(self.root, "rev-parse", "HEAD"), self.snapshot()
-        box = self.root.parent / f"{self.root.name}.raceparent" / "racebox"     # a private parent, not /tmp itself
-        box.mkdir(parents=True)                                                  # an empty target is allowed
-        real = shutil.copytree
-
-        def swap_then_copy(*args, **kw):                                         # the first write into the build
-            if box.is_dir() and not box.is_symlink():
-                shutil.rmtree(box)
-                os.symlink(self.root, box)                                       # now points at the real repo
-            return real(*args, **kw)
-        with mock.patch.object(setup.shutil, "copytree", swap_then_copy):
-            code = setup.sandbox(self.root, str(box))
-        self.assertEqual(code, 1)                                                # refused, not built through it
-        self.assertEqual(self.snapshot(), before)                                # the real repo is untouched
-        self.assertEqual(git(self.root, "rev-parse", "HEAD"), head)              # and nothing was committed
-        self.assertFalse(any(p.name.startswith(".sdlc-sandbox-") for p in box.parent.iterdir()))   # no leftovers
-
-
-    def test_outside_any_repo(self):
-        """Run from a directory that isn't a git repo, a target below it is fine ("inside this repo" was wrong)."""
-        from sdlc_engine import setup
-        plain = self.root.parent / f"{self.root.name}.plain"
-        plain.mkdir()
-        self.assertEqual(setup.sandbox(plain, str(plain / "try")), 0)
-        self.assertEqual(git(plain / "try", "branch", "--show-current"), "main")
-
-
-class SandboxRaceDeeper(SetupCase):
-    """Round 2: the agent swaps the build directory itself, or its parent, right after `git init`."""
-
-    def run_with_swap(self, swap):
-        from sdlc_engine import setup
-        git(self.root, "add", "-A")
-        git(self.root, "commit", "-q", "--allow-empty", "-m", "base")
-        head, before = git(self.root, "rev-parse", "HEAD"), self.snapshot()
-        parent = self.root.parent / f"{self.root.name}.p"
-        parent.mkdir()
-        box = parent / "box"
-        real, done = shutil.copytree, []
-
-        def copy(*args, **kw):                                                   # the first write after git init
-            if not done:
-                done.append(True)
-                swap(parent)
-            return real(*args, **kw)
-        cwd = Path.cwd()
-        with mock.patch.object(setup.shutil, "copytree", copy):
-            code = setup.sandbox(self.root, str(box))
-        self.assertEqual(Path.cwd(), cwd)                                        # the working directory is restored
-        self.assertEqual(self.snapshot(), before)                                # nothing written into the real repo
-        self.assertEqual(git(self.root, "rev-parse", "HEAD"), head)              # and nothing committed there
-        return code
-
-    def test_build_dir_swapped_for_a_symlink(self):
-        import os
-
-        def swap(parent):
-            build = next(p for p in parent.iterdir() if p.name.startswith(".sdlc-sandbox-"))
-            os.rename(build, parent / "moved-away")
-            os.symlink(self.root, build)                                         # the build name now points at the repo
-        self.assertEqual(self.run_with_swap(swap), 1)                            # detected, refused
-
-    def test_parent_swapped_for_a_symlink(self):
-        import os
-
-        def swap(parent):
-            build = next(p for p in parent.iterdir() if p.name.startswith(".sdlc-sandbox-"))
-            decoy = parent.parent / f"{parent.name}.decoy"
-            decoy.mkdir()
-            os.symlink(self.root, decoy / build.name)                            # same build name, into the repo
-            os.rename(parent, parent.parent / f"{parent.name}.moved")
-            os.symlink(decoy, parent)                                            # the parent path now leads there
-        self.run_with_swap(swap)
+    def test_docs_offer_the_recipe_not_a_sandbox(self):
+        root = Path(cli.__file__).resolve().parents[2]
+        self.assertFalse((cli.TEMPLATES / "sandbox").exists())
+        for rel in ("README.md", "COMMANDS-QUICK-REF.md", "skills/setup/SKILL.md", "lib/sdlc_engine/cli.py",
+                    "lib/sdlc_engine/setup.py"):
+            text = (root / rel).read_text()
+            self.assertNotIn("--sandbox", text, rel)
+            self.assertNotIn("sandbox <dir>", text, rel)
+        readme = (root / "README.md").read_text()
+        for piece in ("git init", "sdlc setup --profile solo --yes", "/zouj-ai-sdlc:intent"):
+            self.assertIn(piece, readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0], piece)
 
 
 class Feedback(RepoCase):

@@ -73,8 +73,8 @@ ceremony comes with it. They never change *whether* a gate exists or *who* decid
      approvals, the merge and deploy guards.
    - It asks once to confirm. There is no "advisory" or "no-hooks" profile, because the hooks *are* the playbook
      gates.
-   - To try it out, use a throwaway repo: `sdlc setup --sandbox` scaffolds a demo repo with a sample intent, so a
-     user can walk all 5 states in a few minutes.
+   - To try it out, the README shows a throwaway-repo recipe (`git init`, then `sdlc setup --profile solo --yes`).
+     There is no sandbox command: building a repo as the human, next to a same-user agent, proved unsafe in review.
 4. **A task-first README that follows the playbook.** Put a "Start using" table first:
 
    | Task | Route |

@@ -20,7 +20,7 @@ Start from what you're doing. Every route runs the same playbook workflow, with 
 
 | You want to… | Run | Playbook stage |
 |---|---|---|
-| Try the workflow safely first | `/zouj-ai-sdlc:setup sandbox /tmp/sdlc-sandbox` | (a throwaway repo) |
+| Try the workflow first | a throwaway repo: see **Just looking?** under Install | (any, risk-free) |
 | Set up this repo | `/zouj-ai-sdlc:setup` (pick `solo`, `team` or `strict`) | 1 Plan: formalise and share |
 | Build a feature or change | `/zouj-ai-sdlc:intent "<need>"` → spec → plan → implement | Trigger → Design → Build |
 | Fix a bug | `/zouj-ai-sdlc:fix "<bug>"` (failing test first) | Test |
@@ -70,8 +70,10 @@ for you); Claude Code then offers the plugin to everyone who opens the repo:
 }
 ```
 
-**Just looking?** `sdlc setup --sandbox /tmp/sdlc-sandbox` creates a throwaway repo with a sample intent, so you can
-walk all five states without touching a real project.
+**Just looking?** Try it in a throwaway repo, so no real project is touched:
+`mkdir /tmp/sdlc-try && cd /tmp/sdlc-try && git init -q && git commit -q --allow-empty -m init`, then
+`sdlc setup --profile solo --yes`, open `claude` there and run `/zouj-ai-sdlc:intent "greet people in French"`. Walk
+the five states, then delete the directory.
 
 **Profiles** change only how a human approval is proven; the workflow and every gate are the same:
 

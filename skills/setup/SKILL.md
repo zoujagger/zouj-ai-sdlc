@@ -1,12 +1,12 @@
 ---
 name: setup
-description: Guided, rerunnable onboarding for zouj-ai-sdlc in the current repo (or a throwaway sandbox). Checks prerequisites, shows what's installed, previews every change with the playbook gates, and applies only after the human confirms. Use when someone asks to install, set up, onboard, reconfigure or try the workflow.
+description: Guided, rerunnable onboarding for zouj-ai-sdlc in the current repo. Checks prerequisites, shows what's installed, previews every change with the playbook gates, and applies only after the human confirms. Use when someone asks to install, set up, onboard, reconfigure or try the workflow.
 disable-model-invocation: true
 ---
 
 # Set up zouj-ai-sdlc
 
-Arguments: `$ARGUMENTS` (a profile: `solo`, `team` or `strict`; or `sandbox <dir>`).
+Arguments: `$ARGUMENTS` (a profile: `solo`, `team` or `strict`).
 
 The workflow is the AI-Native SDLC Playbook, the **same in every profile**: intent → spec → plan (code read-only) →
 TDD execution → fresh-context review → the human merges. Every gate is opened by the human. A profile changes only
@@ -17,8 +17,8 @@ how an approval is proven:
 
 There's no mode without the gates. Never offer one.
 
-1. **Try first?** If the human just wants to see the workflow, run `sdlc setup --sandbox <dir>` (a directory outside
-   this repo, e.g. `/tmp/sdlc-sandbox`). Relay the printed walkthrough, and stop.
+1. **Try first?** If the human just wants to see the workflow, point them to the README's **Just looking?** recipe:
+   they create a throwaway repo themselves and run setup there with `solo`. Don't create it for them, and stop.
 2. **Ask for the profile** if `$ARGUMENTS` doesn't name one. Use AskUserQuestion with the three profiles above. Most
    solo developers pick `solo` and most teams `team`.
 3. **Preview.** Run `sdlc setup --profile <profile> --dry-run`. Show the human:
@@ -50,4 +50,4 @@ setup only prints that change.
 |---|---|
 | "I'll skip the preview to save time" | Always `--dry-run` first; the human confirms the plan. |
 | Editing `.aiops/config.json` or `.claude/settings.json` to apply a printed step | Those are human-owned: hand the step to the human. |
-| Offering a lighter profile without approvals or the read-only lock | There is none. Suggest the sandbox to try things out. |
+| Offering a lighter profile without approvals or the read-only lock | There is none. Suggest the README's throwaway-repo recipe to try things out. |

@@ -4,12 +4,10 @@ Profiles change only how strongly a human approval is proven; every profile runs
 (docs/sdlc.md). External tools are looked up on PATH and run with a short timeout: a missing or hung `claude`/`gh`
 becomes a warning, while missing git, make or python >= 3.9 stops setup before anything is written.
 """
-import datetime
 import difflib
 import json
 import os
 import re
-import secrets
 import shutil
 import subprocess
 import sys
@@ -227,128 +225,25 @@ def _choices(args):
     return profile, "--dry-run" in args, "--yes" in args
 
 
-SANDBOX = cli.TEMPLATES / "sandbox"
+OPTIONS = {"--profile": True, "--stack": True, "--dry-run": False, "--yes": False}   # option: takes a value
 
 
-def _in_git_work_tree(path):
-    r = subprocess.run([approvals.GIT, "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True, text=True)
-    return r.returncode == 0 and r.stdout.strip() == "true"
-
-
-def sandbox(root, target):
-    """A throwaway, committed repo with the solo scaffold and a Draft sample intent, outside the calling repo.
-
-    Race-free against a same-user agent that renames or swaps paths while it runs: the parent directory is opened
-    once (O_NOFOLLOW) and the build directory is created and entered through that handle. Every write and git call
-    is then relative to the pinned working directory, so no path is resolved again. git's toplevel is checked by
-    inode, and the final rename goes through the parent's handle, after checking the build name still is the same
-    directory. A swapped build directory or parent makes it fail or land at the original place, never elsewhere."""
-    raw = Path(target).expanduser()
-    if raw.is_symlink():
-        print(f"refusing {raw}: it is a symlink; give a plain path for the sandbox.", file=sys.stderr)
-        return 1
-    box = raw.resolve()
-    if _in_git_work_tree(root) and (box == root.resolve() or root.resolve() in box.parents):
-        print(f"refusing {box}: it is inside this repo; put the sandbox elsewhere, e.g. /tmp/sdlc-sandbox.",
-              file=sys.stderr)
-        return 1
-    if box.exists() and (not box.is_dir() or any(box.iterdir())):
-        print(f"refusing {box}: it exists and is not empty; nothing was written.", file=sys.stderr)
-        return 1
-    box.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    home = os.open(".", os.O_RDONLY | os.O_DIRECTORY)
-    pfd = os.open(box.parent, flags)
-    name, bfd = f".sdlc-sandbox-{secrets.token_hex(8)}", None
-    try:
-        os.mkdir(name, 0o700, dir_fd=pfd)
-        bfd = os.open(name, flags, dir_fd=pfd)
-        os.fchdir(bfd)                                     # from here on: the pinned directory, by inode
-        _build_sandbox(os.fstat(bfd))
-        if not _same(os.stat(name, dir_fd=pfd, follow_symlinks=False), os.fstat(bfd)):
-            raise OSError("the build directory was renamed or replaced while it was being built")
-        try:
-            os.rmdir(box.name, dir_fd=pfd)                 # an empty target directory; a symlink isn't removed
-        except FileNotFoundError:
-            pass
-        os.rename(name, box.name, src_dir_fd=pfd, dst_dir_fd=pfd)   # never follows a symlink at either name
-    except (OSError, subprocess.CalledProcessError) as exc:
-        if bfd is not None:
-            _empty_pinned(bfd)
-            try:                                           # remove the emptied build directory if the name is still it
-                if _same(os.stat(name, dir_fd=pfd, follow_symlinks=False), os.fstat(bfd)):
-                    os.rmdir(name, dir_fd=pfd)
-            except OSError:
-                pass
-        print(f"sandbox not created ({exc}); nothing was written outside its own temporary directory.",
-              file=sys.stderr)
-        return 1
-    finally:
-        os.fchdir(home)
-        for fd in (home, pfd, bfd):
-            if fd is not None:
-                os.close(fd)
-    print(f"""Sandbox ready: {box}
-  A committed repo on main with the solo scaffold, a tiny app (src/greet.py) and a Draft sample intent 0001.
-  Walk the playbook there:
-    cd {box} && claude          # accept the zouj-ai-sdlc plugin it offers
-    sdlc status                 # state 1 BRAINSTORMING, waiting for you
-    then type `Intent Approved 0001`, let it write the spec, `Spec Approved 0001`, the plan,
-    `Plan Approved 0001`, watch the TDD execution, then /zouj-ai-sdlc:review.
-  Delete the directory when you're done; nothing outside it was touched.""")
-    return 0
-
-
-def _same(a, b):
-    return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
-
-
-def _empty_pinned(bfd):
-    """Best-effort cleanup of a failed build, through its handle (never through a path that might now point elsewhere)."""
-    try:
-        os.fchdir(bfd)
-        for entry in os.listdir("."):
-            if os.path.isdir(entry) and not os.path.islink(entry):
-                shutil.rmtree(entry, ignore_errors=True)
-            else:
-                os.unlink(entry)
-    except OSError:
-        pass
-
-
-def _build_sandbox(pinned):
-    """Build in the current working directory (the pinned build directory), with relative paths only."""
-    here = Path(".")
-    run = lambda *a: subprocess.run([approvals.GIT, *a], capture_output=True, text=True, check=True)  # noqa: E731
-    run("init", "-q", "-b", "main")
-    shutil.copytree(SANDBOX / "files", here, dirs_exist_ok=True)
-    cli.apply_init(here, cli.init_actions(here))
-    cfg = here / ".aiops" / "config.json"
-    cfg.write_text(json.dumps({**(_json(cfg) or {}), **PROFILE_CONFIG["solo"]}, indent=2) + "\n")
-    cli._wire_stack(here / "Makefile", "sandbox", SANDBOX / "sandbox.recipes")
-    intent = here / ".aiops" / "0001-greet-in-languages"
-    intent.mkdir()
-    (intent / "intent.md").write_text((SANDBOX / "intent-0001.md").read_text()
-                                      .replace("__DATE__", datetime.date.today().isoformat()))
-    (here / ".aiops" / "state" / "active").write_text("0001\n")
-    top = run("rev-parse", "--show-toplevel").stdout.strip()
-    if not (_same(os.stat(top), pinned) and _same(os.stat("."), pinned)):
-        raise OSError(f"git's toplevel {top} isn't the pinned sandbox build directory")
-    files = sorted(str(f) for f in here.rglob("*")
-                   if f.is_file() and not f.is_symlink() and f.parts[0] != ".git" and f.parts[:2] != (".aiops", "state"))
-    who = [] if subprocess.run([approvals.GIT, "config", "user.email"], capture_output=True).returncode == 0 \
-        else ["-c", "user.name=zouj-ai-sdlc sandbox", "-c", "user.email=sandbox@localhost"]
-    run("add", "--", *files)
-    run(*who, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "chore: zouj-ai-sdlc sandbox (solo profile)")
+def _unknown_option(args):
+    """The first argument that isn't a known option (or the value of one), else None."""
+    i = 0
+    while i < len(args):
+        if args[i] not in OPTIONS:
+            return args[i]
+        i += 2 if OPTIONS[args[i]] else 1
+    return None
 
 
 def main(root, args):
-    if "--sandbox" in args:
-        target = args[args.index("--sandbox") + 1] if "--sandbox" in args[:-1] else None
-        if not target:
-            print("usage: sdlc setup --sandbox <dir>", file=sys.stderr)
-            return 1
-        return sandbox(root, target)
+    bad = _unknown_option(args)
+    if bad is not None:
+        print(f"unknown option {bad!r}; setup takes --profile solo|team|strict, --stack python|node|go, --dry-run "
+              "and --yes. Nothing was written.", file=sys.stderr)
+        return 1
     profile, dry_run, yes = _choices(args)
     if profile is not None and profile not in PROFILES:
         print(f"unknown profile {profile!r} (solo, team, strict)", file=sys.stderr)
