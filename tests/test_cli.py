@@ -40,14 +40,14 @@ class Init(RepoCase):
                  ".github/workflows/aiops-gates.yml": "# customised\n"}
         for rel, text in owned.items():
             (self.root / rel).write_text(text)
-        (self.root / "CLAUDE.md").write_text("mine\n")                           # not human-owned
+        (self.root / "docs" / "ai-usage-policy.md").write_text("mine\n")          # a doc the agent may write
         r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
         self.assertEqual(r.returncode, 0, r.stderr)
         for rel, text in owned.items():
             self.assertEqual((self.root / rel).read_text(), text, rel)           # untouched under the agent
             self.assertIn(rel, r.stdout)                                          # listed for the human
         self.assertIn("your own terminal", r.stdout)
-        self.assertNotEqual((self.root / "CLAUDE.md").read_text(), "mine\n")     # the rest is still reset
+        self.assertNotEqual((self.root / "docs" / "ai-usage-policy.md").read_text(), "mine\n")   # the rest is reset
         r = self.run_sdlc("init", "--force")                                      # a human: as before
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn("strict", (self.root / ".aiops" / "config.json").read_text())
@@ -55,6 +55,24 @@ class Init(RepoCase):
         (self.root / "Makefile").write_text('test:\n\t@echo "[test] not configured - edit Makefile"\n')
         self.assertNotIn("--force", self.run_sdlc("doctor").stdout)
         self.assertNotIn("--force", (ROOT / "TROUBLESHOOTING.md").read_text())
+
+    def test_agent_init_force_never_writes_what_the_guard_blocks(self):
+        """Review 0003 round 6 MEDIUM: under the agent, --force writes no more than the agent's own Write could."""
+        self.assertEqual(self.run_sdlc("init", "--stack", "python").returncode, 0)
+        extra = self.root / ".aiops" / "config" / "protected-paths"
+        extra.write_text(extra.read_text() + "Makefile the wired contract is human-owned here\n")
+        kept = {"Makefile": (self.root / "Makefile").read_text(),                 # repo-protected, wired
+                "governance/managed-settings.example.json": '{"mine": true}\n',  # default protected-paths
+                "CLAUDE.md": "mine\n",                                           # read-only lock (no intent)
+                "scripts/check-bands.py": "# mine\n"}                             # code under the lock
+        for rel, text in kept.items():
+            (self.root / rel).write_text(text)
+        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for rel, text in kept.items():
+            self.assertEqual((self.root / rel).read_text(), text, rel)
+            self.assertIn(rel, r.stdout)                                          # listed for the human
+        self.assertIn("pytest -q", (self.root / "Makefile").read_text())         # still wired: make check is real
 
     def test_scaffold_offers_the_plugin(self):
         before = json.loads((Path(__file__).resolve().parents[1] / "templates" / "scaffold" / ".claude" /

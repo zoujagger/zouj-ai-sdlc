@@ -360,9 +360,16 @@ def write_file(root, rel, data, mode=0o644):
         os.close(fd)
 
 
+def _agent_blocked(root, rel):
+    """True if the guard would block the agent's own Write of root/rel (protected paths, default or the repo's, and the
+    read-only lock): `init --force` run by the agent may not reset more than the agent could write itself."""
+    return guards.check_edit({"tool_name": "Write", "cwd": str(root),
+                              "tool_input": {"file_path": str(root / rel), "content": ""}}) is not None
+
+
 def init_actions(root, force=False, agent=False):
     """[(action, rel)] for every scaffold file: "create" (missing, or --force) or "keep" (exists). Under the agent,
-    --force keeps existing human-owned files ("owned"). A file with a symlink on its path is "symlink" (init refuses to
+    --force keeps existing human-owned files, and any file the guard won't let the agent write ("owned"). A file with a symlink on its path is "symlink" (init refuses to
     run). Writes nothing, so `sdlc setup` can preview exactly what `init` will do."""
     scaffold = TEMPLATES / "scaffold"
     out = []
@@ -371,7 +378,7 @@ def init_actions(root, force=False, agent=False):
             out.append(("symlink", rel))
         elif not (root / rel).exists():
             out.append(("create", rel))
-        elif force and agent and HUMAN_OWNED_RE.match(rel):
+        elif force and agent and (HUMAN_OWNED_RE.match(rel) or _agent_blocked(root, rel)):
             out.append(("owned", rel))
         else:
             out.append(("create" if force else "keep", rel))
@@ -442,7 +449,7 @@ def cmd_init(root, args):
     skipped = [rel for act, rel in actions if act == "keep"]
     owned = [rel for act, rel in actions if act == "owned"]
     if owned:
-        out("Human-owned, not reset (init --force was run by the agent). To reset them, the human runs "
+        out("Human-owned or locked, not reset (init --force was run by the agent). To reset them, the human runs "
             "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned))
     if stack and "Makefile" in created:
         wired = _wire_stack(root, stack)
