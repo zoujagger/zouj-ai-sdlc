@@ -90,7 +90,7 @@ def _signer_options(root, blob):
         words = line.split()
         if blob in words and not line.lstrip().startswith("#"):
             opts = words[1:words.index(blob) - 1]                  # principals [options] keytype key
-            return {o.split("=", 1)[0] for o in ",".join(opts).split(",") if o}
+            return {o.split("=", 1)[0].strip().lower() for o in ",".join(opts).split(",") if o}   # case-insensitive
     return set()
 
 
@@ -365,7 +365,7 @@ def signer_entries(signers):
         i = next((n for n, w in enumerate(words[1:], 1) if KEY_TYPE_RE.match(w)), None)
         if i is None or i + 1 >= len(words):
             continue
-        opts = {o.split("=", 1)[0] for o in ",".join(words[1:i]).split(",") if o}
+        opts = {o.split("=", 1)[0].strip().lower() for o in ",".join(words[1:i]).split(",") if o}  # as OpenSSH may
         out.append((line.strip(), opts, words[i], words[i + 1]))
     return out
 

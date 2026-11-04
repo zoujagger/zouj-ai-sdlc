@@ -510,6 +510,23 @@ class Approvals(RepoCase):
         problem = ap.signing_problem(self.root)
         self.assertTrue(problem and "no-touch-required" in problem, problem)
 
+    def test_no_touch_option_matched_in_any_case(self):
+        """Review 0003 round 5: OpenSSH may match option names case-insensitively, so the checks do too."""
+        from sdlc_engine import approvals as ap
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
+        sk = self.root / "sk.pub"
+        sk.write_text(f"sk-ssh-ed25519@openssh.com {blob} owner\n")
+        git(self.root, "config", "--global", "user.signingkey", str(sk))
+        for spelling in ("No-Touch-Required", "NO-TOUCH-REQUIRED"):
+            with self.subTest(spelling=spelling):
+                line = f'owner@example.com namespaces="git",{spelling} sk-ssh-ed25519@openssh.com {blob}\n'
+                self.signers.write_text(line)
+                problem = ap.signing_problem(self.root)                          # local: approve and doctor
+                self.assertTrue(problem and "no-touch-required" in problem, problem)
+                self.assertEqual(len(ap.non_touch_signers(line)), 1)             # doctor's allow-list row
+                self.assertIn("no-touch-required", ap.signer_entries(line)[0][1])  # what the CI audit matches
+
     def test_strict_policy_requires_a_touch_key(self):
         from helpers import signing_key
         from sdlc_engine import approvals as ap
