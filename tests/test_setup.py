@@ -600,6 +600,19 @@ class Unreviewed(SetupCase):
         self.assertNotIn("AAAAagentStaged", git(self.root, "show", "HEAD:.aiops/config/allowed-signers"))
         self.assertIn('"solo"', git(self.root, "show", "HEAD:.aiops/config.json"))  # setup's own change is in
 
+    def test_hostile_content_is_shown_safely(self):
+        """Round 8: a planted file that isn't UTF-8, or carries terminal escapes, is shown escaped, never as a
+        traceback or as live control sequences that could hide a line."""
+        f = self.root / ".aiops" / "config" / "allowed-signers"
+        f.parent.mkdir(parents=True)
+        f.write_bytes(b'agent@example.com namespaces="git" ssh-ed25519 AAAAhidden\r\x1b[2K\x1b[1A\n\xff\xfe\n')
+        r = self.setup_run("--profile", "team", "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertNotIn("\x1b", r.stdout)
+        self.assertIn("AAAAhidden", r.stdout)
+        self.assertIn("\\x1b", r.stdout)                                            # visibly escaped
+
     def test_committed_files_are_not_flagged(self):
         self.assertEqual(self.setup_run("--profile", "team", "--yes").returncode, 0)
         git(self.root, "add", "-A")
@@ -721,6 +734,16 @@ class Roots(SetupCase):
         with mock.patch.dict(os.environ, {"HOME": str(self.side("fakehome"))}), \
                 mock.patch.object(cli.pwd, "getpwuid", return_value=account):
             self.assertIn("home directory", cli.scaffold_root_problem(real_home) or "")
+
+    def test_no_passwd_entry(self):
+        """Round 8 LOW: a uid with no passwd entry (a container run with --user N) falls back to $HOME, no traceback."""
+        repo = self.side("nopasswd", repo=True)
+        os.chdir(repo)
+        with mock.patch.object(cli.pwd, "getpwuid", side_effect=KeyError("getpwuid(): uid not found")):
+            with mock.patch.dict(os.environ, {"HOME": str(self.side("somehome"))}):
+                self.assertIsNone(cli.scaffold_root_problem(repo))
+            with mock.patch.dict(os.environ, {"HOME": str(repo)}):
+                self.assertIn("home directory", cli.scaffold_root_problem(repo) or "")
 
     def test_git_ceiling_directories_is_allowed(self):
         """Round 7 MINOR: a ceiling only limits git's upward search; it can't fake the top of a repo."""

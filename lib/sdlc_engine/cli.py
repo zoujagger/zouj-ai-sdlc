@@ -324,8 +324,12 @@ def scaffold_root_problem(root):
     if not here or Path(here).resolve() != root.resolve():        # CLAUDE_PROJECT_DIR named another repo
         return (f"CLAUDE_PROJECT_DIR points at {root}, not at the repo you're in ({here or Path.cwd()}); init and "
                 "setup scaffold only the repo they run in: cd there, or unset CLAUDE_PROJECT_DIR")
-    real = root.resolve()
-    for home in {Path.home().resolve(), Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()}:   # $HOME can be set
+    real, homes = root.resolve(), {Path.home().resolve()}         # $HOME can be set, so the account record too
+    try:
+        homes.add(Path(pwd.getpwuid(os.getuid()).pw_dir).resolve())
+    except KeyError:                                                # a uid with no passwd entry (containers)
+        pass
+    for home in homes:
         if real == home:
             return f"{real} is your home directory; scaffold a project repo instead"
         if real == home / ".claude" or home / ".claude" in real.parents:

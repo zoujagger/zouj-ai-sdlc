@@ -133,6 +133,19 @@ def blocking(rows):
     return any(st == "✗" for st, _, _ in rows)
 
 
+CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def shown(text):
+    """text with control characters (other than newline and tab) escaped: content setup didn't write is printed for the
+    human to review, and terminal escapes in it must not hide or rewrite a line."""
+    return CONTROL_RE.sub(lambda m: f"\\x{ord(m.group()):02x}", text)
+
+
+def _text(path):
+    return path.read_bytes().decode("utf-8", "replace")      # a planted file need not be UTF-8
+
+
 def show(title, rows):
     print(title)
     for st, label, fix in rows:
@@ -360,15 +373,16 @@ def main(root, args):
         print("Changes to human-owned files" + (": the agent can't apply these, they become your human steps"
                                                  if approvals.running_under_agent() else ""))
         for rel, (old, new, _keys) in owned.items():
-            print("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}", f"b/{rel}"))
-                  .rstrip("\n"))
+            print(shown("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}",
+                                                     f"b/{rel}")).rstrip("\n")))
     review = unreviewed(root)
     if review:                                    # shown before any confirmation (and in --dry-run)
         print("Review before committing: human-owned, not in any commit yet, not what setup writes")
         for rel in review:
             template = (cli.TEMPLATES / "scaffold" / rel).read_text()
-            print("".join(difflib.unified_diff(template.splitlines(True), (root / rel).read_text().splitlines(True),
-                                               f"template/{rel}", rel)).rstrip("\n") or f"  (same as the template: {rel})")
+            print(shown("".join(difflib.unified_diff(template.splitlines(True), _text(root / rel).splitlines(True),
+                                                     f"template/{rel}", rel)).rstrip("\n"))
+                  or f"  (same as the template: {rel})")
     print(GATES.format(proof=PROOF[profile]))
     if any(mark == "✗" for mark, _, _ in actions):
         print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
