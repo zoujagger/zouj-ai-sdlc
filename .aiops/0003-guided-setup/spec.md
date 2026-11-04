@@ -14,7 +14,7 @@ approved-sha256: f36cc87823326f66a9f71cebc56879b72bcc735aa1d9e5cf8ab369f1b81bafa
 # Spec: Guided setup and first-run onboarding (roadmap phase 1)
 
 <!-- State 2 SPECIFICATION. Business goals from the approved intent.md (one rerunnable guided setup, profiles that
-     only change how approvals are proven, team auto-offer, a local sandbox, task-first docs), translated into
+     only change how approvals are proven, team auto-offer, task-first docs), translated into
      engineering requirements. -->
 
 ## Summary
@@ -28,9 +28,9 @@ rerunnable flow:
 - **Writes:** only files the plugin owns. For human-owned material it prints the exact commands.
 - **Doctor:** runs `sdlc doctor` at the end.
 
-`init` writes a project marketplace snippet, so collaborators are offered the plugin. `sdlc setup --sandbox <dir>`
-creates a throwaway repo with a sample intent to try the workflow. The README becomes task-first, with pinned
-commands, and troubleshooting, quick-reference and feedback surfaces are added.
+`init` writes a project marketplace snippet, pinned to the release, so collaborators are offered the plugin. The
+README becomes task-first, with pinned commands, and troubleshooting, quick-reference and feedback surfaces are added.
+The sandbox trial repo is deferred to 0.2.0-alpha.3 (intent, 2026-11-04).
 
 The playbook workflow is the same in every profile, and a conformance test proves it. Ships as **0.2.0-alpha.2**.
 
@@ -75,20 +75,15 @@ The playbook workflow is the same in every profile, and a conformance test prove
 
     Each one is shown as a diff and confirmed. It never touches `permissions` or `hooks` keys.
 - **R-5 Team auto-offer.** The scaffold's `.claude/settings.json` gains:
-  - `extraKnownMarketplaces.zouj` = `{"source": {"source": "github", "repo": "zoujagger/zouj-ai-sdlc"}}`
+  - `extraKnownMarketplaces.zouj` = `{"source": {"source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v<version>"}}`,
+    pinned to the release tag (filled in by `init`, like CI's `ZOUJ_SDLC_REF`)
   - `enabledPlugins["zouj-ai-sdlc@zouj"] = true`
 
   The existing `permissions.deny` rules are kept.
-- **R-6 Sandbox.** `sdlc setup --sandbox <dir>` refuses a `<dir>` that exists and isn't empty. Otherwise it creates
-  the directory with:
-  - a git repo on `main`
-  - a tiny python app with a test, and a wired Makefile
-  - the `solo` scaffold and profile
-  - the marketplace snippet
-  - a sample intent `0001` in Draft
-
-  It commits all of that, then prints how to walk the five states there, starting with `Intent Approved 0001`. It
-  never touches the current repo.
+- **R-6 Sandbox: deferred to 0.2.0-alpha.3.** Not shipped in this release. `sdlc setup --sandbox` is refused with a
+  message saying so, and the docs don't offer it. Review rounds 1–3 showed that a sandbox which runs git as the human,
+  next to an agent running as the same user, needs its own design (a clean git environment, git pinned to its own
+  repository, writes that can't follow planted links).
 - **R-7 Task-first documentation.**
   - The README opens with a "Start using" table that maps tasks to commands and playbook stages, followed by pinned
     install paths:
@@ -144,9 +139,9 @@ The playbook workflow is the same in every profile, and a conformance test prove
   - the Stop hook requires `make check`
 - **AC-9:** Given `sdlc init` in a fresh repo, then `.claude/settings.json` contains the marketplace snippet and the
   unchanged `permissions.deny` list.
-- **AC-10:** Given `sdlc setup --sandbox <dir>` with a missing `<dir>`, then `<dir>` is a committed git repo on
-  `main`, with the solo scaffold and a Draft intent `0001` that validates, and `make check` is green there. The
-  current repo is unchanged. Given a non-empty `<dir>`, it refuses with exit 1.
+- **AC-10:** Given `sdlc setup --sandbox <dir>`, then setup refuses (exit 1) with a message that the sandbox is
+  planned for 0.2.0-alpha.3, writes nothing, and the README, the quick reference and the setup skill don't offer
+  it.
 - **AC-11:** Given preflight on a machine where `gh` lacks the `workflow` scope or there is no credential helper,
   then those rows are `!` with the exact fix command, and setup still proceeds. Given `python3` older than 3.9 or a
   missing `git`, they are `✗` and setup stops before writing.
@@ -176,7 +171,6 @@ Migration: none needed. A missing `profile` reads as `team`, which matches 0.2.0
 ## API contracts
 CLI (exit codes: 0 ok · 1 error or refusal · 2 nothing written because input is missing):
 - `sdlc setup [--profile solo|team|strict] [--stack python|node|go] [--dry-run] [--yes]`
-- `sdlc setup --sandbox <dir> [--stack python]`
 - `sdlc feedback`
 - `sdlc doctor`: unchanged, plus a profile row and the `"sk"` policy.
 
@@ -211,10 +205,10 @@ Skill: `/zouj-ai-sdlc:setup [profile]`.
   - **Mitigation:** setup never passes `-t`/`--show-token`, and parses only the scopes line. Outputs are filtered
     before printing.
   - **Decides:** zoujagger.
-- ⚠️ **The sandbox path.**
-  - **Risk:** writing into an existing directory or outside the intended place.
-  - **Mitigation:** setup refuses an existing non-empty directory, resolves the path, and never follows a symlink out
-    of it.
+- ⚠️ **The sandbox (deferred).**
+  - **Risk:** a same-user agent can redirect a sandbox build's git into the calling repo (through `GIT_DIR`, a
+    swapped `.git` or a swapped path), as reviews 1–3 showed.
+  - **Mitigation:** not shipped in this release (R-6); `--sandbox` is refused.
   - **Decides:** zoujagger.
 - ⚠️ **`sdlc feedback`.**
   - **Risk:** leaking local data.
@@ -223,7 +217,7 @@ Skill: `/zouj-ai-sdlc:setup [profile]`.
 
 ## Architecture
 - **`lib/sdlc_engine/setup.py` (new):**
-  - `preflight()`, `inventory(root)`, `plan(root, choices)`, `apply(plan)`, `sandbox(dir, stack)`
+  - `preflight()`, `inventory(root)`, `plan(root, choices)`, `apply(plan)`
   - It reuses:
     - `cmd_init`'s scaffold copy, refactored into `machine`/`cli`: `init_actions(root, stack)` returns actions and
       `cmd_init` applies them, so `init` and `setup` share one source of truth
@@ -237,7 +231,6 @@ Skill: `/zouj-ai-sdlc:setup [profile]`.
   into the scaffold config at creation.
 - **Templates:**
   - `templates/scaffold/.claude/settings.json` gains the snippet.
-  - `templates/sandbox/` (new): app, test, Makefile and the sample intent.
 - **Docs:**
   - `README.md` (restructured)
   - `TROUBLESHOOTING.md`, `COMMANDS-QUICK-REF.md`
@@ -250,8 +243,8 @@ Skill: `/zouj-ai-sdlc:setup [profile]`.
   - **Driving `/plugin` from setup:** impossible, because Claude Code owns those commands. The declarative snippet
     gets the same result for collaborators.
   - **An npm or PyPI installer:** out of scope this phase (stdlib only).
-  - **An advisory "trial" profile:** rejected because it would leave the playbook. The sandbox gives the same
-    low-risk trial.
+  - **An advisory "trial" profile:** rejected because it would leave the playbook. A sandbox repo for trying the
+    workflow is planned for 0.2.0-alpha.3.
 - **ADR:** none needed. Profiles don't change gate semantics.
 
 ## Rollout & rollback

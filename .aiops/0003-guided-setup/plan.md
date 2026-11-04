@@ -170,6 +170,22 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_version_matches_changelog`, asserting
     `0.2.0-alpha.2`. Red: the version is still alpha.1.
   - Covers: AC-14
+- [ ] **S15**: Remove the sandbox from this release (deferred to 0.2.0-alpha.3; intent and spec amended 2026-11-04)
+  - Files:
+    - `lib/sdlc_engine/setup.py`: `--sandbox` is refused with the alpha.3 message and writes nothing. The sandbox
+      code (`sandbox`, `_build_sandbox`, `_empty_pinned`, `_same`, `_in_git_work_tree`, `SANDBOX`) is removed.
+    - `templates/sandbox/` (delete)
+    - `tests/test_setup.py`: the `Sandbox`, `SandboxRace` and `SandboxRaceDeeper` classes are replaced by one refusal
+      test
+    - Docs and help: `cli.py` usage, README (the "Start using" row and "Just looking?"), `COMMANDS-QUICK-REF.md`,
+      `skills/setup/SKILL.md`, CHANGELOG (Added/Security entries become a deferral note; the alpha.3 known issues
+      gain the sandbox), `docs/roadmap.md`
+  - Test first: `tests/test_setup.py::Sandbox::test_deferred_to_alpha3`:
+    - `sdlc setup --sandbox <dir>` exits 1, says "0.2.0-alpha.3", and creates nothing
+    - README, the quick reference and the setup skill don't mention `--sandbox`
+
+    Red: setup still builds the sandbox.
+  - Covers: AC-10
 
 ## Risks
 | Risk | Likelihood | Impact | Mitigation |
@@ -178,7 +194,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 | Preflight shells out to `claude`/`gh`: slow, hangs, or prints a token | medium | medium | 5 s timeout per call, never `-t`, output parsed for scopes only, stubbed in tests |
 | The settings merge reformats a user's `.claude/settings.json` | medium | low | values parse equal; only the two keys are added; the diff is shown before the human confirms; agent runs never touch it |
 | A profile accidentally weakens a gate | low | high | S12 conformance test per profile; profiles map only to `require_signed_approvals`, `commit_approvals` and `approval_key_policy` |
-| The sandbox writes outside the target or into the caller's repo | low | medium | resolve path, refuse non-empty dirs and symlinks, separate `git init`; test asserts the caller's repo is unchanged |
+| The sandbox writes outside the target or into the caller's repo | — | — | resolved by deferral: S15 removes the sandbox from this release (reviews 1–3 found same-user routes into the caller's repo) |
 | The setup skill nudges the agent to apply human-owned changes | low | high | the skill only runs `--dry-run`, and applies after the human confirms in chat; R-4 is enforced in code, not only in the skill |
 | Running under `CLAUDECODE` in CI/evals changes behaviour | low | low | tests set and unset `CLAUDECODE` explicitly per case |
 
@@ -194,7 +210,7 @@ and `hooks` must stay exactly equal, which the test checks through parsed equali
 | AC-7 | `tests/test_engine.py::Approvals::test_strict_policy_requires_a_touch_key` | unit | the `"sk"` policy accepts only touch `sk-` keys |
 | AC-8 | `tests/test_playbook.py::Playbook::test_solo`, `::test_team`, `::test_strict` | hook, cli | the playbook workflow holds in every profile |
 | AC-9 | `tests/test_cli.py::Init::test_scaffold_offers_the_plugin` | cli | init writes the marketplace snippet, deny list intact |
-| AC-10 | `tests/test_setup.py::Sandbox::test_creates_committed_repo` | cli | sandbox repo is valid and green; caller unchanged; refusals |
+| AC-10 | `tests/test_setup.py::Sandbox::test_deferred_to_alpha3` | cli, static | `--sandbox` is refused with the alpha.3 message, nothing is created, and the docs don't offer it |
 | AC-11 | `tests/test_setup.py::Preflight::test_rows_and_blocking` | cli | `!` rows with fixes; `✗` stops before writes; no token flags |
 | AC-12 | `tests/test_shell_hooks.py::ShellHooks::test_onboarding_docs`, `::test_setup_skill_follows_the_playbook` | static | task-first README, docs, templates, quick ref matches skills |
 | AC-13 | `tests/test_setup.py::Feedback::test_prints_links_offline` | cli | feedback prints links, no network |
