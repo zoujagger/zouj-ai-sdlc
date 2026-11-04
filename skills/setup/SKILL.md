@@ -47,7 +47,9 @@ There's no mode without the gates. Never offer one.
    `/zouj-ai-sdlc:intent "<first need>"` once the human has committed the scaffold.
 
 To change the profile later, the human runs `sdlc setup --profile <new>` in their own terminal. Run by the agent,
-setup only prints that change.
+setup only prints that change. That "never under the agent" check reads Claude Code's environment markers, so it is a
+deterrent, like the other local guards: the guarantee is CI, which reads the config, the signers and CODEOWNERS from
+the target branch.
 
 | Red flag | Do instead |
 |---|---|

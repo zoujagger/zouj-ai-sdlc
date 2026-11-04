@@ -34,6 +34,7 @@ class Init(RepoCase):
         rerun = self.run_sdlc("init")
         self.assertIn("Kept existing", rerun.stdout)
         self.assertNotIn("--force", rerun.stdout)                                # nothing suggests resetting files
+        self.assertNotIn("re-run with --stack", rerun.stdout)                    # a rerun keeps the Makefile
 
 
 def stub(bindir, name, body):

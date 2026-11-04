@@ -453,7 +453,8 @@ def cmd_init(root, args):
             + "\n  ".join(skipped))
     out("""
 zouj-ai-sdlc is now active in this repo. Next:
-  1. Wire the Makefile contract (format/lint/typecheck/test/build), or re-run with --stack python|node|go.
+  1. Wire the Makefile contract (format/lint/typecheck/test/build): copy the recipes from the plugin's
+     templates/stacks/<python|node|go>.recipes.
   2. Optional, for an unattended state 4: add the allow-rules from .aiops/README.md to .claude/settings.json.
   3. Commit the scaffold, then start: /zouj-ai-sdlc:intent "<your first need>".""")
     return 0

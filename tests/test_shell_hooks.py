@@ -288,6 +288,15 @@ class ShellHooks(RepoCase):
         known = alpha2.split("### Known issues", 1)[1].split("\n### ", 1)[0]
         for fixed in ("--profile=x", "checked in `--dry-run`", "unknown flags"):
             self.assertNotIn(fixed, known, fixed)
+        self.assertIn("nothing suggests `--force` to the agent", alpha2)                # round 5: init tells the human
+        stops = (ROOT / "TROUBLESHOOTING.md").read_text().split("## Setup says", 1)[1].split("\n## ", 1)[0]
+        for reason in ("git", "make", "Python", "JSON", "symlink", "profile", "git repository", "home"):
+            self.assertIn(reason, stops, reason)
+        skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
+        threats = (ROOT / "docs" / "architecture.md").read_text().split("## Threat model", 1)[1]
+        for name, text in (("setup skill", skill), ("threat model", threats)):          # the env-marker residual risk
+            self.assertIn("deterrent", text, name)
+            self.assertIn("sdlc setup", text, name)
         phase1 = (ROOT / "docs" / "roadmap.md").read_text().split("### Phase 1", 1)[1].split("### Phase 2", 1)[0]
         for unshipped in ("user, project or local", "`init` shows what the gates"):
             self.assertNotIn(unshipped, phase1, unshipped)

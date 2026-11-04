@@ -44,19 +44,27 @@ first approved intent with one guided, rerunnable command, and the playbook work
   `--profile=x` is refused (exit 1, nothing written), and `--stack` takes only `python`, `node` or `go` (so does
   `init --stack`).
 - An unknown `profile` in `config.json` is a doctor `✗` and stops `setup --dry-run` with the fix, instead of a
-  traceback.
+  traceback. So does a `config.json` or `settings.json` that isn't a JSON object.
+- A write that fails part-way (a link swapped in, a folder in a file's place) is reported with the files already
+  written, instead of a traceback.
+- Run by the agent, setup prints a `solo` or `strict` profile as the exact terminal command for the human, and a
+  rerun with only human-owned changes left says "Nothing for the agent to write".
 
 ### Security (fixes from this release's reviews)
 - **No sandbox command.** A `--sandbox` trial-repo builder was written during this release and removed before it
   shipped: reviews showed a same-user agent could redirect its git into the calling repo. Setup writes only in the
   repo it runs in.
 - **`sdlc init --force` run by the agent keeps human-owned files:** `.aiops/config.json`, `.aiops/config/`,
-  `.claude/`, CODEOWNERS and `.github/workflows/`. It lists them for the human, and nothing suggests `--force` any more.
+  `.claude/`, CODEOWNERS and `.github/workflows/`. It lists them for the human, and nothing suggests `--force` to the agent.
 - **Scaffold writes never follow a link.** `init` and `setup` refuse when a scaffold file or `.gitignore` has a symlink
   on its path, and every write opens its directories without following links and creates the file anew, so neither a
   symlink nor a hard link can send it to another file, inside or outside the repo.
 - **Run by the agent, setup creates `config.json` exactly as `init` does** (team defaults); another profile is printed
   as a human step.
+- **`init` and `setup` scaffold only the top of a git repository,** never `$HOME`, `~/.claude` or a folder on PATH.
+- **Preflight never runs a tool from a PATH folder inside the repo** (an agent could plant one there), runs git by
+  its absolute path, and gives the tools it runs no stdin.
+- **`no-touch-required` is matched in any letter case** in `allowed-signers`, by doctor, `approve` and the CI audit.
 - **`strict` is enforced in CI.** Under `approval_key_policy: "sk"`, the audit requires each approval to be signed by an
   allow-listed `sk-` key without `no-touch-required`, and doctor flags any other allowed signer.
 - **The marketplace snippet and install commands are pinned** to the release tag (`ref`, `owner/repo@ref`). README and
