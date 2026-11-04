@@ -242,6 +242,22 @@ class Owned(SetupCase):
         self.assertIn("--- a/.claude/settings.json", seen["text"])
         self.assertEqual((cfg.read_bytes(), settings.read_bytes()), before)
 
+    def test_invalid_json_is_refused(self):
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        for rel in (".aiops/config.json", ".claude/settings.json"):
+            with self.subTest(file=rel):
+                f = self.root / rel
+                good = f.read_text()
+                f.write_text('{"profile": "team",\n')                                 # truncated
+                r = self.setup_run("--profile", "strict", "--yes")
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn(f"✗ {rel} isn't valid JSON", r.stdout)
+                self.assertIn("nothing was written", r.stdout)
+                self.assertNotIn("Already set up", r.stdout)
+                self.assertEqual(f.read_text(), '{"profile": "team",\n')               # left for the human to fix
+                self.assertEqual(self.setup_run("--profile", "strict", "--dry-run").returncode, 1)
+                f.write_text(good)
+
     def test_human_merges_only_marketplace_keys(self):
         cfg, settings = self.alpha1_repo()
         r = self.setup_run("--profile", "solo", "--yes")                            # a human, in a terminal

@@ -78,6 +78,25 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
 
     if profile in ("team", "strict"):
         rows += _signing_rows(root, profile)
+    rows += owned_json_rows(root)
+    return rows
+
+
+OWNED_JSON = (".aiops/config.json", ".claude/settings.json")
+
+
+def owned_json_rows(root):
+    """✗ for an existing human-owned JSON file that doesn't parse: setup would otherwise skip it silently (and read
+    the default profile in its place). The human fixes it; setup never rewrites a file it can't read."""
+    rows = []
+    for rel in OWNED_JSON:
+        f = root / rel
+        if not f.is_file():
+            continue
+        try:
+            json.loads(f.read_text())
+        except (OSError, ValueError) as exc:
+            rows.append(("✗", f"{rel} isn't valid JSON ({exc})", f"fix {rel} by hand (it's human-owned), then rerun"))
     return rows
 
 
