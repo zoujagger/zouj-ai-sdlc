@@ -6,9 +6,9 @@ risk: medium           # touches init, approval policy and project settings; no 
 intent: ./intent.md
 created: 2026-11-03
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-03T20:15:41Z
+approved-at: 2026-11-04T12:41:29Z
 approved-via: cli
-approved-sha256: f36cc87823326f66a9f71cebc56879b72bcc735aa1d9e5cf8ab369f1b81bafa4
+approved-sha256: f0dbb325bbef659631d9f07e1b1dc8651a1781bd4cf2fb2c1fb97b9737891ee7
 ---
 
 # Spec: Guided setup and first-run onboarding (roadmap phase 1)
