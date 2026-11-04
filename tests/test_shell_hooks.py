@@ -271,9 +271,17 @@ class ShellHooks(RepoCase):
         """Review 0003 round 4: the docs describe the code as it is."""
         readme = (ROOT / "README.md").read_text()
         looking = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
-        for piece in ("bin/sdlc setup --profile solo --yes", "/zouj-ai-sdlc:setup solo", "git add -A", "git commit"):
+        for piece in ("bin/sdlc setup --profile solo --yes", "git add -A", "git commit"):
             self.assertIn(piece, looking, piece)
         self.assertNotIn("--force", (ROOT / "templates" / "scaffold" / "Makefile").read_text())
+        # run by the agent (the skill), setup leaves a non-team profile to the human's terminal: the docs say so
+        self.assertNotIn("/zouj-ai-sdlc:setup solo", looking)
+        install_a = readme.split("**A. Guided", 1)[1].split("\n\n**B.", 1)[0]
+        quick = (ROOT / "COMMANDS-QUICK-REF.md").read_text()
+        skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
+        for name, text in (("README path A", install_a), ("quick reference", quick), ("setup skill", skill)):
+            self.assertIn("own terminal", text, name)
+            self.assertIn("setup --profile", text, name)
         changelog = (ROOT / "CHANGELOG.md").read_text()
         alpha2 = changelog.split("## [0.2.0-alpha.2]", 1)[1].split("\n## [", 1)[0]
         self.assertNotIn("round 1 of this release", alpha2)

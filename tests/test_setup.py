@@ -245,7 +245,7 @@ class Owned(SetupCase):
         steps = r.stdout.split("Human steps\n", 1)[1]
         self.assertIn("Change .claude/settings.json yourself", steps)
         self.assertIn('"zouj-ai-sdlc@zouj": true', steps)                           # the exact keys to add
-        self.assertIn("Change .aiops/config.json yourself", steps)
+        self.assertIn("Apply profile solo in your own terminal", steps)
         self.assertIn('"profile": "solo"', steps)
         self.assertIn('"require_signed_approvals": false', steps)
 
@@ -262,12 +262,27 @@ class Owned(SetupCase):
             cfg = json.loads((self.root / ".aiops" / "config.json").read_text())
             self.assertEqual(cfg, scaffold, case)                                    # no solo keys written
             steps = r.stdout.split("Human steps\n", 1)[1]
-            self.assertIn("Change .aiops/config.json yourself", steps, case)
+            self.assertIn("Apply profile solo in your own terminal", steps, case)
             self.assertIn('"require_signed_approvals": false', steps, case)
             (self.root / ".aiops" / "config.json").unlink()
         human = self.setup_run("--profile", "solo", "--yes")                       # a human run still applies it
         self.assertEqual(json.loads((self.root / ".aiops" / "config.json").read_text())["profile"], "solo",
                          human.stdout + human.stderr)
+
+    def test_agent_hands_the_profile_to_the_human_and_reruns_cleanly(self):
+        """Round 5: the agent's run names the terminal command for the profile; its rerun has nothing to write."""
+        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        steps = r.stdout.split("Human steps\n", 1)[1]
+        self.assertIn("bin/sdlc setup --profile solo", steps)
+        self.assertIn("your own terminal", steps)
+        before = self.snapshot()
+        again = self.setup_run("--profile", "solo", env={"CLAUDECODE": "1"})     # no --yes, no tty
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertIn("Nothing for the agent to write", again.stdout)
+        self.assertNotIn("Applied", again.stdout)
+        self.assertIn("bin/sdlc setup --profile solo", again.stdout.split("Human steps\n", 1)[1])
+        self.assertEqual(self.snapshot(), before)
 
     def test_diff_shown_before_confirmation(self):
         import contextlib

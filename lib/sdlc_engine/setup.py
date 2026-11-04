@@ -8,6 +8,7 @@ import difflib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -292,9 +293,11 @@ def main(root, args):
     if dry_run:
         print("dry run: nothing was written.")
         return 0
-    if not any(mark in "+~" for mark, _, _ in actions):
-        print("Already set up: nothing to write.")
-        human_steps(root, profile, {})
+    agent = approvals.running_under_agent()
+    if not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):   # the agent never writes a ~ change
+        print("Nothing for the agent to write: the ~ changes above are yours (see the human steps)." if agent and owned
+              else "Already set up: nothing to write.")
+        human_steps(root, profile, owned if agent else {})
         return 0
     if not yes and not (tty and _confirm()):
         print("not confirmed: nothing was written. Re-run with --yes to apply without the question."
@@ -369,8 +372,14 @@ def human_steps(root, profile, pending):
                      "placeholders, at least:\n       /.aiops/ @<approver>")
     for rel, (_old, _new, keys) in pending.items():   # under the agent: the human applies these
         snippet = json.dumps(keys, indent=2).replace("\n", "\n       ")
-        steps.append(f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
-                     f"       {snippet}")
+        if rel == ".aiops/config.json":
+            steps.append(f"Apply profile {profile} in your own terminal (.aiops/config.json is human-owned; setup run "
+                         f"by the agent leaves it at init's defaults). Run, then confirm the diff:\n"
+                         f"       {shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}\n"
+                         f"       It sets:\n       {snippet}")
+        else:
+            steps.append(f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
+                         f"       {snippet}")
     steps.append(f'Commit: git add -A && git commit -m "chore: adopt zouj-ai-sdlc (profile {profile})"')
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     print("Human steps")

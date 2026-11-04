@@ -18,7 +18,8 @@ how an approval is proven:
 There's no mode without the gates. Never offer one.
 
 1. **Try first?** If the human just wants to see the workflow, point them to the README's **Just looking?** recipe:
-   they create a throwaway repo themselves and run setup there with `solo`. Don't create it for them, and stop.
+   they create a throwaway repo and run `<plugin>/bin/sdlc setup --profile solo` in their own terminal. Don't
+   create it or run it for them, and stop.
 2. **Ask for the profile** if `$ARGUMENTS` doesn't name one. Use AskUserQuestion with the three profiles above. Most
    solo developers pick `solo` and most teams `team`.
 3. **Preview.** Run `sdlc setup --profile <profile> --dry-run`. Show the human:
@@ -30,7 +31,8 @@ There's no mode without the gates. Never offer one.
 4. **Confirm.** Ask the human to confirm the plan in chat. Without a clear yes, stop. Nothing has been written.
 5. **Apply.** Run `sdlc setup --profile <profile> --yes`.
    - **Run by you (the agent):** setup creates only new files, exactly as `init` would. A new `.aiops/config.json`
-     gets init's defaults (`team`); any other profile is printed as a human step. It never changes an existing
+     gets init's defaults (`team`). For `solo` or `strict`, the printed human step is
+     `<plugin>/bin/sdlc setup --profile <profile>` in their own terminal; relay it as printed. It never changes an existing
      `.aiops/config.json` or `.claude/settings.json`; it prints those changes as human steps instead.
    - **Never** write those files yourself, and never write signing keys, `allowed-signers`, CODEOWNERS owners or
      global git config.

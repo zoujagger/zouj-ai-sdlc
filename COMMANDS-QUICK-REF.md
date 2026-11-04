@@ -6,7 +6,7 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 ## Get started
 | Command | What it does |
 |---|---|
-| `/zouj-ai-sdlc:setup [solo\|team\|strict]` | Guided setup: checks prerequisites, previews every change and the gates, applies after you confirm, lists your human steps. Rerunnable |
+| `/zouj-ai-sdlc:setup [solo\|team\|strict]` | Guided setup: checks prerequisites, previews every change and the gates, applies after you confirm, lists your human steps. Rerunnable. It scaffolds with the `team` default; `solo` or `strict` is applied by `<plugin>/bin/sdlc setup --profile <p>` in your own terminal |
 | `/zouj-ai-sdlc:init [--stack python\|node\|go]` | The bare scaffold, without setup's guidance |
 | `/zouj-ai-sdlc:onboard` | An interactive tour of the workflow for your role |
 | `/zouj-ai-sdlc:help-me "<goal>"` | Maps what you want to do to the right command |
