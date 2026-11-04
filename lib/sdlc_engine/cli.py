@@ -5,6 +5,7 @@ Exit codes: 0 ok · 1 error or validation failure · 2 hook block (PreToolUse/Po
 import datetime
 import json
 import os
+import pwd
 import re
 import shutil
 import stat
@@ -304,7 +305,7 @@ def plugin_version():
 HUMAN_OWNED_RE = re.compile(r"^(\.aiops/config(\.json$|/)|\.claude/|(\.github/|docs/)?CODEOWNERS$|\.github/workflows/)")
 
 
-GIT_LOCATION_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES")
+GIT_LOCATION_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE")   # each can fake a repo top
 
 
 def scaffold_root_problem(root):
@@ -319,11 +320,16 @@ def scaffold_root_problem(root):
     top = git(root, "rev-parse", "--show-toplevel")
     if not top or Path(top).resolve() != root.resolve():
         return f"{root} is not the top of a git repository; run `git init` there first (init and setup write only inside a repo)"
-    real, home = root.resolve(), Path.home().resolve()
-    if real == home:
-        return f"{real} is your home directory; scaffold a project repo instead"
-    if real == home / ".claude" or home / ".claude" in real.parents:
-        return f"{real} is inside ~/.claude (Claude Code's own settings and plugins); scaffold a project repo instead"
+    here = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if not here or Path(here).resolve() != root.resolve():        # CLAUDE_PROJECT_DIR named another repo
+        return (f"CLAUDE_PROJECT_DIR points at {root}, not at the repo you're in ({here or Path.cwd()}); init and "
+                "setup scaffold only the repo they run in: cd there, or unset CLAUDE_PROJECT_DIR")
+    real = root.resolve()
+    for home in {Path.home().resolve(), Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()}:   # $HOME can be set
+        if real == home:
+            return f"{real} is your home directory; scaffold a project repo instead"
+        if real == home / ".claude" or home / ".claude" in real.parents:
+            return f"{real} is inside ~/.claude (Claude Code's own settings and plugins); scaffold a project repo instead"
     if guards._toolchain_path(real, real):
         return f"{real} is a toolchain path (PATH, shell startup or installed plugins); scaffold a project repo instead"
     return None

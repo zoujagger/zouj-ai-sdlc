@@ -62,7 +62,8 @@ first approved intent with one guided, rerunnable command, and the playbook work
 - **Run by the agent, setup creates `config.json` exactly as `init` does** (team defaults); another profile is printed
   as a human step.
 - **`init` and `setup` scaffold only the top of a git repository,** never `$HOME`, `~/.claude` or a folder on PATH,
-  and refuse git's `GIT_DIR`/`GIT_WORK_TREE`-style variables. The pre-bash guard lets the agent run them only in its
+  and refuse git's `GIT_DIR`/`GIT_WORK_TREE`-style variables and a `CLAUDE_PROJECT_DIR` naming another repo. Home is
+  read from the account record too, not only `$HOME`. The pre-bash guard lets the agent run them only in its
   session's repo. Run by the agent, `init --force` keeps every file the guard won't let the agent write (protected
   paths, the read-only lock).
 - **Preflight never runs a tool from a PATH folder inside the repo** (an agent could plant one there), runs git by

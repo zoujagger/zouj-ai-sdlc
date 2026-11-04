@@ -66,8 +66,8 @@ Setup stops before writing anything when:
   link.
 - **`config.json` names an unknown `profile`.** Set it to `solo`, `team` or `strict`, or pass `--profile`.
 - **The folder isn't the top of a git repository**, or it is your home directory, `~/.claude` or a folder on PATH,
-  or git's `GIT_DIR`/`GIT_WORK_TREE` variables are set (`init` too). Run `git init` in a project folder and set up
-  there.
+  or git's `GIT_DIR`/`GIT_WORK_TREE` variables are set, or `CLAUDE_PROJECT_DIR` names another repo (`init` too).
+  Run `git init` in a project folder and set up from inside it.
 
 `!` rows (claude, gh, credential helper, signing) are warnings: setup continues and lists the fix.
 

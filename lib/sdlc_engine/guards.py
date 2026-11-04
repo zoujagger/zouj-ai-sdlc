@@ -370,20 +370,26 @@ def _git_changed(root, staged_only):
     return [ln if staged_only else ln[3:].split(" -> ")[-1] for ln in out.splitlines()]
 
 
-SCAFFOLD_RE = re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*(init|setup)\b")
-RELOCATE_RE = re.compile(r"(^|[\s;&|(])(cd|pushd|popd)(\s|$)|\bGIT_[A-Z_]+=|(^|\s)-C(\s|$)")
+SCAFFOLD_RES = (   # `sdlc init|setup` as the command being run (not inside an echo, a grep pattern or a message)
+    re.compile(rf"{CMD_POS}(\S*/)?sdlc\s+(-\S+\s+)*(init|setup)\b"),
+    re.compile(r"-(exec|execdir|ok|okdir)\s+(\S*/)?sdlc\s+(-\S+\s+)*(init|setup)\b"),     # find … -execdir sdlc init
+)
+RELOCATE_RE = re.compile(r"(^|[\s;&|(])(cd|pushd|popd)(\s|$)|\b(GIT_[A-Z_]+|CLAUDE_PROJECT_DIR|HOME)="
+                         r"|(^|\s)(-C\S*|--chdir\S*|-execdir|-okdir)(\s|$)")
 
 
 def _scaffold_elsewhere(cwd, plain):
     """The agent's `sdlc init|setup` runs only in this session's repo. The hook knows the session's project
-    (CLAUDE_PROJECT_DIR); the CLI, started from the agent's shell, doesn't. So a command that moves (cd, pushd, -C) or
-    points git elsewhere (GIT_*=) is refused, and so is one whose working directory is in another repo."""
+    (CLAUDE_PROJECT_DIR); the CLI, started from the agent's shell, doesn't. So a command that moves (cd, pushd, -C,
+    env --chdir, find -execdir) or sets a variable the engine reads for its root (GIT_*, CLAUDE_PROJECT_DIR, HOME) is
+    refused, and so is one whose working directory is in another repo."""
     session = os.environ.get("CLAUDE_PROJECT_DIR")
-    if not session or not SCAFFOLD_RE.search(plain):
+    if not session or not any(r.search(plain) for r in SCAFFOLD_RES):
         return None
     if RELOCATE_RE.search(plain) or project_root(cwd) != project_root(session):
         return _block("scaffold", "`sdlc init|setup` run by the agent may scaffold only this session's repo "
-                      f"({project_root(session)}), from there, without cd, -C or GIT_* variables.",
+                      f"({project_root(session)}), from there, without cd, -C, --chdir, -execdir or GIT_*, "
+                      "CLAUDE_PROJECT_DIR or HOME settings.",
                       "run it from the project as a command of its own; another repo is set up by the human in "
                       "their own terminal.")
     return None

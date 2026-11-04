@@ -1,5 +1,6 @@
 """`sdlc setup`: guided, rerunnable onboarding that keeps the playbook workflow in every profile."""
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -44,11 +45,14 @@ def stub(bindir, name, body):
 
 
 class SetupCase(RepoCase):
-    """A fresh, uninitialized repo, and a PATH of stub tools so setup's output doesn't depend on the machine."""
+    """A fresh, uninitialized repo, and a PATH of stub tools so setup's output doesn't depend on the machine. Tests
+    run from inside the repo, as setup is (it scaffolds only the repo it runs in)."""
 
     def setUp(self):
         super().setUp()
         shutil.rmtree(self.root / ".aiops")
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.root)
 
     def bin_with(self, claude="2.1.40 (Claude Code)", gh_scopes="'gist', 'read:org', 'repo', 'workflow'", git=True):
         """Stub tools; gh logs every argument list it gets to gh.log."""
@@ -574,13 +578,50 @@ class Roots(SetupCase):
                          (self.root, "pushd ../x; sdlc setup --yes"),
                          (self.root, f"GIT_DIR={other}/.git GIT_WORK_TREE=. sdlc setup --profile team --yes"),
                          (self.root, f"sdlc init -C {other}"),
-                         (self.root, f"/opt/plugin/bin/sdlc init --force; cd {other}; true")):
+                         (self.root, f"/opt/plugin/bin/sdlc init --force; cd {other}; true"),
+                         # round 7: variables the CLI reads, env --chdir, an attached -C, find -execdir
+                         (self.root, f"CLAUDE_PROJECT_DIR={other} sdlc init"),
+                         (self.root, f"export CLAUDE_PROJECT_DIR={other}; sdlc setup --profile team --yes"),
+                         (self.root, "HOME=/tmp/fake sdlc init --force"),
+                         (self.root, f"env --chdir={other} /opt/plugin/bin/sdlc init"),
+                         (self.root, f"env -C{other} /opt/plugin/bin/sdlc init"),
+                         (self.root, f"find {other} -maxdepth 1 -name .git -execdir /opt/plugin/bin/sdlc init ;")):
             self.assertIsNotNone(check(cwd, cmd), (cwd, cmd))
         for cwd, cmd in ((self.root, "sdlc setup --profile team --yes"),
                          (sub, "/opt/plugin/bin/sdlc setup --dry-run --profile team"),
                          (self.root, "sdlc status"),
-                         (other, "sdlc status")):
+                         (other, "sdlc status"),
+                         # round 7: `sdlc setup` that isn't the command being run is not a scaffold call
+                         (self.root, 'grep -n "sdlc setup" README.md; cd docs'),
+                         (self.root, 'git log --oneline -1; echo "run sdlc init -C later"')):
             self.assertIsNone(check(cwd, cmd), (cwd, cmd))
+
+    def test_root_is_the_working_directorys_repo(self):
+        """Round 7 MEDIUM: CLAUDE_PROJECT_DIR can't point init/setup at another repo than the one they run in."""
+        other = self.side("elsewhere", repo=True)
+        env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(other)}
+        for args in (("init",), ("setup", "--profile", "team", "--yes")):
+            r = subprocess.run([sys.executable, SDLC, *args], cwd=self.root, input="", capture_output=True,
+                               text=True, env=env)
+            self.assertEqual(r.returncode, 1, (args, r.stdout + r.stderr))
+            self.assertIn("CLAUDE_PROJECT_DIR", r.stderr, args)
+            self.assertEqual(sorted(p.name for p in other.iterdir()), [".git"], args)   # nothing written there
+
+    def test_home_comes_from_the_account_too(self):
+        """Round 7 LOW: a spoofed $HOME doesn't let init/setup scaffold the real home (or its ~/.claude)."""
+        import os
+        real_home = self.side("realhome", repo=True)
+        account = mock.Mock(pw_dir=str(real_home))
+        os.chdir(real_home)                     # init/setup run from inside it (SetupCase restores the directory)
+        with mock.patch.dict(os.environ, {"HOME": str(self.side("fakehome"))}), \
+                mock.patch.object(cli.pwd, "getpwuid", return_value=account):
+            self.assertIn("home directory", cli.scaffold_root_problem(real_home) or "")
+
+    def test_git_ceiling_directories_is_allowed(self):
+        """Round 7 MINOR: a ceiling only limits git's upward search; it can't fake the top of a repo."""
+        r = self.run_sdlc("setup", "--profile", "team", "--dry-run",
+                          env={"PATH": str(self.bin_with()), "GIT_CEILING_DIRECTORIES": "/nonexistent"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_subdirectory_of_a_repo_is_fine(self):
         sub = self.root / "pkg"
