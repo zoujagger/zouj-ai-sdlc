@@ -40,15 +40,15 @@ current release is **0.2.0-alpha.2**: check yours with `/plugin list`.
 > `zouj-ai-sdlc@zouj`. Copies elsewhere aren't reviewed.
 >
 > **What you trust:** enabling the plugin trusts github.com/zoujagger/zouj-ai-sdlc at that ref. Its hooks run as you on
-> every tool call, and `bin/sdlc` is what you run to approve. So the commands and the snippet pin a release tag (`ref`),
-> and moving to a new release should be a reviewed change: rerunning `sdlc setup` after an upgrade proposes it as a
-> diff.
+> every tool call, and `bin/sdlc` is what you run to approve. The commands below track `main`; to pin a release, append
+> the tag (`zoujagger/zouj-ai-sdlc@v0.2.0-alpha.2`). The snippet pins a release tag (`ref`), and moving to a new
+> release should be a reviewed change: rerunning `sdlc setup` after an upgrade proposes it as a diff.
 
 Pick **one** path:
 
-**A. Guided (recommended).** Install the plugin, pinned to the release, then let setup do the rest:
+**A. Guided (recommended).** Install the plugin from `main`, then let setup do the rest:
 ```text
-/plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-alpha.2
+/plugin marketplace add zoujagger/zouj-ai-sdlc
 /plugin install zouj-ai-sdlc@zouj
 /zouj-ai-sdlc:setup
 ```
