@@ -5,16 +5,18 @@ Exit codes: 0 ok · 1 error or validation failure · 2 hook block (PreToolUse/Po
 import datetime
 import json
 import os
+import pwd
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
 
 from . import approvals, guards
 from . import artifacts as A
-from .machine import (KINDS, PLUGIN_ROOT, SCHEMAS, active_dir, config, evaluate, find_dir, git, initialized,
-                      intent_dirs, project_root)
+from .machine import (KINDS, PLUGIN_ROOT, SCHEMAS, active_dir, config, evaluate, find_dir, git, glob_hit, globs,
+                      initialized, intent_dirs, project_root)
 from .schema import validate
 
 TEMPLATES = PLUGIN_ROOT / "templates"
@@ -35,6 +37,8 @@ Lifecycle (any user or agent)
                              commits (signers, legacy list and config read from REF when given)
   lock                       /fix: lock test files after the human approved the failing test
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
+  setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
+  feedback                   issue links and a doctor summary to paste (sends nothing)
   doctor                     check tools and wiring
 
 Human only (refused inside Claude Code)
@@ -45,8 +49,8 @@ Human only (refused inside Claude Code)
 """
 
 
-def out(msg, stream=sys.stdout):
-    print(msg, file=stream)
+def out(msg, stream=None):
+    print(msg, file=stream or sys.stdout)   # looked up at call time, so redirect_stdout can capture it
 
 
 def _root():
@@ -271,67 +275,216 @@ def cmd_unlock(root, args):
     return 0
 
 
-def _wire_stack(makefile, stack):
+def _wire_stack(root, stack):
     recipes = {}
     for line in (TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and not parts[0].startswith("#"):
             recipes[parts[0]] = parts[1]
-    src, wired = makefile.read_text(), []
+    src, wired = (root / "Makefile").read_text(), []
     for target, cmd in recipes.items():
         src, n = re.subn(rf'^\t@echo "\[{target}\] not configured - edit Makefile"$', "\t" + cmd.replace("\\", "\\\\"),
                          src, flags=re.M)
         if n:
             wired.append(target)
-    makefile.write_text(src)
+    write_file(root, "Makefile", src.encode())
     return wired
 
 
 REF_PLACEHOLDER = "__ZOUJ_SDLC_REF__"
+PROFILES = ("solo", "team", "strict")
+STACKS = ("python", "node", "go")             # the presets in templates/stacks/; --stack takes only these names
 
 
 def plugin_version():
     return json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
 
 
+# Scaffold files that, once they exist, belong to the human: the approval proof, the signer and guard lists, Claude
+# Code settings, code ownership and CI. `--force` never overwrites them when the agent runs it.
+HUMAN_OWNED_RE = re.compile(r"^(\.aiops/config(\.json$|/)|\.claude/|(\.github/|docs/)?CODEOWNERS$|\.github/workflows/)")
+
+
+GIT_LOCATION_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE")   # each can fake a repo top
+
+
+def scaffold_root_problem(root):
+    """Why init/setup must not scaffold root, else None. Only the top of a git work tree is scaffolded (no fallback to
+    the current directory), and never the home directory, ~/.claude or a toolchain path (shell startup, PATH,
+    installed plugins): files there run, or load, in every session of the human's. git's location variables are
+    refused: they would make any directory look like the top of a repo."""
+    pointed = [v for v in GIT_LOCATION_VARS if os.environ.get(v)]
+    if pointed:
+        return (f"{', '.join(pointed)} {'is' if len(pointed) == 1 else 'are'} set, which points git at another "
+                "repository or work tree; unset it and run from the repo itself")
+    top = git(root, "rev-parse", "--show-toplevel")
+    if not top or Path(top).resolve() != root.resolve():
+        return f"{root} is not the top of a git repository; run `git init` there first (init and setup write only inside a repo)"
+    here = git(Path.cwd(), "rev-parse", "--show-toplevel")
+    if not here or Path(here).resolve() != root.resolve():        # CLAUDE_PROJECT_DIR named another repo
+        return (f"CLAUDE_PROJECT_DIR points at {root}, not at the repo you're in ({here or Path.cwd()}); init and "
+                "setup scaffold only the repo they run in: cd there, or unset CLAUDE_PROJECT_DIR")
+    real, homes = root.resolve(), {Path.home().resolve()}         # $HOME can be set, so the account record too
+    try:
+        homes.add(Path(pwd.getpwuid(os.getuid()).pw_dir).resolve())
+    except KeyError:                                                # a uid with no passwd entry (containers)
+        pass
+    for home in homes:
+        if real == home:
+            return f"{real} is your home directory; scaffold a project repo instead"
+        if real == home / ".claude" or home / ".claude" in real.parents:
+            return f"{real} is inside ~/.claude (Claude Code's own settings and plugins); scaffold a project repo instead"
+    if guards._toolchain_path(real, real):
+        return f"{real} is a toolchain path (PATH, shell startup or installed plugins); scaffold a project repo instead"
+    return None
+
+
+def symlink_on_path(root, rel):
+    """The first of rel's path components below root that is a symlink (as a relative path), else None."""
+    p = root
+    for part in Path(rel).parts:
+        p = p / part
+        if p.is_symlink():
+            return str(p.relative_to(root))
+        if not p.exists():
+            return None
+    return None
+
+
+def write_file(root, rel, data, mode=0o644):
+    """Write data to root/rel without following a link: each directory is opened relative to its parent with
+    O_NOFOLLOW, and the file is removed and created anew (O_EXCL), so neither a symlink (anywhere on the path) nor a
+    hard link is written through. Raises OSError instead."""
+    *dirs, name = Path(rel).parts
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in dirs:
+            try:
+                os.mkdir(part, 0o755, dir_fd=fd)
+            except FileExistsError:
+                pass
+            sub = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = sub
+        try:
+            if stat.S_ISLNK(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
+                raise OSError(f"{rel} is a symlink; refusing to write through it")
+            os.unlink(name, dir_fd=fd)
+        except FileNotFoundError:
+            pass
+        with os.fdopen(os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=fd), "wb") as f:
+            f.write(data)
+    finally:
+        os.close(fd)
+
+
+def _agent_blocked(root, rel):
+    """True if the guards would block the agent's own Write of root/rel: `init --force` run by the agent may not reset
+    more than the agent could write itself. That is two hooks' rules: check_edit (engine paths, artifacts, the
+    read-only lock) and guard-files.sh (protected-paths, default and the repo's, and secret-paths)."""
+    if glob_hit(rel, globs(root, "protected-paths")):
+        return True
+    if not guards._secret_template(rel) and glob_hit(rel, globs(root, "secret-paths")):
+        return True
+    return guards.check_edit({"tool_name": "Write", "cwd": str(root),
+                              "tool_input": {"file_path": str(root / rel), "content": ""}}) is not None
+
+
+def init_actions(root, force=False, agent=False):
+    """[(action, rel)] for every scaffold file: "create" (missing, or --force) or "keep" (exists). Under the agent,
+    --force keeps existing human-owned files, and any file the guard won't let the agent write ("owned"). A file with a symlink on its path is "symlink" (init refuses to
+    run). Writes nothing, so `sdlc setup` can preview exactly what `init` will do."""
+    scaffold = TEMPLATES / "scaffold"
+    out = []
+    for rel in sorted(str(p.relative_to(scaffold)) for p in scaffold.rglob("*") if p.is_file()):
+        if symlink_on_path(root, rel):
+            out.append(("symlink", rel))
+        elif not (root / rel).exists():
+            out.append(("create", rel))
+        elif force and agent and (HUMAN_OWNED_RE.match(rel) or _agent_blocked(root, rel)):
+            out.append(("owned", rel))
+        else:
+            out.append(("create" if force else "keep", rel))
+    if symlink_on_path(root, ".gitignore"):
+        out.append(("symlink", ".gitignore"))
+    return out
+
+
+def symlink_refusal(root, actions):
+    """The refusal message when init would write through a symlink, else None."""
+    links = [f"{rel} ({symlink_on_path(root, rel)} is a symlink)" for act, rel in actions if act == "symlink"]
+    return ("refusing to write through symlinks; init writes only regular files inside this repo. Remove these links "
+            "and run again. Nothing was written:\n  " + "\n  ".join(links)) if links else None
+
+
+def write_failure(exc, written):
+    """The message for a write that failed part-way: what failed, and what had already been written."""
+    return (f"✗ {exc}. Files written before the error: {', '.join(written) or 'none'}. Nothing else was written; fix "
+            "the cause and run again.")
+
+
+def apply_init(root, actions, written=None):
+    """Copy the "create" files of init_actions() into root, pinning consumer CI to this plugin's release. Each file
+    written is appended to `written`, so a caller can report them if a later write fails."""
+    written = [] if written is None else written
+    scaffold = TEMPLATES / "scaffold"
+    for act, rel in actions:
+        if act != "create":
+            continue
+        data = (scaffold / rel).read_bytes()
+        if REF_PLACEHOLDER.encode() in data:
+            data = data.replace(REF_PLACEHOLDER.encode(), f"v{plugin_version()}".encode())
+        write_file(root, rel, data, (scaffold / rel).stat().st_mode & 0o777)
+        written.append(rel)
+    if symlink_on_path(root, ".aiops/state"):
+        raise OSError(".aiops/state is behind a symlink; refusing to create it")
+    (root / ".aiops" / "state").mkdir(parents=True, exist_ok=True)
+    gi = root / ".gitignore"
+    lines = gi.read_text().splitlines() if gi.is_file() and not gi.is_symlink() else []
+    if ".aiops/state/" not in lines:
+        write_file(root, ".gitignore", ("\n".join(lines + ["", "# zouj-ai-sdlc engine state (active intent, test lock)",
+                                                           ".aiops/state/"]).lstrip("\n") + "\n").encode())
+        written.append(".gitignore")
+
+
 def cmd_init(root, args):
     stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
     force = "--force" in args
-    if stack and not (TEMPLATES / "stacks" / f"{stack}.recipes").is_file():
+    if stack and stack not in STACKS:
         out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
         return 1
-    scaffold = TEMPLATES / "scaffold"
-    created, skipped = [], []
-    for src in sorted(p for p in scaffold.rglob("*") if p.is_file()):
-        rel = src.relative_to(scaffold)
-        dst = root / rel
-        if dst.exists() and not force:
-            skipped.append(str(rel))
-            continue
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        if dst.suffix in (".yml", ".yaml", ".md", ".json"):
-            text = dst.read_text()
-            if REF_PLACEHOLDER in text:   # pin consumer CI to this plugin's release
-                dst.write_text(text.replace(REF_PLACEHOLDER, f"v{plugin_version()}"))
-        created.append(str(rel))
-    for p in (root / ".aiops" / "state",):
-        p.mkdir(parents=True, exist_ok=True)
+    problem = scaffold_root_problem(root)
+    if problem:
+        out(f"refusing: {problem}. Nothing was written.", sys.stderr)
+        return 1
+    actions = init_actions(root, force, agent=approvals.running_under_agent())
+    refusal = symlink_refusal(root, actions)
+    if refusal:
+        out(refusal, sys.stderr)
+        return 1
+    written = []
+    try:
+        apply_init(root, actions, written)
+    except OSError as exc:
+        out(write_failure(exc, written), sys.stderr)
+        return 1
+    created = [rel for act, rel in actions if act == "create"]
+    skipped = [rel for act, rel in actions if act == "keep"]
+    owned = [rel for act, rel in actions if act == "owned"]
+    if owned:
+        out("Human-owned or locked, not reset (init --force was run by the agent). To reset them, the human runs "
+            "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned))
     if stack and "Makefile" in created:
-        wired = _wire_stack(root / "Makefile", stack)
+        wired = _wire_stack(root, stack)
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
-    gi = root / ".gitignore"
-    lines = gi.read_text().splitlines() if gi.exists() else []
-    if ".aiops/state/" not in lines:
-        gi.write_text("\n".join(lines + ["", "# zouj-ai-sdlc engine state (active intent, test lock)", ".aiops/state/"])
-                      .lstrip("\n") + "\n")
     out("Created:\n  " + ("\n  ".join(created) or "(nothing)"))
     if skipped:
-        out("Kept existing (compare with the plugin's templates/scaffold/ or re-run with --force):\n  "
+        out("Kept existing (compare them with the plugin's templates/scaffold/):\n  "
             + "\n  ".join(skipped))
     out("""
 zouj-ai-sdlc is now active in this repo. Next:
-  1. Wire the Makefile contract (format/lint/typecheck/test/build), or re-run with --stack python|node|go.
+  1. Wire the Makefile contract (format/lint/typecheck/test/build): copy the recipes from the plugin's
+     templates/stacks/<python|node|go>.recipes.
   2. Optional, for an unattended state 4: add the allow-rules from .aiops/README.md to .claude/settings.json.
   3. Commit the scaffold, then start: /zouj-ai-sdlc:intent "<your first need>".""")
     return 0
@@ -367,6 +520,53 @@ def _doctor_signing(root, row):
             "signs silently. Prefer a dedicated signing key")
 
 
+CODEOWNERS_FILES = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")   # GitHub's lookup order
+AIOPS_PATTERNS = {"*", "**", "/**", ".aiops", ".aiops/", ".aiops/*", ".aiops/**", "/.aiops", "/.aiops/", "/.aiops/*",
+                  "/.aiops/**"}
+
+
+def codeowners_cover_aiops(root):
+    """True if the first CODEOWNERS file GitHub would read gives /.aiops/ an owner. The last matching rule wins, as on
+    GitHub, so a later `/.aiops/` line without owners removes the coverage."""
+    f = next((root / rel for rel in CODEOWNERS_FILES if (root / rel).is_file()), None)
+    owned = False
+    for line in (f.read_text(errors="replace").splitlines() if f else []):
+        words = line.split("#", 1)[0].split()
+        if words and words[0] in AIOPS_PATTERNS:
+            owned = any(not w.startswith("@your-org/") for w in words[1:])   # the scaffold's placeholder isn't an owner
+    return owned
+
+
+ISSUES = "https://github.com/zoujagger/zouj-ai-sdlc/issues/new"
+
+
+def cmd_feedback(root, args):
+    """Where to report a problem or an idea, plus a doctor summary to paste. Prints only: nothing is sent anywhere."""
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        cmd_doctor(root, [])
+    summary = buf.getvalue().replace(str(root), root.name).replace(str(Path.home()), "~")
+    out(f"""zouj-ai-sdlc {plugin_version()}: feedback
+
+  Install or runtime problem:  {ISSUES}?template=install-problem.yml
+  Quick feedback (20 seconds): {ISSUES}?template=quick-feedback.yml
+  Anything else:               {ISSUES}/choose
+
+Paste this doctor summary into the issue (paths are reduced to the repo name):
+
+{summary.rstrip()}
+
+Nothing was sent: zouj-ai-sdlc never uploads diagnostics.""")
+    return 0
+
+
+def cmd_setup(root, args):
+    from . import setup   # imported here: setup builds on init_actions/apply_init in this module
+    return setup.main(root, args)
+
+
 def cmd_doctor(root, args):
     fail = 0
 
@@ -383,9 +583,27 @@ def cmd_doctor(root, args):
         mk = (root / "Makefile").read_text()
         unwired = [t for t in ("format", "lint", "typecheck", "test", "build") if f'"[{t}] not configured' in mk]
         row(not unwired, "Makefile contract wired" + (f" (not: {', '.join(unwired)})" if unwired else ""),
-            "edit the Makefile or: sdlc init --stack python|node|go --force")
+            "edit the Makefile's recipes (presets: the plugin's templates/stacks/<python|node|go>.recipes)")
     for b in ("gh", "jq"):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")
+    if initialized(root):
+        cfg = config(root)
+        row(cfg["profile"] in PROFILES, f"profile: {cfg['profile']} (approval_key_policy: "
+            f"{cfg.get('approval_key_policy')}, signed approvals: {'yes' if cfg.get('require_signed_approvals') else 'no'})",
+            'set "profile" in .aiops/config.json to solo, team or strict (human-owned), or run '
+            "`sdlc setup --profile <p>` in your own terminal")
+        covered, msg = codeowners_cover_aiops(root), "CODEOWNERS covers /.aiops/"
+        fix = "add `/.aiops/ @<approver>` to .github/CODEOWNERS (human-owned) and require CODEOWNER review on main"
+        if cfg["profile"] == "strict":                 # strict: a CODEOWNER must review every change to .aiops/
+            row(covered, msg, fix)
+        else:
+            out(f"  {'✓' if covered else '!'} {msg}" + ("" if covered else f" (recommended)\n      fix: {fix}"))
+        if cfg.get("approval_key_policy") == "sk":   # strict: only touch keys may be allow-listed
+            f = root / ".aiops" / "config" / "allowed-signers"
+            weak = approvals.non_touch_signers(f.read_text() if f.is_file() else "")
+            row(not weak, "allowed-signers: strict accepts only sk- keys that need a touch"
+                + (f" ({len(weak)} other: {', '.join(w.split()[0] for w in weak[:3])})" if weak else ""),
+                "replace those entries with sk- keys, without no-touch-required (human-owned, via a reviewed PR)")
     if initialized(root) and config(root).get("require_signed_approvals"):
         _doctor_signing(root, row)
     if initialized(root):
@@ -495,7 +713,8 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
-            "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor}
+            "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
+            "setup": cmd_setup, "feedback": cmd_feedback}
 
 
 def main(argv=None):

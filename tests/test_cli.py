@@ -2,6 +2,7 @@
 import json
 import shutil
 import unittest
+from pathlib import Path
 
 from helpers import INTENT, RepoCase
 
@@ -28,6 +29,87 @@ class Init(RepoCase):
         r = self.run_sdlc("init", "--stack", "python")
         self.assertIn("wired format, lint, typecheck, test, build", r.stdout)
         self.assertIn("pytest -q", (self.root / "Makefile").read_text())
+
+    def test_agent_init_force_keeps_human_owned_files(self):
+        from helpers import ROOT
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        owned = {".aiops/config.json": '{"profile": "strict", "approval_key_policy": "sk", "main_branch": "trunk"}\n',
+                 ".aiops/config/allowed-signers": "owner@example.com namespaces=\"git\" ssh-ed25519 AAAAkey\n",
+                 ".claude/settings.json": '{"permissions": {"deny": ["Read(./x)"]}}\n',
+                 ".github/CODEOWNERS": "/.aiops/ @owner\n",
+                 ".github/workflows/aiops-gates.yml": "# customised\n"}
+        for rel, text in owned.items():
+            (self.root / rel).write_text(text)
+        (self.root / "docs" / "ai-usage-policy.md").write_text("mine\n")          # a doc the agent may write
+        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for rel, text in owned.items():
+            self.assertEqual((self.root / rel).read_text(), text, rel)           # untouched under the agent
+            self.assertIn(rel, r.stdout)                                          # listed for the human
+        self.assertIn("your own terminal", r.stdout)
+        self.assertNotEqual((self.root / "docs" / "ai-usage-policy.md").read_text(), "mine\n")   # the rest is reset
+        r = self.run_sdlc("init", "--force")                                      # a human: as before
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("strict", (self.root / ".aiops" / "config.json").read_text())
+        # nothing tells the agent to run --force: doctor's Makefile fix and the docs
+        (self.root / "Makefile").write_text('test:\n\t@echo "[test] not configured - edit Makefile"\n')
+        self.assertNotIn("--force", self.run_sdlc("doctor").stdout)
+        self.assertNotIn("--force", (ROOT / "TROUBLESHOOTING.md").read_text())
+
+    def test_agent_init_force_never_writes_what_the_guard_blocks(self):
+        """Review 0003 round 6 MEDIUM: under the agent, --force writes no more than the agent's own Write could."""
+        self.assertEqual(self.run_sdlc("init", "--stack", "python").returncode, 0)
+        extra = self.root / ".aiops" / "config" / "protected-paths"
+        extra.write_text(extra.read_text() + "Makefile the wired contract is human-owned here\n")
+        kept = {"Makefile": (self.root / "Makefile").read_text(),                 # repo-protected, wired
+                "governance/managed-settings.example.json": '{"mine": true}\n',  # default protected-paths
+                "CLAUDE.md": "mine\n",                                           # read-only lock (no intent)
+                "scripts/check-bands.py": "# mine\n"}                             # code under the lock
+        for rel, text in kept.items():
+            (self.root / rel).write_text(text)
+        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for rel, text in kept.items():
+            self.assertEqual((self.root / rel).read_text(), text, rel)
+            self.assertIn(rel, r.stdout)                                          # listed for the human
+        self.assertIn("pytest -q", (self.root / "Makefile").read_text())         # still wired: make check is real
+
+    def test_agent_init_force_keeps_protected_paths_when_unlocked(self):
+        """Review 0003 round 7 MEDIUM: protected paths are kept by their own rule, not only through the lock."""
+        self.assertEqual(self.run_sdlc("init", "--stack", "python").returncode, 0)
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text(json.dumps({**json.loads(cfg.read_text()), "lock_when_idle": False}) + "\n")   # code unlocked
+        extra = self.root / ".aiops" / "config" / "protected-paths"
+        extra.write_text(extra.read_text() + "Makefile the wired contract is human-owned here\n")
+        kept = {"Makefile": (self.root / "Makefile").read_text(),
+                "governance/managed-settings.example.json": '{"mine": true}\n'}
+        for rel, text in kept.items():
+            (self.root / rel).write_text(text)
+        (self.root / "CLAUDE.md").write_text("mine\n")                           # unlocked, unprotected: reset
+        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for rel, text in kept.items():
+            self.assertEqual((self.root / rel).read_text(), text, rel)
+            self.assertIn(rel, r.stdout)
+        self.assertNotEqual((self.root / "CLAUDE.md").read_text(), "mine\n")
+
+    def test_scaffold_offers_the_plugin(self):
+        before = json.loads((Path(__file__).resolve().parents[1] / "templates" / "scaffold" / ".claude" /
+                             "settings.json").read_text())["permissions"]["deny"]
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        settings = json.loads((self.root / ".claude" / "settings.json").read_text())
+        from helpers import ROOT
+        version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+        self.assertEqual(settings["extraKnownMarketplaces"]["zouj"]["source"],      # pinned to this release
+                         {"source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": f"v{version}"})
+        self.assertIs(settings["enabledPlugins"]["zouj-ai-sdlc@zouj"], True)
+        self.assertEqual(settings["permissions"]["deny"], before)                # deny rules unchanged
+        readme, security = (ROOT / "README.md").read_text(), (ROOT / "SECURITY.md").read_text()
+        self.assertIn(f"/plugin marketplace add zoujagger/zouj-ai-sdlc@v{version}", readme)
+        self.assertIn(f'"ref": "v{version}"', readme)
+        for doc in (readme, security):                                            # the trust model, stated
+            self.assertIn("trusts github.com/zoujagger/zouj-ai-sdlc at that ref", doc)
+        self.assertNotIn("allow", settings["permissions"])                        # no permission is granted
 
     def test_scaffold_pins_and_protects(self):
         from helpers import ROOT
@@ -104,6 +186,35 @@ class Lifecycle(RepoCase):
         self.assertEqual(self.run_sdlc("validate", "--all", "--ci").returncode, 0)
         r = self.run_sdlc("validate", "--all", "--ci", "--base", "base")
         self.assertEqual(r.returncode, 1, r.stdout)          # the base has no legacy list yet
+
+    def test_strict_requires_codeowners(self):
+        cfg = self.root / ".aiops" / "config.json"
+        owners = self.root / ".github" / "CODEOWNERS"
+        owners.parent.mkdir(parents=True, exist_ok=True)
+        owners.write_text("/src/ @someone\n")                          # doesn't cover /.aiops/
+        cfg.write_text('{"profile": "strict", "require_signed_approvals": false}')
+        r = self.run_sdlc("doctor")
+        self.assertIn("✗ CODEOWNERS covers /.aiops/", r.stdout)
+        self.assertIn("/.aiops/ @", r.stdout)                            # the fix names the line to add
+        self.assertEqual(r.returncode, 1)
+        cfg.write_text('{"profile": "team", "require_signed_approvals": false}')
+        r = self.run_sdlc("doctor")
+        self.assertIn("! CODEOWNERS covers /.aiops/", r.stdout)         # team: a warning only
+        self.assertEqual(r.returncode, 0, r.stdout)
+        owners.write_text("/.aiops/ @owner\n")
+        cfg.write_text('{"profile": "strict", "require_signed_approvals": false}')
+        r = self.run_sdlc("doctor")
+        self.assertIn("✓ CODEOWNERS covers /.aiops/", r.stdout)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        owners.write_text("/.aiops/\n")                                 # a pattern without an owner covers nothing
+        self.assertEqual(self.run_sdlc("doctor").returncode, 1)
+        owners.write_text("/.aiops/ @your-org/product\n")              # the scaffold's placeholder isn't an owner
+        self.assertEqual(self.run_sdlc("doctor").returncode, 1)
+        # profile and key policy hand-edited to disagree: the CODEOWNERS row still appears exactly once
+        for conf in ('{"profile": "team", "approval_key_policy": "sk", "require_signed_approvals": false}',
+                     '{"profile": "strict", "approval_key_policy": "human", "require_signed_approvals": false}'):
+            cfg.write_text(conf)
+            self.assertEqual(self.run_sdlc("doctor").stdout.count("CODEOWNERS covers /.aiops/"), 1, conf)
 
     def test_doctor_checks_signing(self):
         from helpers import git

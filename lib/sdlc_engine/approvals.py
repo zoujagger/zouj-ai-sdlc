@@ -90,7 +90,7 @@ def _signer_options(root, blob):
         words = line.split()
         if blob in words and not line.lstrip().startswith("#"):
             opts = words[1:words.index(blob) - 1]                  # principals [options] keytype key
-            return {o.split("=", 1)[0] for o in ",".join(opts).split(",") if o}
+            return {o.split("=", 1)[0].strip().lower() for o in ",".join(opts).split(",") if o}   # case-insensitive
     return set()
 
 
@@ -163,6 +163,9 @@ def _commit_alone(root, rel, title, body, sign):
     return sha, None
 
 
+KEY_POLICIES = ("human", "sk", "any")   # team: a human per signature · strict: a touch key only · solo/escape hatch
+
+
 def signing_problem(root):
     """Why a signed approval commit can't be made here, or None."""
     cfg = config(root)
@@ -180,7 +183,14 @@ def signing_problem(root):
         return "git has no signing key configured (user.signingkey)"
     if (git(root, "config", "gpg.format") or "openpgp") != "ssh":
         return "git signing is not set to SSH (gpg.format ssh)"
-    if cfg.get("approval_key_policy", "human") == "human":
+    policy = cfg.get("approval_key_policy", "human")
+    if policy not in KEY_POLICIES:
+        return (f"unknown approval_key_policy {policy!r} in .aiops/config.json (use one of: "
+                f"{', '.join(KEY_POLICIES)}); an unknown value is refused, never treated as \"any\"")
+    if policy == "sk" and not _signing_key_files(root)[0].startswith("sk-"):
+        return ("the strict profile (approval_key_policy \"sk\") accepts only a FIDO sk- key that needs a touch per "
+                f"signature.\n{KEY_HELP}")
+    if policy in ("human", "sk"):
         weak = key_protection(root)
         if weak:
             return f"{weak}.\n{KEY_HELP}"
@@ -342,6 +352,52 @@ def commit_problems(root, d, kind):
     return sha, []
 
 
+KEY_TYPE_RE = re.compile(r"^(sk-|ssh-|ecdsa-)")
+
+
+def signer_entries(signers):
+    """[(line, options, keytype, blob)] for each allowed-signers line: principals [options] keytype key."""
+    out = []
+    for line in signers.splitlines():
+        words = line.split()
+        if not words or line.lstrip().startswith("#"):
+            continue
+        i = next((n for n, w in enumerate(words[1:], 1) if KEY_TYPE_RE.match(w)), None)
+        if i is None or i + 1 >= len(words):
+            continue
+        opts = {o.split("=", 1)[0].strip().lower() for o in ",".join(words[1:i]).split(",") if o}  # as OpenSSH may
+        out.append((line.strip(), opts, words[i], words[i + 1]))
+    return out
+
+
+def non_touch_signers(signers):
+    """Allowed-signers lines that can sign without a touch: not an sk- key, or allow-listed with no-touch-required."""
+    return [line for line, opts, ktype, _ in signer_entries(signers)
+            if not ktype.startswith("sk-") or "no-touch-required" in opts]
+
+
+def _fingerprint(ktype, blob):
+    with tempfile.NamedTemporaryFile("w", suffix=".pub", delete=False) as f:
+        f.write(f"{ktype} {blob}\n")
+    try:
+        r = subprocess.run([SSH_KEYGEN, "-l", "-f", f.name], capture_output=True, text=True)
+        return r.stdout.split()[1] if r.returncode == 0 and len(r.stdout.split()) > 1 else None
+    finally:
+        os.unlink(f.name)
+
+
+def signer_needs_touch(root, sha, signers):
+    """True if `sha` was signed by an allow-listed sk- key that needs a touch (the strict profile's proof)."""
+    with tempfile.NamedTemporaryFile("w", suffix=".allowed-signers", delete=False) as f:
+        f.write(signers)
+    try:
+        fp = git(root, "-c", f"gpg.ssh.allowedSignersFile={f.name}", "log", "-1", "--format=%GK", sha)
+    finally:
+        os.unlink(f.name)
+    return any(_fingerprint(ktype, blob) == fp and ktype.startswith("sk-") and "no-touch-required" not in opts
+               for _line, opts, ktype, blob in signer_entries(signers)) if fp else False
+
+
 def audit(root, d, kind, base=None, warnings=None):
     """CI check: an open gate must come from a single-file approval commit signed by an allow-listed key
     (or listed, by full sha, in legacy-approvals), never from an agent-authored commit."""
@@ -357,6 +413,9 @@ def audit(root, d, kind, base=None, warnings=None):
         if verdict != "G":
             return [f"{kind}.md approval commit {sha[:10]} is not signed by an allow-listed signer "
                     f"(git %G? = {verdict}; signers from {base or 'the working tree'})"]
+        if cfg.get("approval_key_policy") == "sk" and not signer_needs_touch(root, sha, signers):
+            return [f"{kind}.md approval commit {sha[:10]} is signed by a key that doesn't need a touch; the strict "
+                    "profile (approval_key_policy \"sk\") requires an allow-listed sk- key without no-touch-required"]
     return []
 
 

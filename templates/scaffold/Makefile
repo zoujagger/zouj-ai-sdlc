@@ -4,7 +4,7 @@
 #   typecheck: npx tsc --noEmit  | mypy .              | go vet ./...
 #   test:      npm test          | pytest -q          | go test ./...
 # A target still printing "not configured" counts as a pass. `sdlc doctor` flags unwired targets.
-# Presets: sdlc init --stack python|node|go --force
+# Presets: copy the recipes from the plugin's templates/stacks/<python|node|go>.recipes
 
 ENV ?= staging
 

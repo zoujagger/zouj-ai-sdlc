@@ -28,6 +28,10 @@ We aim to acknowledge reports within 3 business days.
     human-owned escape hatch; its cost is that anything running as you can sign approvals
     ([approval isolation](docs/architecture.md#approval-isolation)).
   - Approval commits are made with a pinned `ssh-keygen`, no hooks and no repo-local signing config.
+- **Trust model of the plugin itself:** enabling the plugin trusts github.com/zoujagger/zouj-ai-sdlc at that ref. Its
+  hooks run as the user on every tool call, and `bin/sdlc` is what the human runs to approve. The scaffold's marketplace
+  snippet (`.claude/settings.json`) and the README commands therefore pin a release tag, like the CI's
+  `ZOUJ_SDLC_REF`. Move to a new release through a reviewed change.
 - **Consumer scaffolding:**
   - `templates/scaffold/.claude/settings.json` ships Read/Edit deny rules for `.env*`, `secrets/`, `*.pem` and `*.key`.
   - The scaffold's CI loads this plugin from a pinned ref.

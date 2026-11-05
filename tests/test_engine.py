@@ -389,6 +389,30 @@ class Approvals(RepoCase):
         errors = approvals.audit(self.root, self.d, "spec")
         self.assertTrue(errors and "must change only" in errors[0], errors)
 
+    def test_audit_requires_a_touch_key_under_strict(self):
+        cfg = self.root / ".aiops" / "config.json"
+        self.write("intent", INTENT)
+        self.approve("intent")                                # signed by the ordinary (allow-listed) test key
+        self.assertEqual(approvals.audit(self.root, self.d, "intent"), [])        # team/any: accepted
+        # the matching that would accept a real sk- touch key: git's signer fingerprint equals the allow-listed entry's
+        sha = git(self.root, "log", "-1", "--format=%H")
+        fp = git(self.root, "-c", f"gpg.ssh.allowedSignersFile={self.signers}", "log", "-1", "--format=%GK", sha)
+        _line, _opts, ktype, key = approvals.signer_entries(self.signers.read_text())[0]
+        self.assertTrue(fp.startswith("SHA256:"), fp)
+        self.assertEqual(approvals._fingerprint(ktype, key), fp)
+        cfg.write_text('{"approval_key_policy": "sk", "profile": "strict"}')
+        errors = approvals.audit(self.root, self.d, "intent")                     # strict: CI refuses it too
+        self.assertTrue(errors and "sk-" in errors[0], errors)
+        # the allow-list itself: ordinary keys, and sk- keys that skip the touch, are flagged under strict
+        blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
+        weak = approvals.non_touch_signers(self.signers.read_text() +
+                                           f'b@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n'
+                                           f'c@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n')
+        self.assertEqual([w.split()[0] for w in weak], ["owner@example.com", "b@example.com"])
+        r = self.run_sdlc("doctor")
+        self.assertIn("✗ allowed-signers: strict accepts only sk- keys", r.stdout)
+        self.assertEqual(r.returncode, 1)
+
     def test_audit_requires_allow_listed_signer(self):
         from helpers import allowed_signer_line, signing_key
         cfg = self.root / ".aiops" / "config.json"
@@ -485,6 +509,55 @@ class Approvals(RepoCase):
         self.signers.write_text(f'owner@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n')
         problem = ap.signing_problem(self.root)
         self.assertTrue(problem and "no-touch-required" in problem, problem)
+
+    def test_no_touch_option_matched_in_any_case(self):
+        """Review 0003 round 5: OpenSSH may match option names case-insensitively, so the checks do too."""
+        from sdlc_engine import approvals as ap
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
+        sk = self.root / "sk.pub"
+        sk.write_text(f"sk-ssh-ed25519@openssh.com {blob} owner\n")
+        git(self.root, "config", "--global", "user.signingkey", str(sk))
+        for spelling in ("No-Touch-Required", "NO-TOUCH-REQUIRED"):
+            with self.subTest(spelling=spelling):
+                line = f'owner@example.com namespaces="git",{spelling} sk-ssh-ed25519@openssh.com {blob}\n'
+                self.signers.write_text(line)
+                problem = ap.signing_problem(self.root)                          # local: approve and doctor
+                self.assertTrue(problem and "no-touch-required" in problem, problem)
+                self.assertEqual(len(ap.non_touch_signers(line)), 1)             # doctor's allow-list row
+                self.assertIn("no-touch-required", ap.signer_entries(line)[0][1])  # what the CI audit matches
+
+    def test_strict_policy_requires_a_touch_key(self):
+        from helpers import signing_key
+        from sdlc_engine import approvals as ap
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text('{"approval_key_policy": "sk"}')
+        # a passphrase key is a human per signature under "human", but not enough under "sk"
+        protected = signing_key("protected", passphrase="s3cret-pass")
+        git(self.root, "config", "--global", "user.signingkey", f"{protected}.pub")
+        problem = ap.signing_problem(self.root)
+        self.assertTrue(problem and "sk-" in problem, problem)
+        blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
+        sk = self.root / "sk.pub"
+        sk.write_text(f"sk-ssh-ed25519@openssh.com {blob} owner\n")
+        git(self.root, "config", "--global", "user.signingkey", str(sk))
+        self.signers.write_text(f'owner@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n')
+        problem = ap.signing_problem(self.root)
+        self.assertTrue(problem and "no-touch-required" in problem, problem)
+        self.signers.write_text(f'owner@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n')
+        self.assertIsNone(ap.signing_problem(self.root))                        # an sk- key that needs a touch
+        # an unknown policy is refused, never treated as "any"
+        cfg.write_text('{"approval_key_policy": "bogus"}')
+        problem = ap.signing_problem(self.root)
+        self.assertTrue(problem and "approval_key_policy" in problem, problem)
+        r = self.run_sdlc("doctor")
+        self.assertIn("✗ approval signing: ", r.stdout)
+        self.assertEqual(r.returncode, 1)
+        # the profile is reported; a config without one reads as team
+        cfg.write_text('{"approval_key_policy": "any"}')
+        self.assertIn("profile: team", self.run_sdlc("doctor").stdout)
+        cfg.write_text('{"approval_key_policy": "any", "profile": "solo"}')
+        self.assertIn("profile: solo", self.run_sdlc("doctor").stdout)
 
     def test_audit_fails_closed_on_unresolvable_base(self):
         self.write("intent", INTENT)

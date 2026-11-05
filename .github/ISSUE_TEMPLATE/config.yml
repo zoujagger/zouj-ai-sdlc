@@ -3,3 +3,6 @@ contact_links:
   - name: Security vulnerability
     url: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability
     about: Report privately. Do not open a public issue.
+  - name: Troubleshooting guide
+    url: https://github.com/zoujagger/zouj-ai-sdlc/blob/main/TROUBLESHOOTING.md
+    about: Approvals, signing, push errors and blocked commands, with their fixes.

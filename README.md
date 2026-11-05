@@ -1,6 +1,6 @@
 # zouj-ai-sdlc
 
-> **Status: alpha (0.2.0-alpha.1), experimental.** Gates and guards may change between alphas; don't rely on it
+> **Status: alpha (0.2.0-alpha.2), experimental.** Gates and guards may change between alphas; don't rely on it
 > for production governance yet. Feedback welcome.
 
 A [Claude Code](https://code.claude.com) plugin that runs your software lifecycle as a **state machine over Markdown
@@ -15,16 +15,79 @@ gate**. Here those gates are enforced by hooks instead of being left to the mode
  ✋ "Intent Approved"  ✋ "Spec Approved"   ✋ "Plan Approved"       (make check green)             ✋ the human merges
 ```
 
-## Install
-```bash
-/plugin marketplace add zoujagger/zouj-ai-sdlc
-/plugin install zouj-ai-sdlc@zouj
-```
-Or in one step (Claude Code 2.1.275+): `/plugin install zouj-ai-sdlc --marketplace zoujagger/zouj-ai-sdlc`.
-Then, in each repo that should follow the workflow: `/zouj-ai-sdlc:init` (or `sdlc init --stack python|node|go`).
+## Start using
+Start from what you're doing. Every route runs the same playbook workflow, with a human at every gate.
 
-Without `.aiops/` the plugin's **SDLC gates are dormant** until you run init. Its safety guards (secret reads and writes, force-push, history rewrites, production deploys, edits to the installed plugin) are on in every repo.
-Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only). `gh` and `jq` are optional.
+| You want to… | Run | Playbook stage |
+|---|---|---|
+| Try the workflow first | a throwaway repo: see **Just looking?** under Install | (any, risk-free) |
+| Set up this repo | `/zouj-ai-sdlc:setup` (pick `solo`, `team` or `strict`) | 1 Plan: formalise and share |
+| Build a feature or change | `/zouj-ai-sdlc:intent "<need>"` → spec → plan → implement | Trigger → Design → Build |
+| Fix a bug | `/zouj-ai-sdlc:fix "<bug>"` (failing test first) | Test |
+| Act on an alert or issue | `/zouj-ai-sdlc:triage alert:<metric>` → a new intent | Maintain → Trigger |
+| Get a branch reviewed | `/zouj-ai-sdlc:review`, then `/zouj-ai-sdlc:pr` | Deploy: AI review |
+| See where you are and what's next | `/zouj-ai-sdlc:status` | any |
+| Not sure | `/zouj-ai-sdlc:help-me "<what you want>"` | any |
+
+All commands: [COMMANDS-QUICK-REF.md](COMMANDS-QUICK-REF.md). Stuck? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) or
+`sdlc feedback`.
+
+## Install
+Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only), Claude Code ≥ 2.1. `gh` and `jq` are optional. The
+current release is **0.2.0-alpha.2**: check yours with `/plugin list`.
+
+> **Official sources only:** this repository (`github.com/zoujagger/zouj-ai-sdlc`) and the marketplace/plugin id
+> `zouj-ai-sdlc@zouj`. Copies elsewhere aren't reviewed.
+>
+> **What you trust:** enabling the plugin trusts github.com/zoujagger/zouj-ai-sdlc at that ref. Its hooks run as you on
+> every tool call, and `bin/sdlc` is what you run to approve. So the commands and the snippet pin a release tag (`ref`),
+> and moving to a new release should be a reviewed change: rerunning `sdlc setup` after an upgrade proposes it as a
+> diff.
+
+Pick **one** path:
+
+**A. Guided (recommended).** Install the plugin, pinned to the release, then let setup do the rest:
+```text
+/plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-alpha.2
+/plugin install zouj-ai-sdlc@zouj
+/zouj-ai-sdlc:setup
+```
+Setup checks the prerequisites, asks for a profile, previews every change and the gates, applies after you confirm,
+and prints the steps only you can do (signing, CODEOWNERS, commit). Rerun it any time: it changes nothing when
+everything is in place. Run by Claude, setup scaffolds with the `team` default; `solo` or `strict` is applied by your
+own terminal run: `<plugin>/bin/sdlc setup --profile solo|team|strict [--dry-run] [--yes]`.
+
+**B. Just the plugin.** The same two `/plugin` commands, then `/zouj-ai-sdlc:init` (or
+`sdlc init --stack python|node|go`) in each repo.
+
+**C. For a team, declaratively.** Commit this to the project's `.claude/settings.json` (`init` and `setup` write it
+for you); Claude Code then offers the plugin to everyone who opens the repo:
+```json
+{
+  "extraKnownMarketplaces": {
+    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0-alpha.2" } }
+  },
+  "enabledPlugins": { "zouj-ai-sdlc@zouj": true }
+}
+```
+
+**Just looking?** Try it in a throwaway repo, so no real project is touched:
+`mkdir /tmp/sdlc-try && cd /tmp/sdlc-try && git init -q && git commit -q --allow-empty -m init`. Set it up with
+`<plugin>/bin/sdlc setup --profile solo --yes` in that terminal (solo needs your own run: setup run by Claude keeps
+the team default), then commit the scaffold: `git add -A && git commit -m "chore: adopt zouj-ai-sdlc"`.
+Start with `/zouj-ai-sdlc:intent "greet people in French"` in `claude`, walk the five states, then delete the
+directory.
+
+**Profiles** change only how a human approval is proven; the workflow and every gate are the same:
+
+| Profile | Approval proof | For |
+|---|---|---|
+| `solo` | the typed phrase + an unsigned approval commit | one developer, trying it out |
+| `team` | an SSH-signed commit, a human per signature (passphrase key out of ssh-agent) | most teams |
+| `strict` | an `sk-` key touch per signature, plus CODEOWNERS on `/.aiops/` | regulated or high-risk repos |
+
+Without `.aiops/` the plugin's **SDLC gates are dormant** until you run setup or init. Its safety guards (secret reads
+and writes, force-push, history rewrites, production deploys, edits to the installed plugin) are on in every repo.
 
 ## How it works
 | State | You run | The agent produces | Leaves the state when |
@@ -97,7 +160,7 @@ command instead.
 
 ## Develop
 ```bash
-make check        # lint + compile + 58 unit/hook tests
+make check        # lint + compile + unit, hook and playbook-conformance tests
 make validate     # claude plugin validate .
 make dev          # claude --plugin-dir .
 make evals        # behavioural evals against a live model

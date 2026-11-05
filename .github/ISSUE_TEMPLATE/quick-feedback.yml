@@ -1,0 +1,19 @@
+name: Quick feedback
+description: Twenty seconds, what worked and what didn't
+labels: ["type:feedback"]
+body:
+  - type: dropdown
+    id: verdict
+    attributes:
+      label: How was it?
+      options:
+        - It worked, and I'll keep using it
+        - It worked, but it was too much ceremony
+        - I got stuck
+        - I'm leaving
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: The one thing that would make it better

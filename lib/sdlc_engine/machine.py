@@ -28,7 +28,7 @@ DIR_RE = re.compile(r"^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*$")
 BRANCH_RE = re.compile(r"(?:^|/)(\d{4})-")
 DEFAULT_CONFIG = {"lock_when_idle": True, "commit_approvals": True, "main_branch": "main",
                   "require_signed_approvals": True,
-                  "approval_key_policy": "human"}
+                  "approval_key_policy": "human", "profile": "team"}
 
 
 # git by absolute path: a `git` planted earlier on PATH must not run inside the engine (approvals included).
@@ -61,9 +61,11 @@ def config(root):
     f = root / ".aiops" / "config.json"
     if f.is_file():
         try:
-            cfg.update(json.loads(f.read_text()))
+            data = json.loads(f.read_text())
         except ValueError:
-            pass
+            data = None
+        if isinstance(data, dict):          # invalid JSON, or JSON that isn't an object, reads as the defaults
+            cfg.update(data)
     return cfg
 
 

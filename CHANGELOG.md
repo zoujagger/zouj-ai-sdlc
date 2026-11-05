@@ -5,6 +5,164 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.2.0-alpha.2] - 2026-11-04
+
+> **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
+
+Roadmap Phase 1 (`docs/roadmap.md`), delivered as intent `.aiops/0003-guided-setup/`: a newcomer gets from nothing to a
+first approved intent with one guided, rerunnable command, and the playbook workflow is the same in every profile.
+
+### Added
+- **`sdlc setup` and `/zouj-ai-sdlc:setup`.**
+  - Steps: preflight → inventory → plan → gate summary → one confirmation → apply → the human steps → doctor.
+  - Preflight blocks on missing git, make or python ≥ 3.9. It warns, with the fix, about Claude Code < 2.1, `gh`
+    login and the `workflow` scope, and a missing git credential helper.
+  - `--dry-run` writes nothing, and without `--yes` or a terminal setup writes nothing (exit 2).
+  - Rerunning changes nothing when everything is in place.
+- **Profiles `solo`, `team` and `strict`.** They change only how a human approval is proven:
+  - `solo`: unsigned approval commits
+  - `team`: SSH-signed, a human per signature
+  - `strict`: an `sk-` key touch, plus CODEOWNERS on `/.aiops/`
+
+  The new `"sk"` key policy backs `strict`. An unknown `approval_key_policy` is now refused instead of behaving like
+  `"any"`. Config gains `profile` (default `team`), and doctor shows it.
+- **Human-owned files stay human.** Run by the agent, setup never changes an existing `.aiops/config.json` or
+  `.claude/settings.json`: it prints the exact JSON for the human. Run by a human, it merges only its own keys,
+  showing a diff.
+- **Collaborators are offered the plugin.** The scaffold's `.claude/settings.json` carries the marketplace snippet
+  (`extraKnownMarketplaces` and `enabledPlugins`).
+- **`sdlc feedback`.** Issue links and a doctor summary with paths reduced to the repo name; it sends nothing.
+- **Docs.** A task-first README (Start using, install paths A/B/C, profiles, a throwaway-repo recipe to try it), `COMMANDS-QUICK-REF.md`,
+  `TROUBLESHOOTING.md`, and the `install-problem` and `quick-feedback` issue forms.
+- **`tests/test_playbook.py`.** The full playbook walk in each profile, through the real guards and hooks.
+
+### Changed
+- `init` and `setup` share one scaffold preview (`init_actions`/`apply_init`), so setup's plan is exactly what gets
+  written.
+- CODEOWNERS placeholders (`@your-org/...`) no longer count as owners.
+- `sdlc setup` checks its arguments before anything else: an unknown option or value, a missing value or
+  `--profile=x` is refused (exit 1, nothing written), and `--stack` takes only `python`, `node` or `go` (so does
+  `init --stack`).
+- An unknown `profile` in `config.json` is a doctor `✗` and stops `setup --dry-run` with the fix, instead of a
+  traceback. So does a `config.json` or `settings.json` that isn't a JSON object.
+- A write that fails part-way (a link swapped in, a folder in a file's place) is reported with the files already
+  written, instead of a traceback.
+- Run by the agent, setup prints a `solo` or `strict` profile as the exact terminal command for the human, and a
+  rerun with only human-owned changes left says "Nothing for the agent to write".
+
+### Security (fixes from this release's reviews)
+- **No sandbox command.** A `--sandbox` trial-repo builder was written during this release and removed before it
+  shipped: reviews showed a same-user agent could redirect its git into the calling repo. Setup writes only in the
+  repo it runs in.
+- **`sdlc init --force` run by the agent keeps human-owned files:** `.aiops/config.json`, `.aiops/config/`,
+  `.claude/`, CODEOWNERS and `.github/workflows/`. It lists them for the human, and nothing suggests `--force` to the agent.
+- **Scaffold writes never follow a link.** `init` and `setup` refuse when a scaffold file or `.gitignore` has a symlink
+  on its path, and every write opens its directories without following links and creates the file anew, so neither a
+  symlink nor a hard link can send it to another file, inside or outside the repo.
+- **Run by the agent, setup creates `config.json` exactly as `init` does** (team defaults); another profile is printed
+  as a human step.
+- **`init` and `setup` scaffold only the top of a git repository,** never `$HOME`, `~/.claude` or a folder on PATH,
+  and refuse git's `GIT_DIR`/`GIT_WORK_TREE`-style variables and a `CLAUDE_PROJECT_DIR` naming another repo. Home is
+  read from the account record too, not only `$HOME`. The pre-bash guard lets the agent run them only in its
+  session's repo. Run by the agent, `init --force` keeps every file the guard won't let the agent write (protected
+  paths, the read-only lock).
+- **Setup never folds an unreviewed human-owned file into your commit.** A file such as `allowed-signers` that
+  existed before setup and isn't committed (the agent could have planted a key while the guards were off) is shown as
+  `!` with its diff against the template, named in a "review before committing" step, and left out of the commit
+  command. That command is `git add -- <files> && git commit … -- <files>`, so it commits exactly the scaffold, never
+  `git add -A` and never the rest of the index (a key staged with git plumbing is flagged too). Setup's own files
+  from an earlier run aren't flagged, and the commit step is printed on every run. Diffs of content setup didn't
+  write escape control characters.
+- **Preflight never runs a tool from a PATH folder inside the repo** (an agent could plant one there), runs git by
+  its absolute path, and gives the tools it runs no stdin.
+- **`no-touch-required` is matched in any letter case** in `allowed-signers`, by doctor, `approve` and the CI audit.
+- **`strict` is enforced in CI.** Under `approval_key_policy: "sk"`, the audit requires each approval to be signed by an
+  allow-listed `sk-` key without `no-touch-required`, and doctor flags any other allowed signer.
+- **The marketplace snippet and install commands are pinned** to the release tag (`ref`, `owner/repo@ref`). README and
+  SECURITY.md state what enabling the plugin trusts. Setup compares the snippet's values, so an older ref or a fork
+  shows as `!` and is proposed as a change.
+- **Setup shows the diffs before you confirm,** dry run included. An invalid-JSON `config.json` or `settings.json`
+  stops setup with `✗` instead of being skipped.
+
+### Known issues (planned for 0.2.0-alpha.3)
+- **After setup:** a default setup (no `--stack`) ends with doctor's "Makefile contract wired" ✗, and rerunning setup
+  with `--stack` can't add the stack once everything else is in place. Wire the recipes by hand for now.
+- **Prompts:** Ctrl-D at the profile question shows a traceback, and `--yes` on a terminal without `--profile` still
+  asks.
+- **Output:**
+  - The plan doesn't list `.gitignore`.
+  - The "Already set up" path prints no Doctor section.
+  - Doctor's profile row can disagree with the actual keys.
+  - Under the agent, a requested profile change prints the signing steps of the *current* profile.
+- **Tools and paths:** preflight finds `gh` and `claude` through PATH (folders inside the repo are skipped).
+  `sdlc feedback` reduces only the repo and home paths.
+- **`strict`, unverified:** OpenSSH may not accept `no-touch-required` in `allowed_signers` (it is an
+  `authorized_keys` option), so the doctor and CI checks for it may never fire. Whether `ssh-keygen -Y verify`
+  enforces the touch on `sk-` signatures needs a FIDO key to test.
+- **Errors and help:**
+  - A `.gitignore` that isn't UTF-8 stops `init`/`setup` with a traceback, after the scaffold files are written.
+  - Under `strict`, the signing help from doctor and `approve` still suggests a passphrase key, which strict refuses
+    (setup's own steps say `ed25519-sk`).
+  - Run by the agent on a repo that already has a config, the profile human step says "leaves it at init's
+    defaults" instead of "leaves it unchanged".
+- **Docs and tests:**
+  - TROUBLESHOOTING says "human gate" where merge blocks say "final gate".
+  - The README's engine and configuration lists miss `setup`, `feedback` and `profile`.
+  - The playbook test approves through `approvals.approve`, not through the prompt hook, and AC-15's solo `!` row is
+    checked by hand only.
+  - The `"sk"` doctor case is covered only through `signing_problem`.
+  - The test suite leaves side directories (stub tools, scratch homes) next to its temp repos in `/tmp`.
+
+- **Your first "adopt" commit (review round 9).** Setup leaves unreviewed human-owned files out of the commit step it
+  prints, but an agent running as you controls `.git`, so these still get through:
+  - A `config.json` planted before `init` with one profile's keys (a downgrade to `solo`, say) passes as setup's own
+    file: no `!`, and it is in the commit step.
+  - A key staged with git plumbing is flagged, but the review shows the file on disk, not the staged content. Unstage
+    it with `git restore --staged -- <file>`.
+  - A staged key hidden with `git update-index --skip-worktree` or `--assume-unchanged` isn't flagged, and the printed
+    commit step then fails; a plain `git commit` would take the key.
+  - Repo-local git config planted before `init` (a `clean` filter, attributes, hooks) can change what the commit step
+    commits, and also what `git show`/`git diff` display (textconv, a pager) and what gets pushed (a pre-push hook).
+
+  **Workaround.** Anything that runs in your checkout can be bent by what the agent planted there, including the
+  commands you check with. So:
+  1. Before running setup in a repo that isn't set up yet, and again before committing, look at `.git` itself:
+     `git config --local --list` should have no `filter.*`, `diff.*`, `core.pager`, `core.hooksPath` or
+     `core.fsmonitor`; `.git/info/attributes` should be missing or empty; `ls .git/hooks` should show only
+     `*.sample` files. Remove anything you didn't put there.
+  2. If a staged key won't unstage, run `git update-index --no-skip-worktree --no-assume-unchanged -- <file>` first,
+     then `git restore --staged -- <file>`.
+  3. After committing, read every commit you are about to push, without repo-local diff drivers or pager:
+     `git --no-pager log --stat --patch --no-textconv --no-ext-diff origin/main..HEAD` (`--root` instead of the range in a repo with no remote yet). Check that `.aiops/config.json`
+     has the profile you chose and that `allowed-signers` holds only keys you know.
+  4. Before merging, read the adoption PR's full "Files changed" on GitHub, every file, ideally with a second person.
+     That view doesn't depend on your checkout (a pre-push hook could even push a different commit). CODEOWNERS
+     doesn't help here: GitHub reads it from the base branch, and the adoption PR is the one that adds it.
+- **Review round 9 (minor):**
+  - After a human run merged keys into a committed `settings.json` or `config.json`, a rerun flags that file as "not
+    in any commit yet", which is wrong (it is in HEAD, just changed).
+  - The commit step also lists uncommitted local edits to scaffold files such as `Makefile` or `CLAUDE.md`.
+  - The pre-bash guard refuses a line that only mentions `sdlc init|setup` next to a directory or git-location change
+    (`cd`, `pushd`, `-C`, `--chdir`, `-execdir`, `GIT_*=`, `HOME=`, `CLAUDE_PROJECT_DIR=`: a commit message, a
+    `grep -C3`), or run from another repo: split the command.
+  - The inventory prints the stored profile unescaped, and bidi overrides pass setup's escaping.
+- **Review round 8 (low):**
+  - The pre-bash guard allows git index plumbing (`hash-object -w`, `update-index --cacheinfo`, `git add`) on
+    protected paths such as `allowed-signers`. Setup flags such staged content (see round 9 for the gaps).
+  - Doctor's CODEOWNERS ✓ ignores a later rule without owners that uncovers part of `/.aiops/` (CI is unaffected).
+  - `init --force`'s secret-paths check (L1) has no test: no default scaffold file matches `secret-paths`.
+- **Review round 2 (low):**
+  - Doctor misreads `allowed-signers` options quoted with spaces (a quoted value can even hide a key type from the
+    strict check). That gives a false ✓ in doctor; CI fails closed.
+  - The pin is a tag, not a commit sha.
+  - The marketplace merge drops other keys under `zouj`, such as `autoUpdate`.
+  - The settings plan note always says "add", even when it replaces an older ref or a fork.
+  - An explicit `enabledPlugins: false` is proposed again on every rerun.
+
+### Upgrading from 0.2.0-alpha.1
+Nothing changes until you run `sdlc setup`. A config without `profile` reads as `team`. To record your profile, run
+`sdlc setup --profile solo|team|strict` in your own terminal and confirm the diff.
+
 ## [0.2.0-alpha.1] - 2026-11-03
 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas. Pin a full
@@ -168,6 +326,7 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.2...HEAD
+[0.2.0-alpha.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...v0.2.0-alpha.2
 [0.2.0-alpha.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v0.2.0-alpha.1
 [0.1.0]: https://github.com/zoujagger/zouj-ai-sdlc/releases/tag/v0.1.0

@@ -7,7 +7,10 @@ disable-model-invocation: true
 
 # Initialise this repo
 
-1. Explain in two lines what will happen. Until `.aiops/` exists, every plugin hook here is a no-op. After init, code is read-only until an intent's plan is approved.
+Prefer **`/zouj-ai-sdlc:setup`**: it does the same scaffold with prerequisite checks, a profile (`solo`, `team`,
+`strict`), a preview, and the human steps. Use `init` directly only when the human asks for the bare scaffold.
+
+1. Explain in two lines what will happen. The safety guards (secrets, force-push, deploys) already run in every repo, but the SDLC gates wait for `.aiops/`. After init, code is read-only until an intent's plan is approved.
 2. Run `sdlc init $ARGUMENTS`. It copies `templates/scaffold/` and keeps any file that already exists.
 3. For each **kept** file (for example an existing `Makefile` or `CLAUDE.md`), show the human what the scaffold version adds, and offer to merge the relevant parts. A Makefile must expose `format lint typecheck test build check`.
 4. Run `sdlc doctor` and relay what needs fixing, including **approver signing**. Each approver configures SSH

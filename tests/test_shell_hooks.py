@@ -252,14 +252,122 @@ class ShellHooks(RepoCase):
         for rel in ("README.md", "skills/intent/SKILL.md", "skills/plan/SKILL.md", "skills/using-zouj-ai-sdlc/SKILL.md"):
             self.assertIn("python3 -I <plugin>/bin/sdlc approve", (ROOT / rel).read_text(), rel)
 
+    def test_setup_skill_follows_the_playbook(self):
+        import re
+        skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
+        self.assertRegex(skill, r"(?s)^---\nname: setup\ndescription: .+\ndisable-model-invocation: true\n")
+        self.assertIn("sdlc setup", skill)
+        self.assertLess(skill.index("--dry-run"), skill.index("--yes"))          # preview before any write
+        self.assertIn("confirm", skill.lower())
+        self.assertIn("your own terminal", skill)                               # human-owned steps go to the human
+        self.assertIn("never", skill.lower())
+        self.assertIsNone(re.search(r"--no-hooks|advisory mode|skip the gates|disable the gates", skill, re.I))
+        self.assertIn("same in every profile", skill)
+        init = (ROOT / "skills" / "init" / "SKILL.md").read_text()
+        self.assertIn("/zouj-ai-sdlc:setup", init)
+        self.assertNotIn("every plugin hook here is a no-op", init)              # safety guards run in every repo
+
+    def test_docs_match_what_shipped(self):
+        """Review 0003 round 4: the docs describe the code as it is."""
+        readme = (ROOT / "README.md").read_text()
+        looking = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
+        for piece in ("bin/sdlc setup --profile solo --yes", "git add -A", "git commit"):
+            self.assertIn(piece, looking, piece)
+        self.assertNotIn("--force", (ROOT / "templates" / "scaffold" / "Makefile").read_text())
+        # run by the agent (the skill), setup leaves a non-team profile to the human's terminal: the docs say so
+        self.assertNotIn("/zouj-ai-sdlc:setup solo", looking)
+        install_a = readme.split("**A. Guided", 1)[1].split("\n\n**B.", 1)[0]
+        quick = (ROOT / "COMMANDS-QUICK-REF.md").read_text()
+        skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
+        for name, text in (("README path A", install_a), ("quick reference", quick), ("setup skill", skill)):
+            self.assertIn("own terminal", text, name)
+            self.assertIn("setup --profile", text, name)
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        alpha2 = changelog.split("## [0.2.0-alpha.2]", 1)[1].split("\n## [", 1)[0]
+        self.assertNotIn("round 1 of this release", alpha2)
+        known = alpha2.split("### Known issues", 1)[1].split("\n### ", 1)[0]
+        for fixed in ("--profile=x", "checked in `--dry-run`", "unknown flags",
+                      "doesn't cover a FAIL review", "still resets protected-path files"):     # fixed in rounds 5-6
+            self.assertNotIn(fixed, known, fixed)
+        for still_open in ("no-touch-required", ".gitignore", "passphrase"):               # round 6, for alpha.3
+            self.assertIn(still_open, known, still_open)
+        for still_open in ("update-index", "CODEOWNERS", "secret-paths"):                  # round 8, for alpha.3
+            self.assertIn(still_open, known, still_open)
+        for still_open in ("--skip-worktree", "clean` filter", "git restore --staged"):        # round 9
+            self.assertIn(still_open, known, still_open)
+        self.assertIn("**Review round 8", known)                                           # not under round 2
+        self.assertIn("**Review round 9 (minor)", known)
+        trouble = (ROOT / "TROUBLESHOOTING.md").read_text()
+        # round 10: the workaround reads the commits without repo-local drivers or pager, inspects .git first, and
+        # ends on GitHub's "Files changed" (CODEOWNERS doesn't apply to the adoption PR itself)
+        for name, text in (("changelog", known), ("troubleshooting", trouble)):
+            for piece in ("git config --local --list", "--no-pager log --stat --patch --no-textconv --no-ext-diff",
+                          "Files changed", "--no-skip-worktree --no-assume-unchanged", "base branch"):
+                self.assertIn(piece, text, (name, piece))
+            self.assertNotIn("whatever the index, filters or hooks did", text, name)
+        threat_row = next(line for line in (ROOT / "docs" / "architecture.md").read_text().splitlines()
+                          if line.startswith("| The agent uses `sdlc setup`"))
+        for residual in ("{cd,", "unset CLAUDE_PROJECT_DIR", "counts as reviewed"):            # round 8 residuals
+            self.assertIn(residual, threat_row, residual)
+        for name, text in (("setup skill", (ROOT / "skills" / "setup" / "SKILL.md").read_text()),
+                           ("troubleshooting", (ROOT / "TROUBLESHOOTING.md").read_text())):
+            self.assertIn("Review before committing", text, name)                           # the plan's `!` rows
+        self.assertIn("nothing suggests `--force` to the agent", alpha2)                # round 5: init tells the human
+        stops = (ROOT / "TROUBLESHOOTING.md").read_text().split("## Setup says", 1)[1].split("\n## ", 1)[0]
+        for reason in ("git", "make", "Python", "JSON", "symlink", "profile", "git repository", "home"):
+            self.assertIn(reason, stops, reason)
+        self.assertNotIn("Setup (and `init`) stop", stops)                              # init checks only some
+        skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
+        threats = (ROOT / "docs" / "architecture.md").read_text().split("## Threat model", 1)[1]
+        for name, text in (("setup skill", skill), ("threat model", threats)):          # the env-marker residual risk
+            self.assertIn("deterrent", text, name)
+            self.assertIn("sdlc setup", text, name)
+        phase1 = (ROOT / "docs" / "roadmap.md").read_text().split("### Phase 1", 1)[1].split("### Phase 2", 1)[0]
+        for unshipped in ("user, project or local", "`init` shows what the gates"):
+            self.assertNotIn(unshipped, phase1, unshipped)
+
+    def test_onboarding_docs(self):
+        import re
+        readme = (ROOT / "README.md").read_text()
+        self.assertEqual(re.findall(r"(?m)^## (.+)$", readme)[0], "Start using")      # task-first
+        start = readme.split("## Start using", 1)[1].split("\n## ", 1)[0]
+        for cmd in ("/zouj-ai-sdlc:intent", "/zouj-ai-sdlc:triage", "/zouj-ai-sdlc:fix", "/zouj-ai-sdlc:review",
+                    "/zouj-ai-sdlc:status", "/zouj-ai-sdlc:setup"):
+            self.assertIn(cmd, start, cmd)
+        self.assertIn("Playbook stage", start)
+        install = readme.split("## Install", 1)[1].split("\n## ", 1)[0]
+        for piece in ("/zouj-ai-sdlc:setup", "/plugin marketplace add zoujagger/zouj-ai-sdlc",
+                      "/plugin install zouj-ai-sdlc@zouj", '"extraKnownMarketplaces"', "**Just looking?**", "Official sources"):
+            self.assertIn(piece, install, piece)
+        for rel in ("TROUBLESHOOTING.md", "COMMANDS-QUICK-REF.md", ".github/ISSUE_TEMPLATE/install-problem.yml",
+                    ".github/ISSUE_TEMPLATE/quick-feedback.yml", ".github/ISSUE_TEMPLATE/config.yml"):
+            self.assertTrue((ROOT / rel).is_file(), rel)
+        quick = (ROOT / "COMMANDS-QUICK-REF.md").read_text()
+        listed = set(re.findall(r"/zouj-ai-sdlc:([a-z-]+)", quick))
+        for name in listed:
+            self.assertTrue((ROOT / "skills" / name / "SKILL.md").is_file(), f"quick ref lists a missing skill: {name}")
+        user_skills = {d.name for d in (ROOT / "skills").iterdir() if (d / "SKILL.md").is_file()
+                       and not d.name.startswith(("policy-", "using-"))}
+        self.assertEqual(user_skills - listed, set(), "skills missing from the quick reference")
+        trouble = (ROOT / "TROUBLESHOOTING.md").read_text()
+        for topic in ("Approved", "signing", "workflow` scope", "credential helper", "BLOCKED", "sdlc feedback"):
+            self.assertIn(topic, trouble, topic)
+        for name in ("install-problem.yml", "quick-feedback.yml"):
+            form = (ROOT / ".github" / "ISSUE_TEMPLATE" / name).read_text()
+            self.assertRegex(form, r"(?m)^name: .+\n^description: .+")
+            self.assertIn("body:", form)
+        self.assertIn("sdlc feedback", (ROOT / ".github" / "ISSUE_TEMPLATE" / "install-problem.yml").read_text())
+
     def test_version_matches_changelog(self):
         import re
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
-        self.assertEqual(version, "0.2.0-alpha.1")                               # AC-15: the hardening release, as an alpha
+        self.assertEqual(version, "0.2.0-alpha.2")                               # 0003: guided setup (alpha)
         log = (ROOT / "CHANGELOG.md").read_text()
         released = re.findall(r"^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]", log, re.M)
         self.assertEqual(released[0], version, "the newest CHANGELOG release must match plugin.json")
-        self.assertIn(f"[{version}]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v{version}", log)
+        previous = released[1]                                                    # each release compares to the last
+        self.assertIn(f"[{version}]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{previous}...v{version}", log)
+        self.assertIn(f"[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{version}...HEAD", log)
 
     def test_ci_pins_tools(self):
         import re
