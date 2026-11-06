@@ -680,6 +680,7 @@ class Uninitialized(RepoCase):
                          ("echo x >> ~/.ssh/authorized_keys", "G-SEC-01"),
                          (f"echo x > {ROOT}/lib/sdlc_engine/x.py", "G-TOOL-02"),
                          ("git config --global gpg.ssh.program /tmp/x", "G-TOOL-05"),
+                         ("echo x > .env.local", "G-SEC-01"),          # secrets: every repo (review round 1)
                          ("bash -c 'echo x >> ~/.bashrc'", "G-TOOL-04")]:
             r = self.engine(cmd)
             self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
@@ -687,7 +688,7 @@ class Uninitialized(RepoCase):
 
     def test_gates_stay_dormant(self):
         for cmd in ("rm -rf src", "echo x > src/a.py", "git push origin main", "git config user.name x",
-                    "git merge feat/x", "echo x > .env.local"):
+                    "git merge feat/x"):
             r = self.engine(cmd)
             self.assertEqual(r.returncode, 0, f"{cmd}: {r.stdout}{r.stderr}")
 
@@ -836,6 +837,80 @@ class Incoming(RepoCase):
         self.assertBlocked("git pull origin feat/0001-csv-export")
         git(self.root, "switch", "-q", "main")
         self.assertNotIn("[G-FILE-06]", self.bash("git pull").stderr)        # on main: only the usual lock applies
+        self.assertNotIn("[G-FILE-06]", self.bash("git pull origin main").stderr)
+        for cmd in ("git pull origin x", "git pull . x", "git pull --rebase origin x"):   # round 1: only main itself
+            self.assertIn("[G-FILE-06]", self.bash(cmd).stderr, cmd)
+
+
+class Wrappers(RepoCase):
+    """0005 review round 1: a wrapper prefix (nice, timeout 5, stdbuf, sudo -u x, …) doesn't hide a write."""
+    def bash(self, cmd):
+        return self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+
+    def test_wrappers_are_seen_through(self):
+        self.write("intent", INTENT)                                  # state 1: code is locked
+        for cmd in ("timeout 5 rm -rf .aiops", "nice tee .aiops/config/readonly-exempt", "echo x | nice tee src/app.py",
+                    "timeout 5 sh -c 'echo x > src/app.py'", "nice -n 5 rm src/app.py", "stdbuf -o0 tee src/app.py",
+                    "setsid rm src/app.py", "ionice -c3 rm src/app.py", "command -p rm src/app.py",
+                    "sudo -u me rm src/app.py", "flock /tmp/l rm src/app.py", "timeout -s KILL 5 rm src/app.py",
+                    "nohup rm src/app.py", "time -p rm src/app.py", "busybox rm src/app.py", "xargs -n 1 rm src/app.py"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+        self.to_execution_from_intent()
+        for cmd in ("timeout 60 make check", "nice -n 5 python -m pytest", "time ls"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+    def to_execution_from_intent(self):
+        self.approve("intent")
+        self.write("spec", SPEC)
+        self.approve("spec")
+        self.write("plan", PLAN)
+        self.approve("plan")
+
+
+class UninitializedRound1(Uninitialized):
+    """0005 review round 1: the safety pass at a $HOME session root, git config forms, copies into home."""
+    test_safety_pass_blocks = test_gates_stay_dormant = None
+
+    def engine_at(self, cmd, cwd, home):
+        import subprocess
+        from helpers import ROOT
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(cwd), "CLAUDE_PLUGIN_ROOT": str(ROOT), "HOME": str(home)}
+        payload = {"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": str(cwd)}
+        return subprocess.run([str(ROOT / "hooks" / "engine.sh"), "pre-bash"], capture_output=True, text=True,
+                              input=json.dumps(payload), env=env, cwd=cwd)
+
+    def test_session_at_home(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as h:
+            home = Path(h)
+            git(home, "init", "-q")                                   # a dotfiles repo at $HOME
+            for cmd, rid in [("echo x >> ~/.bashrc", "G-TOOL-04"), ("echo x >> ~/.ssh/authorized_keys", "G-SEC-01"),
+                             ("echo x >> .bashrc", "G-TOOL-04")]:
+                r = self.engine_at(cmd, home, home)
+                self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+                self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_git_config_forms(self):
+        for cmd in ("git config --glob gpg.ssh.program /tmp/x", "git config --syst gpg.program /tmp/x",
+                    "git config -f ~/.gitconfig gpg.ssh.program /tmp/x",
+                    "git config --file=~/.gitconfig core.hooksPath /x",
+                    "GIT_CONFIG=/tmp/c git config gpg.program y", "GIT_CONFIG_GLOBAL=/tmp/c git config user.signingkey y",
+                    "nice git config --global gpg.program /tmp/x"):
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+            self.assertIn("[G-TOOL-05]", r.stderr, cmd)
+        self.assertEqual(self.engine("git config user.name x").returncode, 0)
+        self.assertEqual(self.engine("git config -f .git/x.cfg user.name x").returncode, 0)
+
+    def test_copies_into_home(self):
+        for cmd in ("cp -r /tmp/dot/. ~/", "rsync -a /tmp/dot/ ~/", "tar -xzf home.tgz -C ~",
+                    "unzip plug.zip -d ~/.claude", "cp x ~/.config/git/", "nice cp -r /tmp/dot/. ~/"):
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+        for cmd in ("cp a.txt /tmp/out/", "tar -xzf a.tgz -C /tmp/out", "cp src/app.py /tmp/x.py"):
+            self.assertEqual(self.engine(cmd).returncode, 0, cmd)
 
 
 if __name__ == "__main__":

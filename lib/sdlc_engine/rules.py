@@ -127,8 +127,9 @@ def _entries(text):
 
 # G-ENV-03 allowances accept only commands that can't print the whole environment (0005, gap 6): `printenv NAME…`,
 # or a command that doesn't run env/printenv at all. Anything else is refused: no list of known dumps to outgrow.
-SAFE_ENV_COMMANDS = {"ls", "cd", "cat", "head", "tail", "wc", "file", "stat", "du", "tree", "source", ".",
-                     "virtualenv"}                    # commands that never run their arguments
+SAFE_ENV_COMMANDS = {"ls", "cd", "cat", "head", "tail", "wc", "file", "stat", "du", "tree",
+                     "virtualenv"}                    # commands that never run their arguments (not source or .)
+SECRET_NAME_RE = re.compile(r"(KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH)", re.I)
 ENV_WORD_RE = re.compile(r"(^|/)(env|printenv)$")
 SUBSTITUTION_RE = re.compile(r"\$\(|`|<\(|>\(|[<>]")
 
@@ -151,13 +152,11 @@ def safe_env_command(command):
             continue
         name, args = Path(words[0]).name, words[1:]
         if name == "printenv":
-            if args and all(re.match(r"^[A-Za-z_]\w*$", a) for a in args):
+            if args and all(re.match(r"^[A-Za-z_]\w*$", a) and not SECRET_NAME_RE.search(a) for a in args):
                 continue
             return False
-        if not any(ENV_WORD_RE.search(w) for w in words):
-            continue
         if name in SAFE_ENV_COMMANDS or (name in ("python", "python3") and args[:2] == ["-m", "venv"]):
-            continue
+            continue                                  # every simple command must be safe (review round 1)
         return False
     return True
 

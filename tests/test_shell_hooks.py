@@ -585,7 +585,7 @@ class Allowance(RepoCase):
     def test_other_rules_still_run_after_an_allowance(self):
         self.allow("G-ENV-03 printenv PATH; gh pr merge 12", "G-BASH-07 sudo gh pr merge 12",
                    "G-ENV-03 echo $MY_API_KEY; printenv")
-        self.assertBlockedBy("printenv PATH; gh pr merge 12", "G-MERGE-04")
+        self.assertBlockedBy("printenv PATH; gh pr merge 12", "G-ENV-03")   # an unsafe command voids it (round 1)
         self.assertBlockedBy("sudo gh pr merge 12", "G-MERGE-04")
         self.assertBlockedBy("echo $MY_API_KEY; printenv", "G-ENV-04")
 
@@ -630,6 +630,26 @@ class EnvSpellings(RepoCase):
             self.assertIn(f"[{rid}]", r.stderr, cmd)
         for cmd in ("cat config/env.example", "ls build/environment", "python -m venv .venv"):
             self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+
+class EnvRound1(EnvSpellings):
+    """0005 review round 1: quoted `env` isn't a dump (no false positives); /proc globs and any path prefix are."""
+    test_spellings_are_dumps = None
+
+    def test_quoted_env_is_not_a_dump(self):
+        for cmd in ('grep -n "env" Makefile', "rg 'env' src", 'git commit -m "fix env"', 'gh pr create --title "Load env"',
+                    'echo "env"', "ls build/env.d"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_more_spellings(self):
+        for cmd, rid in [("./env", "G-ENV-03"), ("/opt/homebrew/bin/env", "G-ENV-03"), ("`which printenv`", "G-ENV-03"),
+                         ("echo x; e''nv", "G-ENV-03"), ("cat /proc/self/env*", "G-ENV-05"),
+                         ("cat /proc/self/envir?n", "G-ENV-05"), ("cat /proc/self/envi[r]on", "G-ENV-05"),
+                         ("cat /proc/self/*", "G-ENV-05|G-SEC-03"), ("cd /proc/self && cat environ", "G-ENV-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertRegex(r.stderr, rf"\[({rid})\]", cmd)          # /proc/self/* also hits the secret scan first
 
 
 if __name__ == "__main__":

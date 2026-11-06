@@ -189,10 +189,14 @@ class Allowance(unittest.TestCase):
 
     def test_only_safe_env_forms(self):
         """0005 S2 (gap 6): only `printenv NAME…` or commands that never run env/printenv are allowable."""
-        for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "cd env", "source env/bin/activate",
-                    ". env/bin/activate", "python -m venv env", "python3 -m venv env", "virtualenv env",
-                    "cat env/pyvenv.cfg", "ls env && cd env"):
+        for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "cd env", "python -m venv env",
+                    "python3 -m venv env", "virtualenv env", "cat env/pyvenv.cfg", "ls env && cd env"):
             self.assertTrue(rules.safe_env_command(cmd), cmd)
+        # review round 1: source runs its argument; every simple command must be safe; no secret-named printenv
+        for cmd in ("source env/bin/activate", ". env/bin/activate", "source env", "cat env | sh",
+                    "ls env && export -p", "ls env; set", "printenv GITHUB_TOKEN", "printenv AWS_SECRET_ACCESS_KEY",
+                    "ls env && make"):
+            self.assertFalse(rules.safe_env_command(cmd), cmd)
         for cmd in ("env", "printenv", "env FOO=1 make", "bash -c env", "env env", "xargs env",
                     "if true; then env; fi", "env>/tmp/x", "echo $(printenv)", "nice env", "printenv -0",
                     "cat <(env)", "watch env", "sh -c printenv", "eval env", "ls env; env", "find . -exec env \\;",

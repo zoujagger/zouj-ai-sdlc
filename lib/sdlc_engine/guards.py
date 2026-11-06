@@ -248,12 +248,71 @@ def _nested_command(words):
     return None
 
 
+# Commands that run the rest of their arguments as a command: their options that take a value, and how many plain
+# operands come before the command (`timeout 5 rm …`, `flock /tmp/l rm …`). 0005 review round 1: a wrapper must
+# never hide a write.
+WRAPPER_OPTS = {
+    "timeout": {"-s", "--signal", "-k", "--kill-after"}, "nice": {"-n", "--adjustment"},
+    "ionice": {"-c", "-n", "-p", "-P", "-u", "--class", "--classdata", "--pid", "--pgid", "--uid"},
+    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"}, "chrt": set(), "taskset": set(),
+    "flock": {"-w", "--timeout", "-E", "--conflict-exit-code"}, "setsid": set(), "nohup": set(), "unbuffer": set(),
+    "sudo": {"-u", "-g", "-h", "-p", "-C", "-U", "-r", "-t", "-T", "-D", "--user", "--group", "--host", "--prompt",
+             "--chdir", "--close-from", "--role", "--type", "--command-timeout"},
+    "doas": {"-u", "-C"}, "command": set(), "builtin": set(), "time": {"-f", "--format", "-o", "--output"},
+    "exec": {"-a"}, "xargs": {"-n", "-I", "-P", "-L", "-d", "-a", "-E", "-s", "--max-args", "--max-procs",
+                              "--delimiter", "--arg-file", "--max-lines", "--max-chars", "--replace"},
+    "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}, "busybox": set(),
+    "strace": {"-o", "-e", "-p", "-s", "-u", "-P", "-E"}, "ltrace": {"-o", "-e", "-p", "-s", "-u"},
+}
+WRAPPER_OPERANDS = {"timeout": 1, "chrt": 1, "taskset": 1, "flock": 1}
+
+
 def _strip_prefix(words):
+    """The words after any leading keywords, assignments and wrappers (with their options and operands)."""
     i = 0
-    while i < len(words) and (words[i] in PREFIXES or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[i])
-                              or (i and words[i - 1] == "env" and words[i].startswith("-"))):
-        i += 1
+    while i < len(words):
+        w = words[i]
+        name = Path(w).name
+        if name in WRAPPER_OPTS:
+            i += 1
+            while i < len(words) and words[i].startswith("-") and words[i] != "-":
+                takes = words[i] in WRAPPER_OPTS[name]
+                i += 2 if takes and "=" not in words[i] else 1
+            i += WRAPPER_OPERANDS.get(name, 0)
+            continue
+        if w in PREFIXES or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w):
+            i += 1
+            continue
+        break
     return words[i:]
+
+
+GIT_CONFIG_ENV_RE = re.compile(r"^GIT_CONFIG(_GLOBAL|_SYSTEM)?=")
+
+
+def _git_config_outside(rest, cwd, root, env_file):
+    """True if this `git config` writes a file other than the repo's own: --global/--system (any abbreviation git
+    accepts, e.g. --glob), -f/--file outside the repo, or GIT_CONFIG*= set before the command."""
+    if env_file:
+        return True
+    for i, a in enumerate(rest):
+        if len(a) >= 4 and ("--global".startswith(a) or "--system".startswith(a)):
+            return True
+        f = rest[i + 1] if a in ("-f", "--file") and i + 1 < len(rest) else \
+            a.split("=", 1)[1] if a.startswith("--file=") else None
+        if f is not None and _rel(root, os.path.expanduser(f), cwd) is None:
+            return True
+    return False
+
+
+def _holds_toolchain(p):
+    """True if the directory p is the home directory, or holds a toolchain, secret or plugin directory: a copy or an
+    extraction into it can overwrite what runs when the human approves."""
+    real = os.path.realpath(str(p))
+    home = os.path.realpath(str(Path.home()))
+    inside = [os.path.join(home, d) for d in (".ssh", ".config", ".claude", ".aws", "bin", ".local/bin", ".gnupg")]
+    inside += [os.path.realpath(str(PLUGIN_ROOT))] + _writable_path_dirs()
+    return real == home or home.startswith(real + "/") or any(c == real or c.startswith(real + "/") for c in inside)
 
 
 def write_targets(words, cwd):
@@ -664,7 +723,7 @@ def _incoming_git(sub, rest, root, on_main):
     trusted = {main, f"origin/{main}", f"refs/heads/{main}", f"refs/remotes/origin/{main}"}
     ops = [a for a in rest if not a.startswith("-")]
     if sub == "pull":
-        if on_main:
+        if on_main and ops in ([], ["origin"], ["origin", main]):   # a pull of main itself
             return None
         return "`git pull` brings in changes that can't be inspected before they land"
     if sub == "stash" and ops[:1] in (["pop"], ["apply"]):
@@ -860,6 +919,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
     of signing keys, and nesting."""
     assigned = {}
     for words, redirs in segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
+        config_env = any(GIT_CONFIG_ENV_RE.match(w) for w in words)
         words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]
                          for ws in (words, redirs))
         bare = [w for w in (words[1:] if words[:1] and words[0] in DECLARERS else words) if not w.startswith("-")]
@@ -902,8 +962,16 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
                 return _block("G-TOOL-02", f"`{' '.join(words)[:80]}` writes into the installed plugin ({t}).",
                               "the plugin's code is what the human runs to approve; change it through its own repo.")
             rel = _rel(root, t, cwd)
-            if not gates and rel is not None:
-                continue                 # inside an uninitialized repo: no gates to protect
+            if not gates and rel is not None:   # an uninitialized repo: no gates, but the safety checks still apply
+                p = Path(t).expanduser()
+                p = p if p.is_absolute() else Path(cwd) / p
+                if glob_hit(str(p), globs(root, "secret-paths")) and not _secret_template(p.name):
+                    return _block("G-SEC-01", f"'{p}' is secret material; shell writes count too.",
+                                  "ask the human to change credentials themselves.")
+                if _toolchain_path(p, root) or _holds_toolchain(p):
+                    return _block("G-TOOL-04", f"'{p}' is part of what runs when the human approves (PATH, shell "
+                                  "startup, git config, installed plugins).", "ask the human to change it themselves.")
+                continue
             if rel is not None and (rel == ".git" or rel.startswith(".git/")):
                 return _block("G-TOOL-03", f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
                               "use git commands; ask the human for config or hook changes.")
@@ -913,7 +981,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
                 if glob_hit(str(p), globs(root, "secret-paths")) and not _secret_template(p.name):
                     return _block("G-SEC-01", f"'{p}' is secret material; shell writes count too.",
                                   "ask the human to change credentials themselves.")
-                if _toolchain_path(p, root):
+                if _toolchain_path(p, root) or _holds_toolchain(p):
                     return _block("G-TOOL-04", f"'{p}' is part of what runs when the human approves (PATH, shell "
                                   "startup, git config, installed plugins).", "ask the human to change it themselves.")
                 continue
@@ -942,7 +1010,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
         if not gates:
             if name == "git":
                 sub, rest, gcwd = _git_sub(args, cwd)
-                if sub == "config" and any(a in ("--global", "--system") for a in rest) \
+                if sub == "config" and _git_config_outside(rest, gcwd, root, config_env) \
                         and _git_config_writes_signing(rest, gcwd, root):
                     return _block("G-TOOL-05", "git signing, hook, monitor, filter and include settings are "
                                   "human-owned (they decide who signs approvals, and what runs inside an approval).",
