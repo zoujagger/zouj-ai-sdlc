@@ -673,6 +673,64 @@ def _in_plugin(target, cwd, root):
         return False
 
 
+DELETERS = {"rm", "rmdir", "unlink", "shred"}
+FIND_FILTERS = {"-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex", "-type",
+                "-newer", "-mtime", "-mmin", "-size", "-empty", "-user", "-group", "-perm"}
+
+
+def delete_targets(words):
+    """The paths a simple command deletes or moves away: rm/rmdir/unlink/shred operands, mv sources, find -delete
+    roots. Options end at `--`."""
+    if not words:
+        return []
+    name, args = Path(words[0]).name, words[1:]
+    ops, after = [], False
+    for a in args:
+        if after or not a.startswith("-") or a == "-":
+            ops.append(a)
+        elif a == "--":
+            after = True
+    if name in DELETERS:
+        return ops
+    if name == "mv":
+        return ops if _target_directory(args) else ops[:-1]
+    if name == "find" and "-delete" in args and not FIND_FILTERS & set(args):   # unfiltered: the whole tree
+        return args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))]
+    return []
+
+
+def _contains_protected(root, target, cwd):
+    """What deleting the directory `target` would take with it (blocked as G-FILE-05) would take the repo itself or something protected with it,
+    else None: the repo root or a directory above it, a protected-paths glob under it, or a git-tracked file under it
+    that is protected or secret. Untracked trees (node_modules, build output) are never walked."""
+    p = Path(os.path.expanduser(str(target)))
+    p = Path(os.path.realpath(str(p if p.is_absolute() else Path(cwd) / p)))
+    real_root = Path(os.path.realpath(str(root)))
+    if p == real_root or p in real_root.parents:
+        return f"'{target}' is the repository itself or a directory above it"
+    home = Path(os.path.realpath(str(Path.home())))
+    if p == home or p in home.parents:               # ~/.ssh, the global git config, the installed plugin
+        return f"'{target}' is your home directory or a directory above it"
+    try:
+        rel = p.relative_to(real_root).as_posix()
+    except ValueError:
+        return None
+    if not p.is_dir() or p.is_symlink():
+        return None
+    prefix = rel.rstrip("/") + "/"
+    pglobs, sglobs = globs(root, "protected-paths"), globs(root, "secret-paths")
+    hit = next((g for g, _ in pglobs if g.startswith(prefix)), None)
+    if hit:
+        return f"'{rel}' contains a protected path ({hit})"
+    tracked = (git(root, "ls-files", "-z", "--", rel) or "").split("\0")
+    for f in filter(None, tracked):
+        if glob_hit(f, pglobs):
+            return f"'{rel}' contains the protected file '{f}'"
+        if not _secret_template(f) and glob_hit(f, sglobs):
+            return f"'{rel}' contains the tracked secret '{f}'"
+    return None
+
+
 def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=True):
     """The first block for cmd, else None. gates=False (a repo without .aiops/) runs only the safety checks: writes
     into the installed plugin, writes outside the repo to secrets or the approval toolchain, `git config --global`
@@ -698,6 +756,16 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             if msg:
                 return msg
             continue
+        if gates:
+            for t in (e for t in delete_targets(words) for e in _expand(t, cwd)):
+                rel = _rel(root, t, cwd)
+                if rel is not None and (_aiops_protected(rel) or rel == ".git" or rel.startswith(".git/")):
+                    continue             # the .aiops / .git rules below name it more precisely
+                hit = _contains_protected(root, t, cwd)
+                if hit:
+                    return _block("G-FILE-05", f"`{' '.join(words)[:80]}` deletes or moves {hit}.",
+                                  "name the paths you mean, outside .aiops/, .git/ and protected paths; a human "
+                                  "removes protected files.")
         targets = [e for t in redirs + write_targets(words, cwd) for e in _expand(t, cwd)]
         if gates and words and Path(words[0]).name == "find" and _find_hits_aiops(words[1:], cwd, root):
             return _block("G-ART-04", "this `find` would delete or rewrite part of the .aiops tree.",

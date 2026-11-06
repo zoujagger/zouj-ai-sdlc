@@ -692,5 +692,60 @@ class Uninitialized(RepoCase):
             self.assertEqual(r.returncode, 0, f"{cmd}: {r.stdout}{r.stderr}")
 
 
+class ProtectedTree(RepoCase):
+    """0005 S5 (gap 1): deleting or moving a directory that holds the repo, .aiops/.git, a protected path or a
+    tracked secret is blocked in every state; ordinary deletes stay allowed."""
+    def setUp(self):
+        super().setUp()
+        self.to_execution()                                           # state 4: the read-only lock is off
+        for rel in (".github/workflows/aiops-gates.yml", ".claude/settings.json", "docs/CODEOWNERS", "build/out.o"):
+            (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / rel).write_text("x\n")
+        (self.root / ".aiops" / "config" / "protected-paths").write_text("docs/CODEOWNERS ownership is human-owned\n")
+
+    def bash(self, cmd):
+        return self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+
+    def test_blocks_in_unlocked_state(self):
+        for cmd in ("rm -rf ./", "rm -rf -- .", 'rm -rf "$PWD"', f"rm -rf {self.root}", "rm -rf ..", "rm -rf ~/",
+                    "rm -rf /", "rm -rf .github/workflows", "mv .github /tmp/x", "rm -rf .claude", "rm -rf .aiops",
+                    "rm -rf .git", "rm -rf docs", "rmdir .github", "find .github -delete", "find . -delete"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertRegex(r.stderr, r"BLOCKED \[G-[A-Z]+-\d\d\]", cmd)
+            self.assertIn("Procedure:", r.stderr, cmd)
+
+    def test_allows_ordinary_deletes(self):
+        import time
+        nm = self.root / "node_modules"
+        for i in range(100):
+            d = nm / f"p{i}"
+            d.mkdir(parents=True)
+            for j in range(100):
+                (d / f"f{j}.js").write_text("")
+        for cmd in ("rm -rf build/", "rm src/app.py", "cp README.md docs/", "mv src/app.py src/b.py",
+                    "find . -name '*.pyc' -delete", "find build -type f -delete"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+        t = time.monotonic()
+        r = self.bash("rm -rf node_modules")
+        took = time.monotonic() - t
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertLess(took, 2.0, "the hook itself starts python; the tree check must not walk node_modules")
+        from sdlc_engine import guards
+        t = time.monotonic()
+        self.assertIsNone(guards._contains_protected(self.root, "node_modules", self.root))
+        self.assertLess(time.monotonic() - t, 0.2)
+
+    def test_tracked_secret_dir(self):
+        (self.root / "config").mkdir()
+        (self.root / "config" / "prod.key").write_text("k\n")
+        git(self.root, "add", "-f", "config/prod.key")
+        git(self.root, "commit", "-qm", "key")
+        r = self.bash("rm -rf config")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("[G-FILE-05]", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

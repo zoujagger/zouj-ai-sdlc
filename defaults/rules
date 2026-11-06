@@ -43,6 +43,7 @@ G-FILE-01 gate every-stage a shell write to a protected path
 G-FILE-02 gate every-stage git checkout/restore of the whole tree from another revision
 G-FILE-03 gate every-stage a git command rewriting a protected path
 G-FILE-04 gate every-stage editing a protected path
+G-FILE-05 gate every-stage deleting or moving the repo, a directory above it, or a directory holding protected or tracked secret files
 
 # Merge, push to main, deploy (final human gates)
 G-MERGE-01 gate merge merging through the GitHub API

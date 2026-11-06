@@ -94,7 +94,7 @@ Code to reuse:
     `echo x > src/a.py`, `git push origin main` allowed), driven through `hooks/engine.sh pre-bash` in a repo with
     no `.aiops/`. They fail today: every command passes.
   - Covers: AC-3
-- [ ] **S5**: Deleting a protected tree (gap 1).
+- [x] **S5**: Deleting a protected tree (gap 1).
   - `guards._contains_protected(root, target, cwd)`: the repo root or an ancestor; `.aiops`, `.git`; protected-glob
     prefixes; `git ls-files -z -- <target>` matched against the protected and secret globs.
   - It's called for the delete and move targets (`rm`, `rmdir`, `unlink`, `shred`, `mv` sources, `find … -delete`
@@ -182,3 +182,4 @@ Code to reuse:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-06 | S5 | Two additions. **Home and its ancestors are protected too:** deleting `~` takes `~/.ssh`, the global git config and the installed plugin, whether or not the repo is under home. **`find … -delete` counts as a tree delete only without a filter** (`-name`, `-path`, `-type`, …): a filtered find deletes matching files only, and the existing G-ART-04 still protects `.aiops/` from it. | A home-delete is catastrophic in every repo layout. `find . -name '*.pyc' -delete` is a common, safe command that existing tests rely on. | S5 |

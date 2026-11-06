@@ -122,6 +122,12 @@ Instead: propose the change in chat; a human edits protected files.
 Why: protected paths are human-owned in every state (`defaults/protected-paths` plus the repo's own list).
 Instead: propose the change in chat; a human edits protected files.
 
+## G-FILE-05
+Why: deleting or moving a directory takes everything in it: the whole repo (`.aiops/`, `.git/`), the CI audit
+workflow, `.claude/`, or a committed secret. The check counts protected-path globs and git-tracked files, not
+untracked build output.
+Instead: name the paths you mean (`rm -rf build/`, `rm src/old.py`), outside `.aiops/`, `.git/` and protected paths.
+
 ## G-MERGE-01
 Why: merging is the final human gate (state 5); the GitHub API is the same merge by another route.
 Instead: leave the PR for a CODEOWNER to review and merge.
