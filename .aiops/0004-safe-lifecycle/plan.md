@@ -122,7 +122,7 @@ guard change is test-first (CLAUDE.md rule 2).
   - Test first: `tests/test_rules.py::Coverage::test_sources_and_registry_agree`. It scans with
     `re.findall(r"G-[A-Z]+-\d\d")`. It's red if S1 registered an id that S2/S3 didn't emit, or the other way round.
   - Covers: AC-16, AC-22
-- [ ] **S4b**: Ship PR 1 (S1-S4).
+- [x] **S4b**: Ship PR 1 (S1-S4).
   - Cut `feat/0004-rule-ids` from this branch at S4, with `make check` green.
   - Run a fresh-context review (the `review` skill's reviewer agents) of `main...feat/0004-rule-ids`, and put the
     findings and the verdict in the PR description.
@@ -419,3 +419,4 @@ guard change is test-first (CLAUDE.md rule 2).
 | 2026-11-06 | S5 | `guards.py` isn't changed: no Python rule is allowable any more (G-BASH-01 became `safety`), so S5 ships only `rules.allowed` and `rules.allowance_problems`. `allowed` also refuses a command with any control character but tab (for example `\r`), not only multi-line ones. | Follows the PR 1 class decision. A `\r` would make a different command look identical. | S5 |
 | 2026-11-06 | S6 | The `heuristic` helper doesn't parse `allowed-commands` with `grep` in bash. It calls `rules.allowed` through `python3 -I`, only on the block path. Only G-BASH-07 and G-ENV-03 go through it, after the PR 1 class decision. `sdlc why` now describes the allowance line. | One definition of an exact match, the same in the hook, doctor and CI. If python3 can't run, the command stays blocked. | S6 |
 | 2026-11-06 | S7 | `validate --ci` checks `allowed-commands` in the change itself as well as on `--base` (the spec names only the base). | A PR that adds a bad entry fails CI before it merges, not only afterwards. Stricter, no new trust. | S7 |
+| 2026-11-06 | S4b | PR 1 is #11, merged by zoujagger as 267f34a. Review: code PASS 93/100 after one CHANGES_REQUESTED round, security PASS 23/25 (0 decision differences from main). S5-S7 were built on the PR 1 branch while it waited, then rebased onto main. | PR 1 sat open after CI passed. | 267f34a |
