@@ -463,5 +463,43 @@ class Uninstall(RepoCase):
         self.assertEqual(sorted(str(p) for p in self.root.rglob("*")), before)
 
 
+class RoundTrip(Upgrade):
+    """init -> upgrade -> uninstall --dry-run touches only managed scaffold paths and install-state (AC-14)."""
+    test_replaces_stale_keeps_modified_bumps_ref = test_second_run_is_noop = None
+    test_dry_run_and_no_tty_write_nothing = test_agent_never_writes_human_owned = None
+    test_legacy_approvals_listed_never_run = None
+
+    def test_init_upgrade_uninstall_dry_run(self):
+        from helpers import git
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "adopt zouj-ai-sdlc")
+        self.assertEqual(self.upgrade("--yes").returncode, 0)
+        self.assertEqual(self.run_sdlc("uninstall", "--dry-run").returncode, 0)
+        touched = {ln.split(None, 1)[1] for ln in git(self.root, "status", "--porcelain", "-uall").splitlines()}
+        managed = set(json.loads((self.root / STATE).read_text())["files"]) | {STATE}
+        self.assertTrue(touched, "upgrade pinned the refs, so something changed")
+        self.assertEqual(touched - managed, set())
+
+
+class Compat(Adoption):
+    """A repo initialized by 0.2.0-alpha.2 works unchanged without any new command (AC-21)."""
+    test_alpha1_and_alpha2_repos_adopted = test_stack_wired_makefile_matches = None
+    test_links_and_non_scaffold_files_are_never_claimed = None
+
+    def test_alpha2_repo_unchanged(self):
+        self.scaffold_as_released("0.2.0-alpha.2")
+        self.d.mkdir(parents=True)
+        self.write("intent", INTENT)
+        self.assertFalse((self.root / STATE).exists())
+        status = self.run_sdlc("status")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertIn("1 BRAINSTORMING", status.stdout)
+        edit = self.hook("pre-edit", self.hook_input("Write", file_path=str(self.root / "src" / "app.py"), content="x"))
+        self.assertEqual(edit.returncode, 2)                                     # the read-only lock holds
+        self.assertIn("[G-LOCK-01]", edit.stderr)
+        self.assertEqual(self.run_sdlc("validate", "0001").returncode, 0)
+        self.assertFalse((self.root / STATE).exists())                           # nothing wrote install-state
+
+
 if __name__ == "__main__":
     unittest.main()

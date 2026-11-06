@@ -304,7 +304,7 @@ guard change is test-first (CLAUDE.md rule 2).
 
     They fail because today's regexes don't name the new commands.
   - Covers: AC-13, AC-15
-- [ ] **S16**: Playbook conformance and the round trip.
+- [x] **S16**: Playbook conformance and the round trip.
   - `test_playbook.Playbook._walk` gains these checks at states 1-5:
     - `upgrade --yes` and `repair --yes` (agent env) leave gates, `sdlc status`, the artifacts and the lock
       unchanged
@@ -425,4 +425,5 @@ guard change is test-first (CLAUDE.md rule 2).
 | 2026-11-06 | S11 | Run by the agent, `repair` skips every path the agent couldn't write itself (`cli._agent_blocked`: protected paths and code under the read-only lock), not only human-owned ones, and hands them to the human. A missing file recorded at an older version is restored from the running template, with the recorded ref. The plan, confirm and apply helpers are shared with `upgrade` and `uninstall`. | A lifecycle command must not weaken the read-only lock (intent). The old template's bytes aren't shipped, only its hash. | S11 |
 | 2026-11-06 | S13 | `.aiops/config.json` and `.claude/settings.json`, which setup merges keys into, are never replaced, only ref-pinned. Their record follows the pin when it still matched. For a modified file, the diff shown is between the file and the new template, not old template vs new: only the old template's hash is shipped. Run by the agent, upgrade keeps the old `ref` in install-state until the human has written the human-owned files. A failed `--base` resolution counts as "no legacy approvals pending". | Replacing a merged config would drop the profile. The old template's bytes aren't in the plugin. | S13 |
 | 2026-11-06 | S14 | `uninstall` leaves directories that end up empty in place, and deletes `.gitignore` only if nothing else is left in it. A path in install-state is refused before it is ever read when it isn't a scaffold path (`../outside.txt` included). Install-state itself is never on the removal list; it's removed last. | Removing directories is a separate decision, and git doesn't track empty ones anyway. Reading a tampered path is a risk in itself. | S14 |
+| 2026-11-06 | S16 | The test that breaks upgrade on purpose wraps `lifecycle.save`, the last act of `cmd_upgrade`, because there's no `apply_upgrade` to patch. The "opens a gate" break stamps the Draft `intent.md` in state 1, not `plan.md` in state 3, because one fixture serves all three breaks. `playbook_violations` and `snapshot` live in `tests/test_playbook.py`. The walk also checks that `doctor` reports a gate-id allowance. | Same proof, one fixture. The checker is test code, not engine code. | S16 |
 | 2026-11-06 | S4b | PR 1 is #11, merged by zoujagger as 267f34a. Review: code PASS 93/100 after one CHANGES_REQUESTED round, security PASS 23/25 (0 decision differences from main). S5-S7 were built on the PR 1 branch while it waited, then rebased onto main. | PR 1 sat open after CI passed. | 267f34a |
