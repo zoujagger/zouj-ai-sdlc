@@ -167,7 +167,7 @@ guard change is test-first (CLAUDE.md rule 2).
 
     They fail because there's no helper yet.
   - Covers: AC-18, AC-19
-- [ ] **S7**: Allowance audit in doctor and CI.
+- [x] **S7**: Allowance audit in doctor and CI.
   - `cmd_doctor`: a `✗` row per `allowance_problems` entry, naming the id's class.
   - `cmd_validate --ci`: reads `allowed-commands` from `--base` (else the work tree) and adds the problems to the
     errors.
@@ -418,3 +418,4 @@ guard change is test-first (CLAUDE.md rule 2).
 | 2026-11-06 | S3 | G-ENV-04 is checked before G-ENV-03, so a command matching both reports the id that can't be allowed. | Security re-review LOW. | PR 1 review fixes |
 | 2026-11-06 | S5 | `guards.py` isn't changed: no Python rule is allowable any more (G-BASH-01 became `safety`), so S5 ships only `rules.allowed` and `rules.allowance_problems`. `allowed` also refuses a command with any control character but tab (for example `\r`), not only multi-line ones. | Follows the PR 1 class decision. A `\r` would make a different command look identical. | S5 |
 | 2026-11-06 | S6 | The `heuristic` helper doesn't parse `allowed-commands` with `grep` in bash. It calls `rules.allowed` through `python3 -I`, only on the block path. Only G-BASH-07 and G-ENV-03 go through it, after the PR 1 class decision. `sdlc why` now describes the allowance line. | One definition of an exact match, the same in the hook, doctor and CI. If python3 can't run, the command stays blocked. | S6 |
+| 2026-11-06 | S7 | `validate --ci` checks `allowed-commands` in the change itself as well as on `--base` (the spec names only the base). | A PR that adds a bad entry fails CI before it merges, not only afterwards. Stricter, no new trust. | S7 |

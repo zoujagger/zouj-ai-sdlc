@@ -199,8 +199,26 @@ def cmd_validate(root, args):
             failed += bool(errors)
     for w in dict.fromkeys(trust_warnings):
         out(f"! {w}")
+    if ci:
+        failed += _allowance_errors(root, base)
     out(f"validate: {len(dirs)} intent(s), {failed} artifact(s) with errors")
     return 1 if failed else 0
+
+
+def _allowance_errors(root, base):
+    """CI: refused allowed-commands entries (rules.allowance_problems), in the change itself and, with --base, on
+    the target branch. The hooks ignore such entries; CI makes them visible before and after the merge."""
+    from . import rules
+    sources = [(rules.ALLOWANCES, (root / rules.ALLOWANCES).read_text()
+                if (root / rules.ALLOWANCES).is_file() else None)]
+    if base:
+        sources.append((f"{base}:{rules.ALLOWANCES}", git(root, "show", f"{base}:{rules.ALLOWANCES}")))
+    n = 0
+    for where, text in sources:
+        for p in rules.allowance_problems(text or ""):
+            out(f"✗ {where}: {p}")
+            n += 1
+    return n
 
 
 def _confirm(question):
@@ -617,6 +635,14 @@ def cmd_doctor(root, args):
                 "replace those entries with sk- keys, without no-touch-required (human-owned, via a reviewed PR)")
     if initialized(root) and config(root).get("require_signed_approvals"):
         _doctor_signing(root, row)
+    if initialized(root) and (root / ".aiops" / "config" / "allowed-commands").is_file():
+        from . import rules
+        probs = rules.allowance_problems((root / rules.ALLOWANCES).read_text(errors="replace"))
+        for p in probs:
+            row(False, f"{rules.ALLOWANCES} {p}", "remove or fix that line (human-owned); `sdlc why <id>` shows "
+                "whether a rule can be allowed")
+        if not probs:
+            out(f"  ✓ {rules.ALLOWANCES}: ok")
     if initialized(root):
         for d in intent_dirs(root):
             for kind in KINDS:
