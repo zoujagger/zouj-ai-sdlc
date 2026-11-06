@@ -195,7 +195,8 @@ class Allowance(unittest.TestCase):
         # review round 1: source runs its argument; every simple command must be safe; no secret-named printenv
         for cmd in ("source env/bin/activate", ". env/bin/activate", "source env", "cat env | sh",
                     "ls env && export -p", "ls env; set", "printenv GITHUB_TOKEN", "printenv AWS_SECRET_ACCESS_KEY",
-                    "ls env && make"):
+                    "ls env && make", "printenv DATABASE_URL", "printenv SENTRY_DSN", "LD_PRELOAD=/tmp/x.so ls env",
+                    "BASH_ENV=env cat env"):
             self.assertFalse(rules.safe_env_command(cmd), cmd)
         for cmd in ("env", "printenv", "env FOO=1 make", "bash -c env", "env env", "xargs env",
                     "if true; then env; fi", "env>/tmp/x", "echo $(printenv)", "nice env", "printenv -0",

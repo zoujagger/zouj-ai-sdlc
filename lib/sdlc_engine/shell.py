@@ -86,8 +86,8 @@ def segments(tokens):
     out, words, redirs, i = [], [], [], 0
     while i < len(tokens):
         t = tokens[i]
-        if t in SEPARATORS:
-            out.append((words, redirs))
+        if t in SEPARATORS and not (t in ("!", "{", "}") and words):   # `!`/`{`/`}` only in command position:
+            out.append((words, redirs))                                   # `find . ! -name x` keeps its `!`
             words, redirs = [], []
         elif set(t) <= set("<>&|") and ">" in t:
             if words and words[-1].isdigit():

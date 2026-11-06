@@ -654,5 +654,19 @@ class EnvRound1(EnvSpellings):
             self.assertRegex(r.stderr, rf"\[({rid})\]", cmd)          # /proc/self/* also hits the secret scan first
 
 
+class EnvRound2(EnvSpellings):
+    test_spellings_are_dumps = None
+
+    def test_more_environ_spellings(self):
+        for cmd in ("cat /dev/fd/../environ", "cat /pr?c/self/environ", "cat /p*/self/environ",
+                    "x=/proc/self; cat $x/environ", "cd / && cat proc/self/environ", "cd /proc/self && cat env*",
+                    "cd /proc/self; cat e?viron", "cd /proc && cat self/env*"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertRegex(r.stderr, r"\[(G-ENV-05|G-SEC-03)\]", cmd)
+        for cmd in ("cat env.example", "ls src/environment.py", "grep environ src/a.py"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+
 if __name__ == "__main__":
     unittest.main()

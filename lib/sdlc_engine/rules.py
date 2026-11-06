@@ -129,7 +129,7 @@ def _entries(text):
 # or a command that doesn't run env/printenv at all. Anything else is refused: no list of known dumps to outgrow.
 SAFE_ENV_COMMANDS = {"ls", "cd", "cat", "head", "tail", "wc", "file", "stat", "du", "tree",
                      "virtualenv"}                    # commands that never run their arguments (not source or .)
-SECRET_NAME_RE = re.compile(r"(KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH)", re.I)
+SECRET_NAME_RE = re.compile(r"(KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH|_URL$|_URI$|DSN$|COOKIE|SESSION)", re.I)
 ENV_WORD_RE = re.compile(r"(^|/)(env|printenv)$")
 SUBSTITUTION_RE = re.compile(r"\$\(|`|<\(|>\(|[<>]")
 
@@ -146,10 +146,10 @@ def safe_env_command(command):
             words = shlex.split(part)
         except ValueError:
             return False
-        while words and re.match(r"^[A-Za-z_]\w*=", words[0]):
-            words = words[1:]
         if not words:
             continue
+        if re.match(r"^[A-Za-z_]\w*=", words[0]):      # LD_PRELOAD=…, BASH_ENV=…: an assignment changes what runs
+            return False
         name, args = Path(words[0]).name, words[1:]
         if name == "printenv":
             if args and all(re.match(r"^[A-Za-z_]\w*$", a) and not SECRET_NAME_RE.search(a) for a in args):

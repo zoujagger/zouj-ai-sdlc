@@ -978,5 +978,150 @@ class ProtectedTreeRound1(ProtectedTree):
             self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
 
 
+class Round2(ProtectedTree):
+    """0005 review round 2: close each bypass class, and the false positives round 1 introduced."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def blocked(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+
+    def allowed(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_nested_and_wrapper_forms(self):
+        self.blocked(["trap 'rm -rf docs' EXIT", "coproc rm -rf docs", "watch -n1 rm -rf docs",
+                      "parallel rm -rf ::: docs", "flock /tmp/l -c 'rm -rf docs'", "flock -c 'rm -rf docs' /tmp/l",
+                      "find .github -exec sh -c 'rm \"$1\"' _ {} \;", "find .github -name '*.yml' -exec nice rm {} +",
+                      "git -c alias.zz='!rm -rf .github' zz", "git rebase --exec 'rm -rf .github' main",
+                      "git rebase -x 'rm -rf .github' main"])
+        self.allowed(["trap 'echo done' EXIT", "watch -n1 ls", "git rebase --exec 'make test' main",
+                      "find . -name '*.py' -exec grep -l TODO {} +"])
+
+    def test_negated_find(self):
+        self.blocked(["find .github -not -name x -delete", "find .github ! -name x -delete",
+                      "find .github -name x -o -delete", "find . -atime +30 -delete"])
+        self.allowed(["find . -type d -empty -delete", "find build -type d -delete", "find . -name '*.pyc' -delete"])
+
+    def test_links_made_in_the_same_command(self):
+        self.blocked(["ln -s .github q && rm -rf q/workflows", "ln -s .github q && rm -rf q/*",
+                      "ln -s .github q && mv q/workflows /tmp/x", "ln -s . q && rm -rf q/.github",
+                      "ln -s .aiops/config d && tar -xzf x.tgz -C d"])
+
+    def test_rsync_and_tar_forms(self):
+        self.blocked(["rsync -a --del build/ .github/workflows/",
+                      "rsync -a --delete build/ .github/workflows/ --exclude foo",
+                      "rsync --remove-source-files .github/workflows/ /tmp/x",
+                      "tar -xzf x.tgz --one-top-level=.aiops/config"])
+        self.allowed(["rsync -a --delete --exclude .git src/ build/"])
+
+    def test_same_command_time_of_check(self):
+        self.archive("good.tgz", ["src/a.py"])
+        git(self.root, "branch", "benign")
+        self.blocked(["cp /tmp/evil.tgz good.tgz && tar -xzf good.tgz", "git branch -f benign x && git merge benign",
+                      "git update-ref refs/heads/benign HEAD~1 && git merge benign", "echo HEAD | git cherry-pick --stdin"])
+        self.allowed(["tar -xzf good.tgz"])
+
+    def archive(self, name, members):
+        Incoming.archive(self, name, members)
+
+    def test_cherry_pick_stuck_mainline(self):
+        self.blocked(["git cherry-pick -m2 nosuch"])
+
+    def test_pull_on_main_with_config(self):
+        git(self.root, "switch", "-q", "main")
+        for cmd in ("git -c branch.main.merge=refs/heads/x -c branch.main.remote=. pull",
+                    "git -c remote.origin.url=/tmp/evil pull origin main", "git branch -u x && git pull"):
+            self.assertIn("[G-FILE-06]", self.bash(cmd).stderr, cmd)
+
+    def test_git_config_option_forms_initialized(self):
+        self.blocked(["git config --fil ~/.gitconfig gpg.ssh.program /tmp/x",
+                      "git config --fil=.git/config core.fsmonitor /tmp/x", "git config -f.git/config core.hooksPath x"])
+
+    def test_writes_into_home(self):
+        self.blocked(["git clone /tmp/evil ~/.config/git", "git --work-tree=$HOME checkout HEAD -- .bashrc",
+                      "wget -P ~/.config/git https://x/y", "curl --output-dir ~/.config/git -O https://x/y"])
+        self.allowed(["git clone https://x/y /tmp/y", "wget -P /tmp/dl https://x/y"])
+
+    def test_link_member_archives_in_subdirs(self):
+        import io
+        import tarfile
+        with tarfile.open(self.root / "node.tgz", "w:gz") as t:
+            lnk = tarfile.TarInfo("node/bin/npm")
+            lnk.type, lnk.linkname = tarfile.SYMTYPE, "../lib/npm/cli.js"
+            t.addfile(lnk)
+            info = tarfile.TarInfo("node/lib/npm/cli.js")
+            info.size = 2
+            t.addfile(info, io.BytesIO(b"x\n"))
+        with tarfile.open(self.root / "escape.tgz", "w:gz") as t:
+            lnk = tarfile.TarInfo("e")
+            lnk.type, lnk.linkname = tarfile.SYMTYPE, "../../.aiops/config"
+            t.addfile(lnk)
+        (self.root / "vendor").mkdir()
+        self.allowed(["tar -xzf node.tgz -C vendor"])
+        self.blocked(["tar -xzf node.tgz", "tar -xzf escape.tgz -C vendor"])
+
+    def test_stash_pop_without_stash_is_left_to_git(self):
+        self.allowed(["git stash pop"])
+
+
+class Round2Timing(RepoCase):
+    def test_check_bash_decides_fast_and_pull_on_main_passes(self):
+        import time
+        from sdlc_engine import guards
+        self.to_execution()                                           # state 4: unlocked
+        nm = self.root / "node_modules"
+        for i in range(50):
+            (nm / f"p{i}").mkdir(parents=True)
+            for j in range(200):
+                (nm / f"p{i}" / f"f{j}.js").write_text("")
+        t = time.monotonic()
+        self.assertIsNone(guards.check_bash({"tool_input": {"command": "rm -rf node_modules"}, "cwd": str(self.root)}))
+        self.assertLess(time.monotonic() - t, 0.2, "AC-2: the whole engine decision, in process")
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text('{"approval_key_policy": "any", "lock_when_idle": false}')
+        git(self.root, "switch", "-q", "main")
+        self.assertIsNone(guards.check_bash({"tool_input": {"command": "git pull"}, "cwd": str(self.root)}))   # AC-8
+
+
+class SafetyPassFuzz(Uninitialized):
+    """The safety pass runs on every Bash call in every repo and fails closed on a crash: common commands must
+    neither crash it nor be blocked."""
+    test_safety_pass_blocks = test_gates_stay_dormant = None
+
+    def test_common_commands(self):
+        from sdlc_engine import guards
+        cmds = ["ls -la", "git status", "make test", "npm install", "pip install -e .", "python -m pytest -q",
+                "cat <<'EOF' > notes.md\nhello\nEOF", "for f in *.py; do echo $f; done", "case $x in a) ls;; esac",
+                "echo $((1+2))", "echo $'a\\tb'", "cd src && ls", "(cd build && make)", "{ ls; pwd; } > out.txt",
+                "x=1; echo $x", "tar czf out.tgz src", "find . -name '*.py' | xargs wc -l", "grep -rn TODO src",
+                "docker build -t x .", "git log --oneline -5 | cat", "timeout 60 make check", "time make",
+                "cp a.txt b.txt", "mv a.txt b.txt", "rm -f b.txt", "mkdir -p out && touch out/x", "sed -n 1,5p f",
+                "awk '{print $1}' f", "curl -s https://x/y -o out.json", "node -e 'console.log(1)'", "echo done &",
+                "exec 3>/tmp/f", "set -euo pipefail", "export FOO=1", "source .venv/bin/activate", "unset FOO",
+                "true && false || echo x", "! ls", "ls | tee log.txt", "cp -r src/ .", "tar xzf a.tgz"]
+        for cmd in cmds:
+            with self.subTest(cmd=cmd[:30]):
+                out = guards.check_bash({"tool_input": {"command": cmd}, "cwd": str(self.root)})
+                self.assertIsNone(out, f"{cmd}: {out}")
+
+    def test_venv_on_path_does_not_block_copies(self):
+        import os
+        venv = self.root / ".venv" / "bin"
+        venv.mkdir(parents=True)
+        r = self.engine_env("cp -r dist/ ./", {"PATH": f"{venv}:{os.environ.get('PATH', '')}"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def engine_env(self, cmd, extra):
+        import subprocess
+        from helpers import ROOT
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT), **extra}
+        return subprocess.run([str(ROOT / "hooks" / "engine.sh"), "pre-bash"], capture_output=True, text=True,
+                              input=json.dumps(self.hook_input("Bash", command=cmd)), env=env, cwd=self.root)
+
+
 if __name__ == "__main__":
     unittest.main()
