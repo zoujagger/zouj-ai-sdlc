@@ -122,7 +122,7 @@ guard change is test-first (CLAUDE.md rule 2).
   - Test first: `tests/test_rules.py::Coverage::test_sources_and_registry_agree`. It scans with
     `re.findall(r"G-[A-Z]+-\d\d")`. It's red if S1 registered an id that S2/S3 didn't emit, or the other way round.
   - Covers: AC-16, AC-22
-- [ ] **S4b**: Ship PR 1 (S1-S4).
+- [x] **S4b**: Ship PR 1 (S1-S4).
   - Cut `feat/0004-rule-ids` from this branch at S4, with `make check` green.
   - Run a fresh-context review (the `review` skill's reviewer agents) of `main...feat/0004-rule-ids`, and put the
     findings and the verdict in the PR description.
@@ -134,7 +134,7 @@ guard change is test-first (CLAUDE.md rule 2).
   - Test first: not applicable (a release step). The proof is `make check` green on the PR 1 head and the
     `aiops-gates` and CI checks on the PR.
   - Covers: AC-16, AC-17, AC-22 (shipped)
-- [ ] **S5**: The allowance in the Python guard.
+- [x] **S5**: The allowance in the Python guard.
   - `rules.allowed(root, id, command)`: reads `.aiops/config/allowed-commands`. True only if the id's class is in
     `ALLOWABLE`, the command is single-line, and an entry is byte-equal to `command.strip()`.
   - `rules.allowance_problems(text)`: unknown id, non-allowable class, multi-line, malformed.
@@ -149,7 +149,7 @@ guard change is test-first (CLAUDE.md rule 2).
 
     They fail because `allowed` doesn't exist.
   - Covers: AC-18, AC-19
-- [ ] **S6**: The allowance in `guard-bash.sh`.
+- [x] **S6**: The allowance in `guard-bash.sh`.
   - A `heuristic <id> <regex-var> <reason> [procedure]` helper. On a match, it checks the registry class
     (`grep -F` on `$PLUGIN_ROOT/defaults/rules`), and an exact `<id> <command>` line in
     `$root/.aiops/config/allowed-commands`, compared as a fixed string with `grep -Fxq`. It's honoured only when
@@ -167,7 +167,7 @@ guard change is test-first (CLAUDE.md rule 2).
 
     They fail because there's no helper yet.
   - Covers: AC-18, AC-19
-- [ ] **S7**: Allowance audit in doctor and CI.
+- [x] **S7**: Allowance audit in doctor and CI.
   - `cmd_doctor`: a `✗` row per `allowance_problems` entry, naming the id's class.
   - `cmd_validate --ci`: reads `allowed-commands` from `--base` (else the work tree) and adds the problems to the
     errors.
@@ -176,7 +176,7 @@ guard change is test-first (CLAUDE.md rule 2).
     `::test_validate_ci_fails_on_base_entry`. The second commits a gate-id entry on a base branch and runs
     `validate --ci --base <it>`. Both fail because neither command reads the file today.
   - Covers: AC-19
-- [ ] **S8**: Install-state written by init and setup, and guarded.
+- [x] **S8**: Install-state written by init and setup, and guarded.
   - `lib/sdlc_engine/lifecycle.py`:
     - `STATE = ".aiops/install-state.json"`
     - `load` / `save` (via `write_file`, repo-relative paths only)
@@ -196,7 +196,7 @@ guard change is test-first (CLAUDE.md rule 2).
     (Edit, Write and `echo > .aiops/install-state.json` are each blocked with a `G-FILE`/`G-ART` id). They fail
     because nothing writes the file and the path isn't protected.
   - Covers: AC-1, AC-15
-- [ ] **S9**: `sdlc list-installed`.
+- [x] **S9**: `sdlc list-installed`.
   - `lifecycle.classify(root, state)` → `{rel: current|stale|modified|missing|unmanaged}`. `stale` compares with
     `render(rel, state.ref)` of the running template.
   - `cmd_list_installed` prints the header and the rows, and writes nothing.
@@ -206,7 +206,7 @@ guard change is test-first (CLAUDE.md rule 2).
     another, and assert `modified`/`missing`/`current`, plus `git status --porcelain` unchanged before and after.
     It fails because the command doesn't exist.
   - Covers: AC-2
-- [ ] **S10**: Scaffold history and adoption.
+- [x] **S10**: Scaffold history and adoption.
   - `scripts/scaffold-history.py` (stdlib): for each `v*` tag, `git ls-tree`/`git show` the `templates/scaffold/`
     files, normalise `ZOUJ_SDLC_REF:`/`"ref":` values back to `__ZOUJ_SDLC_REF__`, and hash them. It adds the
     working-tree scaffold under the current `plugin.json` version.
@@ -224,7 +224,7 @@ guard change is test-first (CLAUDE.md rule 2).
     - `::test_stack_wired_makefile_matches`.
     - `tests/test_rules.py::History::test_current_scaffold_in_history` (AC-22).
   - Covers: AC-8, AC-22
-- [ ] **S11**: `sdlc repair [--dry-run] [--yes]`.
+- [x] **S11**: `sdlc repair [--dry-run] [--yes]`.
   - `plan_repair` re-creates `missing` managed files only.
   - Under the agent, human-owned paths are skipped and printed with the human's terminal command.
   - One confirmation (`--yes`; no terminal → exit 2, nothing written).
@@ -237,7 +237,7 @@ guard change is test-first (CLAUDE.md rule 2).
     - `::test_agent_skips_human_owned` (`CLAUDECODE=1`, a deleted `.github/workflows/ci.yml` isn't restored and is
       printed)
   - Covers: AC-3, AC-6
-- [ ] **S12**: Ref resolution.
+- [x] **S12**: Ref resolution.
   - `lifecycle.resolve_ref(plugin_root, home)`, in order:
     1. `installed_plugins.json` (any entry whose `installPath` resolves to `plugin_root` →
        `gitCommitSha`, validated as 40 hex)
@@ -253,7 +253,7 @@ guard change is test-first (CLAUDE.md rule 2).
 
     They fail because there's no function yet.
   - Covers: AC-9
-- [ ] **S13**: Migrations and `sdlc upgrade [--dry-run] [--yes]`.
+- [x] **S13**: Migrations and `sdlc upgrade [--dry-run] [--yes]`.
   - `lib/sdlc_engine/migrations.py`: `Migration(id, applies, human_only, command)` and `MIGRATIONS =
     [legacy_approvals]`.
   - `plan_upgrade`: adopt if needed, then:
@@ -278,7 +278,7 @@ guard change is test-first (CLAUDE.md rule 2).
     - `test_agent_never_writes_human_owned`
     - `test_legacy_approvals_listed_never_run`
   - Covers: AC-4, AC-5, AC-6, AC-7, AC-10
-- [ ] **S14**: `sdlc uninstall [--dry-run] [--yes]`.
+- [x] **S14**: `sdlc uninstall [--dry-run] [--yes]`.
   - `plan_uninstall` removes a path only if it's recorded, in some version's `scaffold-history.json`, and equal to
     its recorded hash. It never touches `.aiops/NNNN-*`, `.aiops/state/` or `.aiops/` itself.
   - Last, it removes install-state and the `.gitignore` lines `init` added.
@@ -291,7 +291,7 @@ guard change is test-first (CLAUDE.md rule 2).
     - `::test_tampered_state_refused` (`src/app.py`, `.aiops/0001-x/intent.md`)
     - `::test_agent_refused_dry_run_allowed`
   - Covers: AC-11, AC-12, AC-13
-- [ ] **S15**: Guard extensions for the new commands.
+- [x] **S15**: Guard extensions for the new commands.
   - `SCAFFOLD_RE` covers `init|setup|upgrade|repair|uninstall`, so they run only in the session's repo (cd, `-C`,
     `GIT_*` refused).
   - `ENGINE_RES` blocks `sdlc uninstall` unless the same command word list contains `--dry-run`.
@@ -304,7 +304,7 @@ guard change is test-first (CLAUDE.md rule 2).
 
     They fail because today's regexes don't name the new commands.
   - Covers: AC-13, AC-15
-- [ ] **S16**: Playbook conformance and the round trip.
+- [x] **S16**: Playbook conformance and the round trip.
   - `test_playbook.Playbook._walk` gains these checks at states 1-5:
     - `upgrade --yes` and `repair --yes` (agent env) leave gates, `sdlc status`, the artifacts and the lock
       unchanged
@@ -335,7 +335,7 @@ guard change is test-first (CLAUDE.md rule 2).
     `RoundTrip::test_init_upgrade_uninstall_dry_run` and `Compat::test_alpha2_repo_unchanged` are added in the same
     step.
   - Covers: AC-14, AC-20, AC-21
-- [ ] **S17**: The `/zouj-ai-sdlc:configure` skill.
+- [x] **S17**: The `/zouj-ai-sdlc:configure` skill.
   - It runs `sdlc list-installed`, `sdlc doctor` and `sdlc setup --dry-run --profile <choice>`, then gives the
     human the terminal command `<python> -I <plugin>/bin/sdlc setup --profile <choice>`. No writes.
   - `skills/setup` and `skills/status` mention `list-installed`, `upgrade` and `why`.
@@ -345,7 +345,7 @@ guard change is test-first (CLAUDE.md rule 2).
     `list-installed`, `doctor` and `setup --dry-run` as commands it runs, and it ends with the human's terminal
     command. It fails because the file is missing. `make validate` passes.
   - Covers: AC-23
-- [ ] **S18**: Docs and release prep.
+- [x] **S18**: Docs and release prep.
   - README: a Lifecycle section (list-installed, repair, upgrade, uninstall, why, allowances).
   - `COMMANDS-QUICK-REF.md`, `TROUBLESHOOTING.md` ("Blocked? → `sdlc why <id>`; false positive → allowance, if
     heuristic").
@@ -416,3 +416,19 @@ guard change is test-first (CLAUDE.md rule 2).
 | 2026-11-06 | — | Out of scope, recorded for intent 0005: in states 4-5 the shell-write check allows `rm -rf ./`, `"$PWD"`, `.github/workflows` and `mv .github …`, because protected paths are matched exactly, not as parent directories. This is already on main. | Security review (pre-existing). Decided by zoujagger: a new intent 0005, after 0004. | — |
 | 2026-11-06 | — | Also recorded for intent 0005, and also already on main: in a repo *without* `.aiops/`, shell writes to the toolchain (`~/.gitconfig`, `~/.bashrc`, `git config --global gpg.ssh.program`), to the installed plugin and to secrets outside the repo (`~/.ssh/…`) aren't checked (`check_bash` returns early). G-TOOL-04's `every-repo` label is only true for Edit/Write. `docs/architecture.md` is corrected to say so. | Security re-review (pre-existing). Grouped with the `rm` gap under 0005, following zoujagger's decision. | PR 1 review fixes |
 | 2026-11-06 | S3 | G-ENV-04 is checked before G-ENV-03, so a command matching both reports the id that can't be allowed. | Security re-review LOW. | PR 1 review fixes |
+| 2026-11-06 | S5 | `guards.py` isn't changed: no Python rule is allowable any more (G-BASH-01 became `safety`), so S5 ships only `rules.allowed` and `rules.allowance_problems`. `allowed` also refuses a command with any control character but tab (for example `\r`), not only multi-line ones. | Follows the PR 1 class decision. A `\r` would make a different command look identical. | S5 |
+| 2026-11-06 | S6 | The `heuristic` helper doesn't parse `allowed-commands` with `grep` in bash. It calls `rules.allowed` through `python3 -I`, only on the block path. Only G-BASH-07 and G-ENV-03 go through it, after the PR 1 class decision. `sdlc why` now describes the allowance line. | One definition of an exact match, the same in the hook, doctor and CI. If python3 can't run, the command stays blocked. | S6 |
+| 2026-11-06 | S7 | `validate --ci` checks `allowed-commands` in the change itself as well as on `--base` (the spec names only the base). | A PR that adds a bad entry fails CI before it merges, not only afterwards. Stricter, no new trust. | S7 |
+| 2026-11-06 | S8 | `init` and `setup` record only the files they wrote. Kept files are claimed later by adoption (S10, R-5). `.gitignore` is never recorded. `.aiops/install-state.json` is also in `guards.GUARDED_RE`, so `check_edit` blocks it (G-ART-01) as well as `protected-paths` (G-FILE-*). Nothing is written when nothing was, so a rerun leaves the state unchanged. | R-1's matching of kept files needs S10's history; two guard layers instead of one. | S8 |
+| 2026-11-06 | S9 | Two more statuses than R-2 lists: `dropped` (recorded, no longer in the plugin's scaffold) and `new` (in the scaffold, never installed). `stale` is decided from the entry's version and the running template, since the old template isn't known until S10's history. S10's split of `_wire_stack` into a pure `cli.wire()` is done here. Without install-state, the command lists files on disk as `unmanaged`; S10 adds the adoption preview. | R-4 needs both extra cases named. A stack-wired Makefile would otherwise always look stale. | S9 |
+| 2026-11-06 | S10 | The history files today's scaffold under `unreleased` while `plugin.json` still says the tagged `0.2.0-alpha.2`; S18's bump turns it into `0.2.0-alpha.3`. `adopt()` writes nothing: S11/S13 save its result. `list-installed` shows it as a preview. A file that differs from every release is recorded with `sha256: null` (so `modified`). Where several releases match, the version comes from the file's pinned ref, else the newest. The adoption tests read alpha.1 and alpha.2 by commit (`429614a`, `0f8d4f6`), not by tag, because `v0.2.0-alpha.2` exists only locally until the release. `cli.wire()` takes a release's recipes. | No version bump before S18's CHANGELOG (a test pins the two together). CI must not depend on a local tag. | S10 |
+| 2026-11-06 | S11 | Run by the agent, `repair` skips every path the agent couldn't write itself (`cli._agent_blocked`: protected paths and code under the read-only lock), not only human-owned ones, and hands them to the human. A missing file recorded at an older version is restored from the running template, with the recorded ref. The plan, confirm and apply helpers are shared with `upgrade` and `uninstall`. | A lifecycle command must not weaken the read-only lock (intent). The old template's bytes aren't shipped, only its hash. | S11 |
+| 2026-11-06 | S13 | `.aiops/config.json` and `.claude/settings.json`, which setup merges keys into, are never replaced, only ref-pinned. Their record follows the pin when it still matched. For a modified file, the diff shown is between the file and the new template, not old template vs new: only the old template's hash is shipped. Run by the agent, upgrade keeps the old `ref` in install-state until the human has written the human-owned files. A failed `--base` resolution counts as "no legacy approvals pending". | Replacing a merged config would drop the profile. The old template's bytes aren't in the plugin. | S13 |
+| 2026-11-06 | S14 | `uninstall` leaves directories that end up empty in place, and deletes `.gitignore` only if nothing else is left in it. A path in install-state is refused before it is ever read when it isn't a scaffold path (`../outside.txt` included). Install-state itself is never on the removal list; it's removed last. | Removing directories is a separate decision, and git doesn't track empty ones anyway. Reading a tampered path is a risk in itself. | S14 |
+| 2026-11-06 | S16 | The test that breaks upgrade on purpose wraps `lifecycle.save`, the last act of `cmd_upgrade`, because there's no `apply_upgrade` to patch. The "opens a gate" break stamps the Draft `intent.md` in state 1, not `plan.md` in state 3, because one fixture serves all three breaks. `playbook_violations` and `snapshot` live in `tests/test_playbook.py`. The walk also checks that `doctor` reports a gate-id allowance. | Same proof, one fixture. The checker is test code, not engine code. | S16 |
+| 2026-11-06 | S17/S18 | `COMMANDS-QUICK-REF.md` was updated in S17, not S18: `test_onboarding_docs` requires every skill to be listed there, and the S17 commit was amended locally to include it after `make check` caught the gap. Not built: the install-state rows in `sdlc doctor` (spec Architecture, no AC, no plan step). They are listed as a known issue, and `list-installed` covers them. The version bump test is `test_version_matches_changelog` (expects 0.2.0-alpha.3). | A test enforces the quick reference. The doctor rows were never planned. | S17, S18 |
+| 2026-11-06 | S18 | **The version stays 0.2.0-alpha.2** (zoujagger, 2026-11-06). The alpha.3 notes sit under `[Unreleased]`, the README keeps pinning the released `v0.2.0-alpha.2`, `scaffold-history.json` keeps today's scaffold under `unreleased`, and the version test expects 0.2.0-alpha.2. The bump and tag happen at release. | Don't pin a tag that doesn't exist. | after S18 |
+| 2026-11-06 | — | `sdlc status` counts open questions only in an intent or spec whose gate is closed: an approved artifact's questions were accepted with it (`machine.evaluate`, `tests/test_engine.py::OpenQuestions`, docs/state-machine.md). 0004 now shows 0. | zoujagger asked for the status to reflect the answered questions; the approved artifacts can't be edited without closing their gates. | after S18 |
+| 2026-11-06 | review r1 | Fixes for PR 2 review round 1 (CHANGES_REQUESTED 81/100): `pin()` touches only literal `ZOUJ_SDLC_REF` values and the zouj marketplace's JSON `ref`, and every pin is shown as a diff. New status `declined` (adopted-release files the user had removed are never re-created). A bare `env`/`printenv` can't be allowed under G-ENV-03. `doctor` and CI don't follow a symlinked `allowed-commands` or echo unrecognised lines. G-SCAF-01 also refuses `SDLC_HOOK_PROFILE=`/`AIOPS_INTENT=` on a lifecycle line, and the engine judges the agent's lock without them. G-GATE-07 ignores a `# --dry-run` comment. `list-installed` says how to adopt. Tests: AC-4 byte-exact, AC-8 end to end on an alpha.2 repo, AC-10 under the agent, the mid-walk checks with real work, and the test that breaks upgrade on purpose with a real gate opening and named breaks. | Review findings (HIGH, 4 MEDIUM, 3 LOW). | review r1 fixes |
+| 2026-11-06 | review r2 | Fixes for review round 2: `pin()` substitutes right to left and only the zouj object's own `ref`. G-ENV-03's dump check also catches env options, wrappers, grouping, redirects and substitutions. Security scaffold (`aiops-gates.yml`, CODEOWNERS, `allowed-signers`, `secret-paths`, `protected-paths`) is never `declined`. Upgrade lists declined files. Doctor warns about a missing `aiops-gates.yml`. The AC-15 test asserts the exact ids: G-ART-01 for Edit, G-ART-05 for a shell write, G-FILE-04 for guard-files. AC-15's G-FILE wording holds only for guard-files: the engine's `.aiops/` rules fire first. Logged in this follow-up commit, not in 6ba4e75 itself. | Code review N1/N2, security LOW 1-3, verifier AC-15. | 6ba4e75 |
+| 2026-11-06 | S4b | PR 1 is #11, merged by zoujagger as 267f34a. Review: code PASS 93/100 after one CHANGES_REQUESTED round, security PASS 23/25 (0 decision differences from main). S5-S7 were built on the PR 1 branch while it waited, then rebased onto main. | PR 1 sat open after CI passed. | 267f34a |

@@ -106,3 +106,13 @@ from sdlc_engine.secret_scan import main; sys.exit(main())' "$PLUGIN_ROOT/lib" |
        return 1 ;;
   esac
 }
+
+# allowance <root> <rule-id> <command>: true if the human listed this exact command for this heuristic rule in
+# <root>/.aiops/config/allowed-commands. One definition of "exact" (lib/sdlc_engine/rules.py allowed()); called only
+# on the block path. Any failure (no python3, a broken file) means no allowance: the command stays blocked.
+allowance() {
+  local py=/usr/bin/python3; [[ -x "$py" ]] || py=python3
+  printf '%s' "$3" | "$py" -I -c 'import sys; sys.path.insert(0, sys.argv[1])
+from sdlc_engine.rules import allowed; sys.exit(0 if allowed(sys.argv[2], sys.argv[3], sys.stdin.read()) else 1)' \
+    "$PLUGIN_ROOT/lib" "$1" "$2" 2>/dev/null
+}

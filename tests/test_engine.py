@@ -590,5 +590,23 @@ class Approvals(RepoCase):
         self.assertEqual(evaluate(self.root, self.d).state, 0)
 
 
+class OpenQuestions(RepoCase):
+    """The card counts open questions only where they can still block a gate: in an artifact whose gate isn't open.
+    Once the human approved it, its unticked questions were accepted with it (0004, at the human's request)."""
+    def test_approved_artifacts_stop_counting(self):
+        from sdlc_engine.machine import evaluate
+        q = lambda: evaluate(self.root, self.d).open_questions  # noqa: E731
+        self.write("intent", INTENT)                                       # one `- [ ]` question
+        self.assertEqual(q(), 1)
+        self.approve("intent")
+        self.assertEqual(q(), 0)
+        self.write("spec", SPEC.replace("- none", "- [ ] Retention? (po)\n- [x] Format? CSV (po)"))
+        self.assertEqual(q(), 1)
+        self.approve("spec")
+        self.assertEqual(q(), 0)
+        (self.d / "intent.md").write_text((self.d / "intent.md").read_text().replace("Users cannot", "Reps cannot"))
+        self.assertEqual(q(), 1)                                            # edited after approval: the gate closed
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,3 +10,6 @@ Run `sdlc status $ARGUMENTS`. With no id and no active intent, it prints a table
 Relay the card as-is: the state, who it's waiting on (agent or human), the gates, step progress, deviations, open questions, and the **next step**.
 If it's waiting on the human, quote the exact approval phrase they need to type. Don't offer to do it for them.
 For machine-readable output: `sdlc status <id> --json`.
+
+If a command was blocked, the message names its rule, e.g. `BLOCKED [G-LOCK-01] by …`. Run `sdlc why <id>` and relay
+the reason, the stage it protects and the safe alternative. Never try to work around a block.

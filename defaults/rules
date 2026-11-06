@@ -14,7 +14,7 @@ G-GATE-03 gate intent-spec-plan approved-* fields on a new artifact are written 
 G-GATE-04 gate intent-spec-plan approved-* fields are written only by a human approval
 G-GATE-05 gate intent-spec-plan setting an artifact's gate status is a human decision
 G-GATE-06 gate intent-spec-plan approval commits are created only by a human approval
-G-GATE-07 gate intent-spec-plan human-only engine commands (approve, close, unlock, hook, legacy-approvals)
+G-GATE-07 gate intent-spec-plan human-only engine commands (approve, close, unlock, hook, legacy-approvals, uninstall)
 G-ENV-02 gate intent-spec-plan changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION or clearing the environment
 
 # Read-only lock (states 1-3)
@@ -58,7 +58,7 @@ G-TEST-02 gate test-lock editing test files while /fix has them locked
 G-STOP-01 gate definition-of-done make check must be green before finishing
 
 # Scaffold location
-G-SCAF-01 gate setup sdlc init/setup run by the agent only in the session's repo
+G-SCAF-01 gate setup sdlc init/setup/upgrade/repair/uninstall run by the agent only in the session's repo
 
 # Secrets and credentials (every repo)
 G-SEC-01 secret initialized-repo a shell write to secret material outside the repo

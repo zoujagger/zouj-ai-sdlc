@@ -94,6 +94,9 @@ list: an install-scope choice, and a confirmation inside `init` (setup has it; `
    - `sdlc feedback`, which prints the links and sends nothing
 
 ### Phase 2: 0.2.0-alpha.3, a safe lifecycle
+**Status:** built as intent `.aiops/0004-safe-lifecycle/` (PR 1, rule ids, merged as #11; PR 2 in review). Changed
+at review: only `G-ENV-03` and `G-BASH-07` are allowable. Not shipped from this list: install-state rows in `doctor`.
+Two guard gaps found on the way (unlocked `rm -rf ./`, shell writes in uninitialized repos) are intent 0005.
 6. **Install state.** `.aiops/install-state.json` records the plugin version, profile, `ZOUJ_SDLC_REF` and a hash of
    every scaffold file `init` wrote.
 7. **`sdlc list-installed | repair | upgrade | uninstall --dry-run`.**
