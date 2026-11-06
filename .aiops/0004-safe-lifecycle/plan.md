@@ -291,7 +291,7 @@ guard change is test-first (CLAUDE.md rule 2).
     - `::test_tampered_state_refused` (`src/app.py`, `.aiops/0001-x/intent.md`)
     - `::test_agent_refused_dry_run_allowed`
   - Covers: AC-11, AC-12, AC-13
-- [ ] **S15**: Guard extensions for the new commands.
+- [x] **S15**: Guard extensions for the new commands.
   - `SCAFFOLD_RE` covers `init|setup|upgrade|repair|uninstall`, so they run only in the session's repo (cd, `-C`,
     `GIT_*` refused).
   - `ENGINE_RES` blocks `sdlc uninstall` unless the same command word list contains `--dry-run`.

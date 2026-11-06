@@ -82,11 +82,10 @@ class Why(unittest.TestCase):
         self.assertIn("initialized", why("G-SEC-02").stdout)               # check_bash runs only in .aiops repos
         self.assertIn("every repo", why("G-SEC-04").stdout)                # guard-files.sh is always on
 
-    def test_no_text_ahead_of_the_code(self):
-        # upgrade/repair/uninstall aren't built yet (S11-S15): nothing may promise them
-        text = (ROOT / "defaults" / "rules.md").read_text() + why("G-ENV-03").stdout
-        for future in ("uninstall", "upgrade", "repair"):
-            self.assertNotIn(future, text, future)
+    def test_lifecycle_commands_are_documented(self):
+        self.assertIn("uninstall", why("G-GATE-07").stdout)
+        for name in ("upgrade", "repair", "uninstall"):
+            self.assertIn(name, why("G-SCAF-01").stdout)
 
     def test_allowable_rule_explains_the_allowance(self):
         out = why("G-ENV-03").stdout

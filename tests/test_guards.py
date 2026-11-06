@@ -627,5 +627,29 @@ class InstallState(RepoCase):
         self.assertTrue(re.search(r"\[G-FILE-04\]", files.stderr), files.stderr)
 
 
+class Lifecycle(RepoCase):
+    """The agent's upgrade/repair/uninstall: only in the session's repo; a real uninstall is human-only (0004 S15)."""
+    def bash(self, cmd):
+        return self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+
+    def test_uninstall_human_only(self):
+        for cmd in ("sdlc uninstall", "sdlc uninstall --yes", "bin/sdlc uninstall", "make x; sdlc uninstall"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("[G-GATE-07]", r.stderr, cmd)
+        for cmd in ("sdlc uninstall --dry-run", "sdlc uninstall --yes --dry-run", "sdlc list-installed",
+                    "sdlc why G-GATE-07"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+    def test_other_repo_refused(self):
+        for cmd in ("cd ../other && sdlc upgrade --yes", "GIT_DIR=x sdlc repair", "env -C ../x sdlc repair",
+                    "HOME=/tmp/h sdlc upgrade"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("[G-SCAF-01]", r.stderr, cmd)
+        for cmd in ("sdlc upgrade --yes", "sdlc repair --dry-run"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+
 if __name__ == "__main__":
     unittest.main()

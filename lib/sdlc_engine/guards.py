@@ -373,13 +373,15 @@ def _git_changed(root, staged_only):
 
 # `sdlc init|setup` anywhere on the line: fed to a shell (`echo … | sh`, `<<<`), behind a runner the guard doesn't know
 # (`setarch`, `uv run`) or after `find -execdir`, it still runs. A line that only mentions it is matched too.
-SCAFFOLD_RE = re.compile(r"(^|[^\w-])sdlc\s+(-\S+\s+)*(init|setup)\b")
+SCAFFOLD_RE = re.compile(r"(^|[^\w-])sdlc\s+(-\S+\s+)*(init|setup|upgrade|repair|uninstall)\b")
+# a real uninstall is human-only; its --dry-run is open to anyone (group 3: the rest of that simple command)
+UNINSTALL_RE = re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*uninstall\b([^;&|\n]*)")
 RELOCATE_RE = re.compile(r"(^|[\s;&|(])(cd|pushd|popd)(\s|$)|\b(GIT_[A-Z_]+|CLAUDE_PROJECT_DIR|HOME)="
                          r"|(^|\s)(-C\S*|--chdir\S*|-execdir|-okdir)(\s|$)")
 
 
 def _scaffold_elsewhere(cwd, plain):
-    """The agent's `sdlc init|setup` runs only in this session's repo. The hook knows the session's project
+    """The agent's `sdlc init|setup|upgrade|repair|uninstall` runs only in this session's repo. The hook knows the session's project
     (CLAUDE_PROJECT_DIR); the CLI, started from the agent's shell, doesn't. So a command that moves (cd, pushd, -C,
     env --chdir, find -execdir) or sets a variable the engine reads for its root (GIT_*, CLAUDE_PROJECT_DIR, HOME) is
     refused, and so is one whose working directory is in another repo. Matching the whole line also refuses a line that
@@ -388,7 +390,8 @@ def _scaffold_elsewhere(cwd, plain):
     if not session or not SCAFFOLD_RE.search(plain):
         return None
     if RELOCATE_RE.search(plain) or project_root(cwd) != project_root(session):
-        return _block("G-SCAF-01", "`sdlc init|setup` run by the agent may scaffold only this session's repo "
+        return _block("G-SCAF-01", "`sdlc init|setup|upgrade|repair|uninstall` run by the agent may act only on "
+                      "this session's repo "
                       f"({project_root(session)}), from there, without cd, -C, --chdir, -execdir or GIT_*, "
                       "CLAUDE_PROJECT_DIR or HOME settings.",
                       "run it from the project as a command of its own; another repo is set up by the human in "
@@ -415,6 +418,10 @@ def check_bash(data):
         return _block("G-ENV-02", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
                       "would let human-only commands run as the agent.",
                       "leave the environment alone; human-only steps are run by the human.")
+    if any("--dry-run" not in m.group(3).split() for m in UNINSTALL_RE.finditer(plain)):
+        return _block("G-GATE-07", "`sdlc uninstall` removes the workflow's files; it is human-only.",
+                      "preview it with `sdlc uninstall --dry-run`; the human runs the real uninstall in their own "
+                      "terminal.")
     if any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain):
         return _block("G-GATE-07", "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
                       "stop and ask the human: they type `Intent|Spec|Plan Approved NNNN` in the prompt, "
