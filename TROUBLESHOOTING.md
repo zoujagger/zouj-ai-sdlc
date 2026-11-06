@@ -56,7 +56,7 @@ A known one: a line that mentions `sdlc init` or `sdlc setup` next to a director
 `pushd`, `-C`, `--chdir`, `-execdir`, `GIT_*=`, `HOME=`, `CLAUDE_PROJECT_DIR=`; a commit message, `grep -C3`), or run
 from another repo, is refused on purpose; run it as two commands.
 
-## The Stop hook keeps saying "Definition of done not met"
+## The Stop hook keeps saying "definition of done not met" (`G-STOP-01`)
 `make check` must pass before a turn can end, whenever the working tree changed. Run `make check` and fix what fails.
 If a Makefile target still prints `not configured`, wire it: edit the
 Makefile's recipes (the plugin ships presets in `templates/stacks/`).

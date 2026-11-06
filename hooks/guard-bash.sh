@@ -32,24 +32,26 @@ re_history="git (reset --hard|clean -[a-z]*f|filter-branch|filter-repo)"
 re_bypass="(--no-verify|core\\.hooksPath|SKIP_STOP_VERIFY=1|--dangerously-skip-permissions)"
 re_pipe_sh="(curl|wget)[^|]*\\| ?(sudo )?(ba|z)?sh${E}"
 re_cred_print="(gh auth token|gh auth status[^;&|]*(-t|--show-token)|git( -[cC] [^ ;&|]+)* credential(-[a-z]+)? (fill|get)|aws configure (get [^;&|]*(secret|token)|export-credentials)|gcloud auth [^;&|]*print-[a-z-]*token|az account get-access-token|kubectl config view[^;&|]*--raw|docker-credential-[a-z0-9-]+ get|${S}op read)"
-re_dump_env="(${S}printenv|${S}env${E}|echo .*\\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD))"
+re_dump_env="(${S}printenv|${S}env${E})"
+re_echo_secret="echo .*\\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD)"
 re_system="${S}(sudo|mkfs|dd if=|chmod -R 777)${E}"
 re_gate="gh (pr merge|pr review [^;&|]*--approve|release delete|repo delete)"
 re_lock="\\.aiops/state/test-lock"
 re_write_op="(>|${S}(sed -i|tee|mv|cp|rm|truncate|perl -pi)${E})"
 
-[[ "$c" =~ $re_rm_root ]]    && block G-BASH-02 "recursive delete of root/home/cwd"
+[[ "$c" =~ $re_rm_root ]]    && block G-BASH-02 "recursive delete of root/home/cwd" "name the paths to remove."
 [[ "$u" =~ $re_force_push ]] && block G-BASH-03 "force push" "create a new commit (or git revert) and push normally."
 (( enabled )) && [[ "$u" =~ $re_push_main ]] && block G-MERGE-03 "direct push to main/master" "push a feature branch and open a PR (/zouj-ai-sdlc:pr)."
 [[ "$c" =~ $re_history ]]    && block G-BASH-04 "history/worktree destruction" "use git revert or git stash; ask the human if history must change."
-[[ "$c" =~ $re_bypass ]]     && block G-BASH-05 "attempt to bypass hooks or permissions"
+[[ "$c" =~ $re_bypass ]]     && block G-BASH-05 "attempt to bypass hooks or permissions" "fix what the hook reports; ask the human if a hook is wrong."
 [[ "$c" =~ $re_pipe_sh ]]    && block G-BASH-06 "piping remote script to shell" "download the script, show it for review, then run it."
 # Secret reads: every word of every command (substitutions included; heredoc bodies, message values and grep patterns
 # excluded), after ~/$HOME/glob expansion and with `cd` tracked, against defaults/secret-paths + .aiops/config/secret-paths.
 # One python pass (lib/sdlc_engine/secret_scan.py) instead of a subshell per word.
 secret_scan "$input" || exit 2
 [[ "$u" =~ $re_cred_print ]] && block G-ENV-01 "printing credentials into the session" "use the tool's own auth (gh, git, aws) without printing the token; never read real secrets."
-[[ "$c" =~ $re_dump_env ]]   && block G-ENV-03 "dumping environment secrets"
+[[ "$c" =~ $re_dump_env ]]   && block G-ENV-03 "dumping the environment can print secrets" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
+[[ "$c" =~ $re_echo_secret ]] && block G-ENV-04 "echoing a secret-named variable prints a credential" "check that it's set without printing it ([ -n \"\$VAR\" ])."
 [[ "$c" =~ $re_system ]]     && block G-BASH-07 "privileged or dangerous system command"
 (( enabled )) && [[ "$c" =~ $re_gate ]] && block G-MERGE-04 "merging/approving/deleting is a human gate" "a CODEOWNER approves and merges the PR (state 5 is the human's decision); the agent never approves its own work."
 

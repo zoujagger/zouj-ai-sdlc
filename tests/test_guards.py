@@ -545,10 +545,35 @@ class Ids(RepoCase):
             (lambda: self.bash("git stash"), "G-LOCK-03"),
             (lambda: self.bash("echo x > .env"), "G-SEC-02"),
             (lambda: self.bash("echo x > package-lock.json"), "G-FILE-01"),
+            (lambda: self.bash("git rm .aiops/0001-csv-export/intent.md"), "G-ART-08"),
+            (lambda: self.bash("git checkout main -- ."), "G-FILE-02"),
+            (lambda: self.bash("git checkout -- package-lock.json"), "G-FILE-03"),
+            (lambda: self.bash("cat fix.diff | patch -p1"), "G-ART-06"),
+            (lambda: self.bash("cat fix.diff | git apply"), "G-ART-07"),
+            (lambda: self.bash("git add src/app.py"), "G-LOCK-04"),
+            (lambda: self.bash("tar -xf x.tar -C /tmp/out"), "G-LOCK-08"),
+            (lambda: self.bash(f"echo x > {ROOT}/lib/x.py"), "G-TOOL-02"),
+            (lambda: self.bash("echo x > /tmp/elsewhere/.ssh/config"), "G-SEC-01"),
+            (lambda: self.bash("echo x > ~/.bashrc"), "G-TOOL-04"),
         ]
         for run, rid in cases:
             with self.subTest(rid=rid):
                 self.assertId(run(), rid)
+
+    def test_artifact_field_rules(self):
+        self.assertId(self.edit(".aiops/0001-csv-export/intent.md",
+                                INTENT.format(id="0001").replace("created:", "approved-by: x\ncreated:")), "G-GATE-03")
+        self.write("intent", INTENT)
+        text = (self.d / "intent.md").read_text()
+        self.assertId(self.edit(".aiops/0001-csv-export/intent.md", text.replace("created:", "approved-by: x\ncreated:")),
+                      "G-GATE-04")
+        self.assertId(self.edit(".aiops/0001-csv-export/intent.md", text.replace("id: 0001\n", "")), "G-ART-03")
+
+    def test_commit_of_code_and_crash(self):
+        (self.root / "src" / "app.py").write_text("x = 2\n")
+        self.assertId(self.bash("git commit -a -m x"), "G-LOCK-05")
+        r = self.hook("pre-bash", {"tool_name": "Bash", "tool_input": "not an object", "cwd": str(self.root)})
+        self.assertId(r, "G-FAIL-01")
 
     def test_merge_on_main_and_scaffold_elsewhere(self):
         git(self.root, "switch", "-q", "main")
@@ -563,7 +588,10 @@ class Ids(RepoCase):
         self.write("intent", INTENT.replace("## Problem", "## Issue"))
         r = self.hook("post-edit", self.hook_input("Write", file_path=str(self.d / "intent.md")))
         self.assertEqual(r.returncode, 2)
-        self.assertRegex(r.stderr, r"\[G-ART-09\]")
+        # PostToolUse: the edit was saved, so this is feedback, not a block
+        self.assertRegex(r.stderr, r"^NOT VALID \[G-ART-09\] by zouj-ai-sdlc: ")
+        self.assertNotIn("BLOCKED", r.stderr)
+        self.assertIn("was saved", r.stderr)
         self.assertIn("sdlc why G-ART-09", r.stderr)
 
     def test_secret_scan_carries_id(self):

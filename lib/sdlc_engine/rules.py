@@ -68,7 +68,19 @@ def load():
             for rid, r in reg.items()}
 
 
-STAGES = {"every-repo": "safety, in every repo (initialized or not)"}
+STAGES = {   # the stage column of defaults/rules, as `sdlc why` prints it
+    "intent-spec-plan": "the human gates (Intent, Spec, Plan Approved)",
+    "read-only-lock": "the read-only lock in states 1-3",
+    "artifacts": "the artifacts and .aiops/ (the audit trail)",
+    "every-stage": "human-owned files, in every state",
+    "merge": "the merge and main (state 5, the human's decision)",
+    "deploy": "production (the human's deploy approval)",
+    "test-lock": "the /fix test lock",
+    "definition-of-done": "the definition of done (make check green)",
+    "setup": "setup (scaffold only the session's repo)",
+    "every-repo": "safety, in every repo (initialized or not)",
+    "initialized-repo": "safety, in repos initialized with sdlc init (.aiops/)",
+}
 
 
 def why(rid):
@@ -81,9 +93,8 @@ def why(rid):
         return 1, f"unknown rule id {rid!r}." + (f" Did you mean: {', '.join(near)}?" if near else
                                                   " The ids are listed in the plugin's defaults/rules.")
     if r.cls in ALLOWABLE:
-        allow = (f"an exact-command allowance is possible: the human adds `{r.id} <the exact command>` to "
-                 ".aiops/config/allowed-commands (human-owned, under CODEOWNERS). It lifts only this rule, for only "
-                 "that command.")
+        allow = ("allowable class: from 0.2.0-alpha.3 the human can let one exact command through this rule, and "
+                 "every other rule still applies. Until then, rephrase the command or run it yourself.")
     else:
         allow = f"no allowance: {r.cls} rules can't be lifted (there is no per-rule disable switch)."
     return 0, "\n".join([

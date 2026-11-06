@@ -714,7 +714,8 @@ def hook_post_edit(data):
         return 0
     errors, warnings = validate(root / ".aiops" / m.group(1), m.group(2))
     if errors:
-        out(f"BLOCKED [G-ART-09] by zouj-ai-sdlc: {rel} does not validate yet (fix before asking for approval):\n- "
+        out(f"NOT VALID [G-ART-09] by zouj-ai-sdlc: {rel} was saved but does not validate yet (fix before asking "
+            "for approval):\n- "
             + "\n- ".join(errors + warnings)
             + f"\nProcedure: fix the errors above; `sdlc validate {m.group(1)[:4]}` lists them. "
               "(details: `sdlc why G-ART-09`)", sys.stderr)

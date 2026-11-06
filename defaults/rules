@@ -3,7 +3,8 @@
 #   id     G-<AREA>-NN, stable: never reused. A retired rule stays here with class `retired`.
 #   class  gate | secret | toolchain | safety | heuristic | retired
 #          Only `heuristic` rules accept an exact-command allowance (.aiops/config/allowed-commands, human-owned).
-#   stage  the playbook stage the rule protects, or every-repo for the always-on safety guards.
+#   stage  the playbook stage the rule protects; every-repo for the always-on safety guards, initialized-repo for
+#          safety rules that act only in repos with .aiops/ (the engine's shell parser).
 # Every block message reads `BLOCKED [<id>] by <hook>: ...`; tests/test_rules.py keeps this file and the hooks in sync.
 
 # Human gates and engine calls
@@ -60,33 +61,36 @@ G-STOP-01 gate definition-of-done make check must be green before finishing
 G-SCAF-01 gate setup sdlc init/setup run by the agent only in the session's repo
 
 # Secrets and credentials (every repo)
-G-SEC-01 secret every-repo a shell write to secret material outside the repo
-G-SEC-02 secret every-repo a shell write to secret material in the repo
+G-SEC-01 secret initialized-repo a shell write to secret material outside the repo
+G-SEC-02 secret initialized-repo a shell write to secret material in the repo
 G-SEC-03 secret every-repo a shell command or search reading secret material
 G-SEC-04 secret every-repo editing secret material
 G-SEC-05 secret every-repo content that looks like a credential
 G-SEC-06 secret every-repo reading secret material
 G-ENV-01 secret every-repo printing credentials into the session
+G-ENV-04 secret every-repo echoing a secret-named variable (echo $...TOKEN, KEY, SECRET, PASSWORD)
 
 # Approval toolchain (every repo)
 G-TOOL-01 toolchain every-repo editing the installed plugin
-G-TOOL-02 toolchain every-repo a shell write into the installed plugin
-G-TOOL-03 toolchain every-repo a shell write under .git (config, hooks)
+G-TOOL-02 toolchain initialized-repo a shell write into the installed plugin
+G-TOOL-03 toolchain initialized-repo a shell write under .git (config, hooks)
 G-TOOL-04 toolchain every-repo writing a path that runs when the human approves (PATH, shell startup, git config)
-G-TOOL-05 toolchain every-repo git config of signing, hook, monitor, filter, include, alias or diff keys
+G-TOOL-05 toolchain initialized-repo git config of signing, hook, monitor, filter, include, alias or diff keys
 
 # Safety (every repo)
 G-BASH-03 safety every-repo force push
 G-BASH-04 safety every-repo history or worktree destruction (reset --hard, clean -f, filter-branch)
 G-BASH-05 safety every-repo bypassing hooks or permissions
+# Not allowable although they look like heuristics (PR 1 review, zoujagger 2026-11-06): each stands in front of
+# every other check, so lifting it would lift them all.
+G-BASH-01 safety initialized-repo nested shells too deep to inspect
+G-BASH-02 safety every-repo recursive delete of root, home, the current directory or *
+G-BASH-06 safety every-repo piping a downloaded script into a shell
 G-FAIL-01 safety every-repo the gate guard crashed, so it fails closed
 G-FAIL-02 safety every-repo no JSON parser (jq or python3), so the hook fails closed
 G-FAIL-03 safety every-repo the secret-read scan failed to run, so it fails closed
 G-FAIL-04 safety every-repo the state engine failed to run, so the guard fails closed
 
 # Heuristics (every repo): the only rules an exact-command allowance can lift
-G-BASH-01 heuristic every-repo nested shells too deep to inspect
-G-BASH-02 heuristic every-repo recursive delete of root, home, the current directory or *
-G-BASH-06 heuristic every-repo piping a downloaded script into a shell
 G-BASH-07 heuristic every-repo a privileged or dangerous system command (sudo, mkfs, dd if=, chmod -R 777)
-G-ENV-03 heuristic every-repo dumping the environment (env, printenv, echo $...TOKEN)
+G-ENV-03 heuristic every-repo dumping the environment (env or printenv as a word)

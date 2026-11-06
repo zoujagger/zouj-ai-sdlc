@@ -716,9 +716,12 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                               "edit artifacts with the Edit/Write tools; engine state changes go through `sdlc`.")
             prot_hit = glob_hit(rel, globs(root, "protected-paths"))
             hit = prot_hit or (not _secret_template(rel) and glob_hit(rel, globs(root, "secret-paths")))
-            if hit:
-                return _block("G-FILE-01" if prot_hit else "G-SEC-02", f"'{rel}' is protected ({hit[1] or hit[0]}); shell writes count too.",
+            if prot_hit:
+                return _block("G-FILE-01", f"'{rel}' is protected ({hit[1] or hit[0]}); shell writes count too.",
                               "propose the change in chat; a human edits protected files.")
+            if hit:
+                return _block("G-SEC-02", f"'{rel}' is secret material ({hit[1] or hit[0]}); shell writes count too.",
+                              "use .env.example for names; ask the human to change real secrets.")
             if locked and _code_paths(root, [rel]):
                 return _block("G-LOCK-02", f"`{' '.join(words)[:80]}` writes '{rel}': {reason}.",
                               lock_procedure(st))

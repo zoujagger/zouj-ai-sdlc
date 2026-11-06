@@ -28,8 +28,8 @@ Why: an approval commit (trailer `AIOps-Approval:`) is the proof CI audits; only
 Instead: ask the human to approve in the prompt or in their own terminal (`sdlc approve NNNN intent|spec|plan`).
 
 ## G-GATE-07
-Why: `approve`, `close`, `unlock`, `hook`, `legacy-approvals` and a real `uninstall` decide gates or remove the
-workflow; they are run by the human (or by Claude Code's hooks), never by the agent.
+Why: `approve`, `close`, `unlock`, `hook` and `legacy-approvals` decide gates; they are run by the human (or by
+Claude Code's hooks), never by the agent.
 Instead: ask the human: they type `Intent|Spec|Plan Approved NNNN`, or run the command in their own terminal.
 
 ## G-ENV-02
@@ -106,8 +106,8 @@ Why: an artifact must validate against its schema (front matter, sections, AC id
 Instead: fix the listed errors; `sdlc validate NNNN` shows them.
 
 ## G-FILE-01
-Why: protected paths (`.aiops/config*`, `.claude/settings.json`, the CI audit and deploy workflows, lockfiles,
-`governance/`) are human-owned in every state; shell writes count too.
+Why: protected paths (`.claude/settings.json`, the CI audit and deploy workflows, lockfiles, `governance/`, the
+repo's own `protected-paths`) are human-owned in every state; shell writes count too.
 Instead: propose the change in chat; a human edits protected files.
 
 ## G-FILE-02
@@ -160,11 +160,11 @@ Why: the definition of done is a green `make check`; the session can't finish re
 Instead: fix the failures shown, then finish.
 
 ## G-SCAF-01
-Why: the agent's `sdlc init|setup|upgrade|repair|uninstall` may act only on this session's repo, from there.
+Why: the agent's `sdlc init|setup` may act only on this session's repo, from there.
 Instead: run it from the project as a command of its own; another repo is set up by the human in their terminal.
 
 ## G-SEC-01
-Why: secret material (keys, credentials, `.env`) is never written by the agent, inside the repo or out.
+Why: secret material outside the repo (`~/.ssh`, `~/.aws`, ...) is never written by the agent.
 Instead: ask the human to change credentials themselves.
 
 ## G-SEC-02
@@ -186,6 +186,10 @@ Instead: use environment variables or the secret manager instead.
 ## G-SEC-06
 Why: real secrets never enter the session.
 Instead: use `.env.example` or the docs for variable names.
+
+## G-ENV-04
+Why: `echo $GITHUB_TOKEN` (any variable named ...KEY, TOKEN, SECRET or PASSWORD) prints a credential into the session.
+Instead: check that it's set without printing it (`[ -n "$GITHUB_TOKEN" ]`).
 
 ## G-ENV-01
 Why: printing a token (`gh auth token`, `git credential fill`, ...) puts the credential into the session.
@@ -253,9 +257,12 @@ Why: a downloaded script piped into a shell runs code no one has read.
 Instead: download the script, show it for review, then run it.
 
 ## G-BASH-07
-Why: `sudo`, `mkfs`, `dd if=` and `chmod -R 777` change the system or permissions beyond the repo.
+Why: `sudo`, `mkfs`, `dd if=` and `chmod -R 777` change the system or permissions beyond the repo. The toolchain
+guard checks only PATH directories you can write, so a command run with `sudo` can also replace root-owned
+programs that approvals run (`/usr/local/bin/git`); allow one only if you've read exactly what it writes.
 Instead: explain why it's needed and ask the human to run it themselves.
 
 ## G-ENV-03
-Why: dumping the environment (`env`, `printenv`, `echo $...TOKEN`) can print secrets into the session.
+Why: dumping the environment (`env`, `printenv`) can print secrets into the session. The pattern also catches
+`env` as a plain word (`ls env`, `python -m venv env`).
 Instead: read the one variable you need by a name that isn't secret, or check that it's set (`[ -n "$VAR" ]`).

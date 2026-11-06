@@ -9,6 +9,7 @@ from helpers import ROOT, SDLC
 from sdlc_engine import rules
 
 ID_RE = re.compile(r"^G-[A-Z]+-\d\d$")
+AREAS = {"BASH", "ENV", "SEC", "FILE", "TOOL", "GATE", "LOCK", "ART", "MERGE", "DEPLOY", "TEST", "STOP", "SCAF", "FAIL"}
 
 
 def why(*args):
@@ -25,6 +26,8 @@ class Registry(unittest.TestCase):
             self.assertEqual(len(parts), 4, ln)
             rid, cls, stage, summary = parts
             self.assertRegex(rid, ID_RE)
+            self.assertIn(rid.split("-")[1], AREAS, ln)
+            self.assertIn(stage, rules.STAGES, ln)
             self.assertIn(cls, rules.CLASSES, ln)
             self.assertTrue(stage and summary.strip(), ln)
             ids.append(rid)
@@ -36,7 +39,13 @@ class Registry(unittest.TestCase):
     def test_only_heuristics_are_allowable(self):
         self.assertEqual(rules.ALLOWABLE, {"heuristic"})
         heur = {r.id for r in rules.load().values() if r.cls == "heuristic"}
-        self.assertEqual(heur, {"G-BASH-01", "G-BASH-02", "G-BASH-06", "G-BASH-07", "G-ENV-03"})
+        # decided at PR 1 review (zoujagger, 2026-11-06): G-BASH-01/02/06 sit in front of every other check, so
+        # lifting them would lift everything; only sudo-style commands and env/printenv stay allowable
+        self.assertEqual(heur, {"G-BASH-07", "G-ENV-03"})
+        reg = rules.load()
+        for rid in ("G-BASH-01", "G-BASH-02", "G-BASH-06"):
+            self.assertEqual(reg[rid].cls, "safety", rid)
+        self.assertEqual(reg["G-ENV-04"].cls, "secret")
 
     def test_malformed_registry_is_refused(self):
         for bad in ("G-X-1 heuristic every-repo x", "G-ENV-03 nosuchclass every-repo x", "G-ENV-03 heuristic",
@@ -49,7 +58,7 @@ class Why(unittest.TestCase):
     def test_known_id(self):
         r = why("G-ENV-03")
         self.assertEqual(r.returncode, 0, r.stderr)
-        for needle in ("G-ENV-03", "class: heuristic", "protects:", "why:", "instead:", "allowed-commands"):
+        for needle in ("G-ENV-03", "class: heuristic", "protects:", "why:", "instead:", "allowable class"):
             self.assertIn(needle, r.stdout)
 
     def test_gate_rule_says_no_allowance(self):
@@ -57,6 +66,27 @@ class Why(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("class: gate", r.stdout)
         self.assertIn("no allowance", r.stdout)
+
+    def test_front_rules_say_no_allowance(self):
+        for rid in ("G-BASH-01", "G-BASH-02", "G-BASH-06", "G-ENV-04"):
+            r = why(rid)
+            self.assertIn("no allowance", r.stdout, rid)
+
+    def test_sudo_warns_about_root_owned_path(self):
+        self.assertIn("root-owned", why("G-BASH-07").stdout)
+
+    def test_stages_are_readable_and_accurate(self):
+        for rid in rules.load():
+            out = why(rid).stdout
+            self.assertNotRegex(out, r"protects: [a-z]+(-[a-z]+)+\n", rid)   # no raw slug
+        self.assertIn("initialized", why("G-SEC-02").stdout)               # check_bash runs only in .aiops repos
+        self.assertIn("every repo", why("G-SEC-04").stdout)                # guard-files.sh is always on
+
+    def test_no_text_ahead_of_the_code(self):
+        # PR 1 ships no allowance reader and no upgrade/repair/uninstall: nothing may promise them yet
+        text = (ROOT / "defaults" / "rules.md").read_text() + why("G-ENV-03").stdout
+        for future in ("uninstall", "upgrade", "repair", "allowed-commands"):
+            self.assertNotIn(future, text, future)
 
     def test_unknown_id_near_matches(self):
         r = why("G-ENV-3")
@@ -95,7 +125,7 @@ class Coverage(unittest.TestCase):
                     self.assertRegex(code, r"block\s+(G-[A-Z]+-\d\d|\"'\$v')", f"{f.name}:{n}: {line.strip()}")
         src = (ROOT / "lib" / "sdlc_engine" / "guards.py").read_text()
         for m in re.finditer(r"_block\((?!rule_id)([^,]+),", src):
-            self.assertRegex(m.group(1), r'^"G-[A-Z]+-\d\d"|^"G-FILE-01" if', m.group(0))
+            self.assertRegex(m.group(1), r'^"G-[A-Z]+-\d\d"', m.group(0))
 
 
 if __name__ == "__main__":
