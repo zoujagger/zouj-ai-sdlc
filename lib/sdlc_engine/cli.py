@@ -295,10 +295,13 @@ def cmd_unlock(root, args):
     return 0
 
 
-def wire(src, stack):
-    """(src, wired targets): the Makefile text with the stack preset's recipes in place of the stubs."""
+def wire(src, stack, recipes_text=None):
+    """(src, wired targets): the Makefile text with the stack preset's recipes in place of the stubs. recipes_text
+    defaults to the running plugin's preset (scripts/scaffold-history.py passes a release's)."""
     recipes = {}
-    for line in (TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
+    if recipes_text is None:
+        recipes_text = (TEMPLATES / "stacks" / f"{stack}.recipes").read_text()
+    for line in recipes_text.splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and not parts[0].startswith("#"):
             recipes[parts[0]] = parts[1]

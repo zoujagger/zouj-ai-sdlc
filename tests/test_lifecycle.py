@@ -123,11 +123,85 @@ class ListInstalled(RepoCase):
 
     def test_without_install_state(self):
         (self.root / STATE).unlink()
+        (self.root / "REVIEW.md").write_text("ours\n")
         r = self.run_sdlc("list-installed")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("no install state", r.stdout)
-        self.assertEqual(self.rows(r.stdout)["REVIEW.md"], "unmanaged")
+        self.assertIn("preview", r.stdout)                              # what adoption would record (S10)
+        self.assertEqual(self.rows(r.stdout)["REVIEW.md"], "modified")
+        self.assertEqual(self.rows(r.stdout)["CLAUDE.md"], "current")
         self.assertFalse((self.root / STATE).exists())
+
+
+RELEASES = {"0.2.0-alpha.1": "429614a3cd49ec4e33ed16a3a40cc54a01fc2998",     # v0.2.0-alpha.1
+            "0.2.0-alpha.2": "0f8d4f60aea85ad898969d2dc31dcb351c73404b"}     # v0.2.0-alpha.2 (PR #9 merge)
+
+
+class Adoption(RepoCase):
+    """Repos initialized before install-state are adopted from defaults/scaffold-history.json (0004 S10)."""
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+
+    def scaffold_as_released(self, version):
+        """Write the scaffold exactly as `sdlc init` of that release did (ref pinned to its tag)."""
+        import io
+        import subprocess
+        import tarfile
+        tar = subprocess.run(["git", "archive", RELEASES[version], "templates/scaffold"], cwd=ROOT,
+                             capture_output=True, check=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(tar)) as t:
+            for m in t.getmembers():
+                if m.isfile():
+                    rel = m.name.split("templates/scaffold/", 1)[1]
+                    data = t.extractfile(m).read().replace(b"__ZOUJ_SDLC_REF__", f"v{version}".encode())
+                    (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+                    (self.root / rel).write_bytes(data)
+
+    def snapshot(self):
+        return {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*")
+                if p.is_file() and ".git" not in p.relative_to(self.root).parts[:1]}
+
+    def test_alpha1_and_alpha2_repos_adopted(self):
+        from sdlc_engine import lifecycle
+        for version in RELEASES:
+            with self.subTest(version=version):
+                shutil.rmtree(self.root / ".aiops", ignore_errors=True)
+                self.scaffold_as_released(version)
+                (self.root / "REVIEW.md").write_text("our own review rules\n")
+                before = self.snapshot()
+                st = lifecycle.adopt(self.root)
+                self.assertEqual(self.snapshot(), before)                       # adopt() writes nothing
+                files = st["files"]
+                self.assertIsNone(files["REVIEW.md"]["sha256"])                 # differs from every release
+                for rel in (".github/workflows/aiops-gates.yml", "Makefile", ".aiops/README.md"):
+                    self.assertEqual(files[rel]["sha256"], sha(self.root / rel), rel)
+                    self.assertIsNotNone(files[rel]["version"], rel)
+                self.assertEqual(files[".github/workflows/aiops-gates.yml"]["version"], version)  # its ref pins it
+                self.assertEqual(st["ref"], f"v{version}")
+                self.assertTrue(st["adopted"])
+                rows = self.run_sdlc("list-installed").stdout
+                self.assertIn("preview", rows)
+                self.assertRegex(rows, r"(?m)^  modified\s+REVIEW\.md$")
+                self.assertEqual(self.snapshot(), before)                       # the preview writes nothing
+
+    def test_stack_wired_makefile_matches(self):
+        from sdlc_engine import lifecycle
+        self.run_sdlc("init", "--stack", "go")
+        (self.root / STATE).unlink()
+        st = lifecycle.adopt(self.root)
+        self.assertEqual(st["files"]["Makefile"]["sha256"], sha(self.root / "Makefile"))
+        self.assertEqual(st["stack"], "go")
+
+    def test_links_and_non_scaffold_files_are_never_claimed(self):
+        from sdlc_engine import lifecycle
+        self.run_sdlc("init")
+        (self.root / STATE).unlink()
+        (self.root / "REVIEW.md").unlink()
+        (self.root / "REVIEW.md").symlink_to(self.root / "CLAUDE.md")
+        files = lifecycle.adopt(self.root)["files"]
+        self.assertNotIn("REVIEW.md", files)
+        self.assertNotIn("src/app.py", files)
 
 
 if __name__ == "__main__":

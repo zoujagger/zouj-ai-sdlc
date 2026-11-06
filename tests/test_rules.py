@@ -203,5 +203,27 @@ class Allowance(unittest.TestCase):
         self.assertEqual(rules.allowance_problems("G-ENV-03 ls env\n"), [])
 
 
+class History(unittest.TestCase):
+    """defaults/scaffold-history.json holds every release's scaffold, and the current one (0004 S10)."""
+    def test_current_scaffold_in_history(self):
+        import json
+        from sdlc_engine import lifecycle
+        hist = json.loads((ROOT / "defaults" / "scaffold-history.json").read_text())
+        for v in ("0.1.0", "0.2.0-alpha.1", "0.2.0-alpha.2"):
+            self.assertIn(v, hist)
+        key = lifecycle.history_key()
+        self.assertIn(key, hist, "regenerate: python3 scripts/scaffold-history.py")
+        current = {rel: lifecycle.sha256_bytes(lifecycle.normalize((ROOT / "templates" / "scaffold" / rel).read_bytes()))
+                   for rel in lifecycle.scaffold_paths()}
+        recorded = {rel: h for rel, h in hist[key].items() if "+" not in rel}
+        self.assertEqual(recorded, current, "regenerate: python3 scripts/scaffold-history.py")
+
+    def test_normalize_undoes_the_ref_pin(self):
+        from sdlc_engine import lifecycle
+        for pinned in (b"      ZOUJ_SDLC_REF: v0.1.0        # pin", b"      ZOUJ_SDLC_REF: " + b"a" * 40 + b"   # x",
+                       b'        "ref": "v0.2.0-alpha.2"'):
+            self.assertIn(b"__ZOUJ_SDLC_REF__", lifecycle.normalize(pinned), pinned)
+
+
 if __name__ == "__main__":
     unittest.main()
