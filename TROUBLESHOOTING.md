@@ -50,8 +50,12 @@ see the reason, the playbook stage the rule protects and the safe alternative. T
 | `G-FILE-*`, `G-TOOL-*` | Protected paths, your shell startup files, PATH, git config, the installed plugin | A human changes those |
 | `G-SEC-*`, `G-ENV-01`, `G-ENV-04` | Secret files and tokens never enter the session | Use `.env.example` or the docs for names |
 
-**A false positive** (a safe command that's blocked): the static parser is strict on purpose. Rephrase the command,
-for example without a variable as the command word, or run it yourself. Please report it with `sdlc feedback`.
+**A false positive** (a safe command that's blocked): the static parser is strict on purpose. Run `sdlc why <id>`.
+If the rule is one of the two `heuristic` rules (`G-ENV-03`, `G-BASH-07`), a human can allow that exact command: add
+the line `<id> <exact command>` to `.aiops/config/allowed-commands` (human-owned, reviewed through CODEOWNERS). Only
+that rule is lifted, only for that command, and `sdlc doctor` and CI reject entries for any other rule. Otherwise
+rephrase the command, for example without a variable as the command word, or run it yourself. Please report it with
+`sdlc feedback`.
 A known one: a line that mentions `sdlc init` or `sdlc setup` next to a directory or git-location change (`cd`,
 `pushd`, `-C`, `--chdir`, `-execdir`, `GIT_*=`, `HOME=`, `CLAUDE_PROJECT_DIR=`; a commit message, `grep -C3`), or run
 from another repo, is refused on purpose; run it as two commands.
@@ -96,6 +100,19 @@ pager and hooks. Setup's checks, and any git command you run in that checkout, c
 4. Before merging, read the adoption PR's full "Files changed" on GitHub, every file, ideally with a second person.
    CODEOWNERS doesn't cover this PR: GitHub reads it from the base branch, and the adoption PR is the one that adds
    it.
+
+## Upgrading, repairing, removing
+- **What did the plugin install here?** `sdlc list-installed`. A repo set up before 0.2.0-alpha.3 shows a preview of
+  what adoption would record.
+- **`upgrade` says a file is kept (modified):** you changed it, so upgrade only rewrote its CI ref and printed the
+  diff against the new template. Merge what you want by hand.
+- **`upgrade` run by Claude left files for you:** human-owned files (workflows, `.claude/settings.json`,
+  `.aiops/config*`, CODEOWNERS) and code under the read-only lock are yours. Run the printed
+  `<python> -I <plugin>/bin/sdlc upgrade` in your own terminal, then commit.
+- **`! … pinning the tag`:** upgrade couldn't find the plugin's commit sha (no `installed_plugins.json` entry, or an
+  unpushed checkout). Tags can move: pin a full sha when you can.
+- **`uninstall` is refused inside Claude Code:** it's human-only. Preview with `sdlc uninstall --dry-run`, then run it
+  in your own terminal.
 
 ## Starting over in a repo
 Delete nothing by hand under `.aiops/`: the guards protect it, and CI audits it. To leave the workflow, remove the
