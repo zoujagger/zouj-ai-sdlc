@@ -45,6 +45,9 @@ re_dump_env_cmd="(^|[;&|(\`]) ?([^ ;&|]*/)?(printenv|env)${E}"   # in command po
 re_environ="/proc/[^ ;&|]*/(env|e[^ ;&|/]*[*?[]|[*?[])"           # /proc/<pid>/environ, also as a glob
 re_proc_cd="(^|[;&|(]) ?(cd|pushd) +/proc"
 re_environ_word="(^|[ /])environ${E}"
+re_environ_path="/environ${E}"                                     # any path ending in /environ: /dev/fd/../environ
+re_proc_ctx="(/proc|(^|[ ])proc/|/p[^ /]*[*?[][^ /]*/|/dev/(fd|std))"   # /proc, proc/ after cd /, /p*/, /dev/fd
+re_env_glob="(^|[ /])e[^ ;&|/]*[*?[]"                              # env*, e?viron, envir?n
 re_echo_secret="echo .*\\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD)"
 re_system="${S}(sudo|mkfs|dd if=|chmod -R 777)${E}"
 re_gate="gh (pr merge|pr review [^;&|]*--approve|release delete|repo delete)"
@@ -64,7 +67,7 @@ secret_scan "$input" || exit 2
 [[ "$u" =~ $re_cred_print ]] && block G-ENV-01 "printing credentials into the session" "use the tool's own auth (gh, git, aws) without printing the token; never read real secrets."
 # the secret rule first: a command matching both reports the id that can never be allowed
 [[ "$c" =~ $re_echo_secret ]] && block G-ENV-04 "echoing a secret-named variable prints a credential" "check that it's set without printing it ([ -n \"\$VAR\" ])."
-{ [[ "$u" =~ $re_environ ]] || { [[ "$u" =~ $re_proc_cd ]] && [[ "$u" =~ $re_environ_word ]]; }; } && block G-ENV-05 "reading a process environment prints every secret in it" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
+{ [[ "$u" =~ $re_environ ]] || [[ "$u" =~ $re_environ_path ]] || { [[ "$u" =~ $re_proc_ctx ]] && { [[ "$u" =~ $re_environ_word ]] || [[ "$u" =~ $re_env_glob ]]; }; }; } && block G-ENV-05 "reading a process environment prints every secret in it" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
 { [[ "$c" =~ $re_dump_env ]] || [[ "$u" =~ $re_dump_env_cmd ]]; } && heuristic G-ENV-03 "dumping the environment can print secrets" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
 [[ "$c" =~ $re_system ]]     && heuristic G-BASH-07 "privileged or dangerous system command"
 (( enabled )) && [[ "$c" =~ $re_gate ]] && block G-MERGE-04 "merging/approving/deleting is a human gate" "a CODEOWNER approves and merges the PR (state 5 is the human's decision); the agent never approves its own work."
