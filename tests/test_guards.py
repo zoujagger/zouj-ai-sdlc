@@ -659,5 +659,38 @@ class Lifecycle(RepoCase):
             self.assertEqual(self.bash(cmd).returncode, 0, cmd)
 
 
+class Uninitialized(RepoCase):
+    """0005 S4 (gap 2): in a repo without .aiops/, shell writes to the toolchain, the plugin and secrets outside the
+    repo are blocked through hooks/engine.sh pre-bash; the SDLC gates stay dormant."""
+    def setUp(self):
+        super().setUp()
+        import shutil
+        shutil.rmtree(self.root / ".aiops")
+
+    def engine(self, cmd):
+        import subprocess
+        from helpers import ROOT
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        return subprocess.run([str(ROOT / "hooks" / "engine.sh"), "pre-bash"], capture_output=True, text=True,
+                              input=json.dumps(self.hook_input("Bash", command=cmd)), env=env, cwd=self.root)
+
+    def test_safety_pass_blocks(self):
+        from helpers import ROOT
+        for cmd, rid in [("echo x >> ~/.gitconfig", "G-TOOL-04"), ("echo x >> ~/.bashrc", "G-TOOL-04"),
+                         ("echo x >> ~/.ssh/authorized_keys", "G-SEC-01"),
+                         (f"echo x > {ROOT}/lib/sdlc_engine/x.py", "G-TOOL-02"),
+                         ("git config --global gpg.ssh.program /tmp/x", "G-TOOL-05"),
+                         ("bash -c 'echo x >> ~/.bashrc'", "G-TOOL-04")]:
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_gates_stay_dormant(self):
+        for cmd in ("rm -rf src", "echo x > src/a.py", "git push origin main", "git config user.name x",
+                    "git merge feat/x", "echo x > .env.local"):
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stdout}{r.stderr}")
+
+
 if __name__ == "__main__":
     unittest.main()

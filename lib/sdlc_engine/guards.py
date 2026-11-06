@@ -408,8 +408,10 @@ def check_bash(data):
     if elsewhere:
         return elsewhere
     root = project_root(cwd)
-    if not initialized(root) or not cmd.strip():
+    if not cmd.strip():
         return None
+    if not initialized(root):            # SDLC gates dormant; the safety checks run in every repo (0005, gap 2)
+        return _check_command(cmd, Path(cwd), root, False, "", None, False, depth=0, gates=False)
     if TRAILER_RE.search(plain) or (FORMAT_TRAILER_RE.search(plain) and "Approval" in plain
                                     and re.search(r"\bgit\b", plain)):   # also printf- or variable-built
         return _block("G-GATE-06", "approval commits are created only by a human approval.",
@@ -671,7 +673,10 @@ def _in_plugin(target, cwd, root):
         return False
 
 
-def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
+def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=True):
+    """The first block for cmd, else None. gates=False (a repo without .aiops/) runs only the safety checks: writes
+    into the installed plugin, writes outside the repo to secrets or the approval toolchain, `git config --global`
+    of signing keys, and nesting."""
     assigned = {}
     for words, redirs in segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
         words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]
@@ -689,12 +694,12 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
         if inner is not None:
             if depth >= 3:
                 return _block("G-BASH-01", "nested shells are too deep to inspect.", "run the command directly.")
-            msg = _check_command(inner, cwd, root, locked, reason, st, on_main, depth + 1)
+            msg = _check_command(inner, cwd, root, locked, reason, st, on_main, depth + 1, gates)
             if msg:
                 return msg
             continue
         targets = [e for t in redirs + write_targets(words, cwd) for e in _expand(t, cwd)]
-        if words and Path(words[0]).name == "find" and _find_hits_aiops(words[1:], cwd, root):
+        if gates and words and Path(words[0]).name == "find" and _find_hits_aiops(words[1:], cwd, root):
             return _block("G-ART-04", "this `find` would delete or rewrite part of the .aiops tree.",
                           "narrow it (e.g. `-not -path './.aiops/*'`), or ask the human to remove artifacts.")
         if words:
@@ -706,6 +711,8 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                 return _block("G-TOOL-02", f"`{' '.join(words)[:80]}` writes into the installed plugin ({t}).",
                               "the plugin's code is what the human runs to approve; change it through its own repo.")
             rel = _rel(root, t, cwd)
+            if not gates and rel is not None:
+                continue                 # inside an uninitialized repo: no gates to protect
             if rel is not None and (rel == ".git" or rel.startswith(".git/")):
                 return _block("G-TOOL-03", f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
                               "use git commands; ask the human for config or hook changes.")
@@ -736,6 +743,15 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
         if not words:
             continue
         name, args = Path(words[0]).name, words[1:]
+        if not gates:
+            if name == "git":
+                sub, rest, gcwd = _git_sub(args, cwd)
+                if sub == "config" and any(a in ("--global", "--system") for a in rest) \
+                        and _git_config_writes_signing(rest, gcwd, root):
+                    return _block("G-TOOL-05", "git signing, hook, monitor, filter and include settings are "
+                                  "human-owned (they decide who signs approvals, and what runs inside an approval).",
+                                  "ask the human to change git config themselves (globally).")
+            continue
         why = _patch_check(args, cwd, root) if name == "patch" else None
         if why:
             return _block("G-ART-06", "this `patch` touches .aiops/, which bypasses the gate guard." if why == "aiops"

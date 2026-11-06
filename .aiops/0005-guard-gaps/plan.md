@@ -82,7 +82,7 @@ Code to reuse:
     Makefile; `CLAUDECODE=1 SDLC_HOOK_PROFILE=spike sdlc init --force` (and `AIOPS_INTENT=0009`) keeps the Makefile
     and lists it. It fails today: the Makefile is overwritten.
   - Covers: AC-9
-- [ ] **S4**: A safety pass in repos without `.aiops/` (gap 2).
+- [x] **S4**: A safety pass in repos without `.aiops/` (gap 2).
   - `hooks/engine.sh` skips the early exit for `pre-bash` (and still prints nothing for `session-start` and
     `prompt`).
   - `check_bash`: in an uninitialized repo, run `_check_command(…, gates=False)`.
