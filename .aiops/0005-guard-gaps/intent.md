@@ -1,21 +1,21 @@
 ---
 id: 0005
-title: Close two shell-write guard gaps (parent directories, uninitialized repos)
+title: Close the shell-write guard gaps found in the 0004 reviews
 status: Draft
 owner: zoujagger
 initiator: zoujagger
-source: security review of intent 0004 PR 1 (2026-11-06); recorded in .aiops/0004-safe-lifecycle/plan.md Deviation log
+source: security reviews of intent 0004 (PR 1 #11, PR 2 #12, 2026-11-06); .aiops/0004-safe-lifecycle/plan.md Deviation log; interview with zoujagger 2026-11-06
 created: 2026-11-06
 ---
 
-# Intent: Close two shell-write guard gaps (parent directories, uninitialized repos)
+# Intent: Close the shell-write guard gaps found in the 0004 reviews
 
-<!-- State 1 BRAINSTORMING. Written from the 0004 security reviews. Both gaps predate 0004 (they are on main as of
-     0.2.0-alpha.2) and were deferred here by zoujagger on 2026-11-06. Unknowns go in Open questions. -->
+<!-- State 1 BRAINSTORMING. Written from the 0004 security reviews; zoujagger deferred these gaps here on 2026-11-06
+     and answered the open questions the same day. Gaps 1-4 predate 0004 (on main as of 0.2.0-alpha.2). -->
 
 ## Problem
-The fresh-context security review of 0004 PR 1 (#11) drove the real hooks and found two gaps in the engine's
-shell-write check (`guards.check_bash` / `_check_command`). Both are already on main:
+The fresh-context security reviews of 0004 drove the real hooks and found gaps in the engine's shell-write check
+(`guards.check_bash` / `_check_command`) and the env-dump rule. The first two came from PR 1 (#11):
 
 1. **A parent directory of a protected path is not protected.** In states 4-5, when the read-only lock is off, these
    all pass both `guard-bash.sh` and `sdlc hook pre-bash`:
@@ -62,6 +62,13 @@ that's missing.
 - In **every** repo, initialized or not, shell writes to secrets outside the repo, the installed plugin, the approval
   toolchain (PATH directories, shell startup files, global git config) and `git config --global|--system` of signing
   keys are blocked, as Edit/Write already are.
+- `/usr/bin/env`, `e''nv` and other spellings of an environment dump are blocked like `env` (gap 3).
+- Archive extraction into the working directory, `git stash pop` and `git pull` can't write `.aiops/config/*` (gap 4).
+- Run by the agent, `sdlc init --force` judges the read-only lock without `SDLC_HOOK_PROFILE` / `AIOPS_INTENT`,
+  as upgrade and repair do (gap 5).
+- A G-ENV-03 allowance is accepted only for the safe forms: `printenv NAME…`, or a command in which `env`/`printenv`
+  isn't run at all (`ls env`, `python -m venv env`). Everything else is refused, with no list of known dumps to
+  outgrow (gap 6).
 - Each block carries a registered rule id (`defaults/rules`) with an accurate stage. `G-TOOL-04` and the others no
   longer need an `initialized-repo` caveat, or the split is explicit.
 - `docs/architecture.md`, the README and the CHANGELOG known issues no longer list these gaps.
@@ -81,6 +88,7 @@ that's missing.
 - **Guards are test-first**, and every block states its reason, its procedure and its rule id (CLAUDE.md rule 2).
 - **Stdlib only.** Hook regexes stay in variables, and the hook must stay fast on every tool call.
 - **No new allowable rules:** the fixes are `safety`, `secret` or `toolchain` class (ADR 0002).
+- **Ships as 0.2.0-alpha.4,** a guard-hardening release of its own (zoujagger, 2026-11-06).
 
 ## Out of scope
 - Interpreter writes (`python -c`, `node -e`) and other forms the static parser can't see. They stay a documented
@@ -89,8 +97,10 @@ that's missing.
 - Rule ids for `post-edit-format.sh` feedback (0004 review, LOW).
 
 ## Open questions
-- [ ] Should a parent-directory delete of a **non-protected** tree that merely contains a protected file (for example
-  `rm -rf docs/` when `docs/CODEOWNERS` is protected) block, or only warn? (zoujagger)
-- [ ] For uninitialized repos: block toolchain and secret shell writes outright, or only when the plugin is enabled
-  user-wide? Today, any repo where the plugin's hooks run. (zoujagger)
-- [ ] Ship with 0.2.0-alpha.3 alongside 0004, or as 0.2.0-alpha.4? (zoujagger)
+- [x] A delete of an ordinary directory that contains a protected file (`rm -rf docs/` with `docs/CODEOWNERS`
+  protected)? → **Block**, like naming the path directly. The agent names narrower paths (zoujagger, 2026-11-06)
+- [x] In repos without `.aiops/`? → **Block** toolchain, plugin and secret shell writes in every repo where the hooks
+  run, as Edit/Write already are. SDLC gates stay dormant (zoujagger, 2026-11-06)
+- [x] Release? → **0.2.0-alpha.4**, on its own (zoujagger, 2026-11-06)
+- [x] G-ENV-03 dump check? → **Only the safe forms are allowable** (`printenv NAME…`, env/printenv not run at all);
+  no list of known dumps (zoujagger, 2026-11-06)
