@@ -2,6 +2,7 @@
 (the reason and the safe alternative per rule). `sdlc why <id>` reads both."""
 import difflib
 import re
+from pathlib import Path
 from typing import NamedTuple
 
 from .machine import PLUGIN_ROOT
@@ -105,3 +106,55 @@ def why(rid):
         f"  instead: {r.instead}",
         f"  allowance: {allow}",
     ])
+
+
+ALLOWANCES = ".aiops/config/allowed-commands"     # human-owned: protected by .aiops/config* and CODEOWNERS
+ENTRY_RE = re.compile(r"^(\S+)(?:[ \t]+(.*?))?[ \t]*$")
+CONTROL_RE = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")   # any control character but tab: no multi-line, no \r tricks
+
+
+def _entries(text):
+    """[(line number, id, command or "")] for each non-comment line of an allowed-commands file."""
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        m = ENTRY_RE.match(line)
+        out.append((n, m.group(1), m.group(2) or "") if m else (n, line.strip(), ""))
+    return out
+
+
+def allowed(root, rule_id, command):
+    """True only if rule_id is in an allowable class and `<rule_id> <command>` is listed, byte-equal, in the repo's
+    allowed-commands. The command is compared after trimming surrounding spaces, tabs and newlines, and must hold no
+    other control character. An allowance lifts this one rule for this one command; callers keep checking the rest."""
+    r = load().get(rule_id)
+    if r is None or r.cls not in ALLOWABLE:
+        return False
+    cmd = (command or "").strip(" \t\n")
+    if not cmd or CONTROL_RE.search(cmd):
+        return False
+    f = Path(root) / ALLOWANCES
+    try:
+        text = f.read_text() if f.is_file() and not f.is_symlink() else ""
+    except (OSError, UnicodeDecodeError):
+        return False
+    return any(rid == rule_id and entry == cmd for _, rid, entry in _entries(text))
+
+
+def allowance_problems(text):
+    """Why each allowed-commands entry is refused: an unknown id, a class that can't be allowed, or no command.
+    The hooks ignore such entries; doctor and `validate --ci` report them."""
+    reg, probs = load(), []
+    for n, rid, cmd in _entries(text):
+        r = reg.get(rid)
+        if r is None:
+            probs.append(f"line {n}: unknown rule id {rid} (see `sdlc why`)")
+        elif r.cls not in ALLOWABLE:
+            probs.append(f"line {n}: {rid} is a {r.cls} rule; only heuristic rules "
+                         f"({', '.join(sorted(k for k, v in reg.items() if v.cls in ALLOWABLE))}) can be allowed")
+        elif not cmd:
+            probs.append(f"line {n}: {rid} has no command (format: `<rule id> <exact command>`)")
+        elif CONTROL_RE.search(cmd):
+            probs.append(f"line {n}: the command contains a control character")
+    return probs

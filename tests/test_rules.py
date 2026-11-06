@@ -128,5 +128,65 @@ class Coverage(unittest.TestCase):
             self.assertRegex(m.group(1), r'^"G-[A-Z]+-\d\d"', m.group(0))
 
 
+class Allowance(unittest.TestCase):
+    """rules.allowed / allowance_problems: an exact single-line command, one heuristic rule per entry (0004 S5)."""
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / ".aiops" / "config").mkdir(parents=True)
+        self.f = self.root / ".aiops" / "config" / "allowed-commands"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def entries(self, text):
+        self.f.write_text(text)
+
+    def test_exact_match_only(self):
+        self.entries("# human-owned\nG-ENV-03 ls env\nG-BASH-07 sudo systemctl status docker   \n")
+        self.assertTrue(rules.allowed(self.root, "G-ENV-03", "ls env"))
+        self.assertTrue(rules.allowed(self.root, "G-ENV-03", "  ls env\n"))        # surrounding whitespace trimmed
+        self.assertTrue(rules.allowed(self.root, "G-BASH-07", "sudo systemctl status docker"))
+        for cmd in ("ls  env", "ls env; git push --force", "ls env x", "LS ENV", "ls env && true", "ls"):
+            self.assertFalse(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
+        self.assertFalse(rules.allowed(self.root, "G-BASH-07", "ls env"))          # the entry names one rule
+        self.assertFalse(rules.allowed(self.root, "g-env-03", "ls env"))           # ids are exact too
+
+    def test_multiline_command_never_allowed(self):
+        self.entries("G-ENV-03 ls env\n")
+        self.assertFalse(rules.allowed(self.root, "G-ENV-03", "ls env\nrm -rf .aiops"))
+        self.assertFalse(rules.allowed(self.root, "G-ENV-03", "ls env\r"))
+
+    def test_non_heuristic_ids_never_allowed(self):
+        reg = rules.load()
+        lines = "".join(f"{rid} git push origin main\n" for rid in reg)
+        self.entries(lines)
+        for rid, r in reg.items():
+            if r.cls != "heuristic":
+                self.assertFalse(rules.allowed(self.root, rid, "git push origin main"), rid)
+
+    def test_no_file_or_unknown_id(self):
+        self.assertFalse(rules.allowed(self.root, "G-ENV-03", "ls env"))
+        self.entries("G-ENV-03 ls env\n")
+        self.assertFalse(rules.allowed(self.root, "G-NOPE-01", "ls env"))
+
+    def test_problems_name_line_and_class(self):
+        probs = rules.allowance_problems(
+            "# comment\n\nG-ENV-03 ls env\nG-MERGE-03 git push origin main\nG-SEC-06 cat .env\nG-NOPE-01 x\n"
+            "G-ENV-03\nnot-an-id ls\nG-BASH-01 eval eval eval eval true\n")
+        text = "\n".join(probs)
+        self.assertEqual(len(probs), 6, text)
+        self.assertIn("line 4", text)
+        self.assertIn("G-MERGE-03 is a gate rule", text)
+        self.assertIn("G-SEC-06 is a secret rule", text)
+        self.assertIn("G-BASH-01 is a safety rule", text)
+        self.assertIn("unknown rule id G-NOPE-01", text)
+        self.assertIn("line 7", text)                                               # an id with no command
+        self.assertNotIn("line 3", text)                                            # the valid entry
+        self.assertEqual(rules.allowance_problems("G-ENV-03 ls env\n"), [])
+
+
 if __name__ == "__main__":
     unittest.main()
