@@ -1,11 +1,15 @@
 ---
 id: 0005
 title: Close the shell-write guard gaps found in the 0004 reviews
-status: Draft
+status: Approved
 owner: zoujagger
 initiator: zoujagger
 source: security reviews of intent 0004 (PR 1 #11, PR 2 #12, 2026-11-06); .aiops/0004-safe-lifecycle/plan.md Deviation log; interview with zoujagger 2026-11-06
 created: 2026-11-06
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-11-06T13:30:22Z
+approved-via: cli
+approved-sha256: 5fc2ef1d0a5d6901c8a385ce583a4a801f82b166663065431657569eb828f31c
 ---
 
 # Intent: Close the shell-write guard gaps found in the 0004 reviews
