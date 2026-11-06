@@ -204,5 +204,65 @@ class Adoption(RepoCase):
         self.assertNotIn("src/app.py", files)
 
 
+class Repair(RepoCase):
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.state0 = json.loads((self.root / STATE).read_text())
+
+    def state(self):
+        return json.loads((self.root / STATE).read_text())
+
+    def test_restores_missing_keeps_modified(self):
+        (self.root / "ops" / "bands.yaml").unlink()
+        (self.root / "REVIEW.md").write_text("ours\n")
+        r = self.run_sdlc("repair", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sha(self.root / "ops" / "bands.yaml"), self.state0["files"]["ops/bands.yaml"]["sha256"])
+        self.assertEqual((self.root / "REVIEW.md").read_text(), "ours\n")
+        self.assertIn("ops/bands.yaml", r.stdout)
+        self.assertEqual(self.state()["files"]["ops/bands.yaml"]["sha256"], sha(self.root / "ops" / "bands.yaml"))
+        r2 = self.run_sdlc("repair", "--yes")                              # nothing left to do
+        self.assertEqual(r2.returncode, 0)
+        self.assertIn("Nothing to repair", r2.stdout)
+
+    def test_dry_run_and_no_tty_write_nothing(self):
+        (self.root / "ops" / "bands.yaml").unlink()
+        before = (self.root / STATE).read_text()
+        r = self.run_sdlc("repair", "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("ops/bands.yaml", r.stdout)
+        self.assertFalse((self.root / "ops" / "bands.yaml").exists())
+        r = self.run_sdlc("repair")                                         # stdin isn't a terminal
+        self.assertEqual(r.returncode, 2)
+        self.assertFalse((self.root / "ops" / "bands.yaml").exists())
+        self.assertEqual((self.root / STATE).read_text(), before)
+        self.assertEqual(self.run_sdlc("repair", "--bogus").returncode, 1)
+
+    def test_agent_skips_human_owned(self):
+        (self.root / ".github" / "workflows" / "ci.yml").unlink()
+        (self.root / "ops" / "bands.yaml").unlink()                         # code: read-only with no active intent
+        (self.root / "docs" / "runbooks" / "README.md").unlink()            # docs: exempt from the lock
+        r = self.run_sdlc("repair", "--yes", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse((self.root / ".github" / "workflows" / "ci.yml").exists())
+        self.assertFalse((self.root / "ops" / "bands.yaml").exists())       # the agent can't write it, so neither can repair
+        self.assertTrue((self.root / "docs" / "runbooks" / "README.md").exists())
+        self.assertIn(".github/workflows/ci.yml", r.stdout)
+        self.assertIn("ops/bands.yaml", r.stdout)
+        self.assertRegex(r.stdout, r"-I \S+/bin/sdlc repair")                # the human's terminal command
+
+    def test_adopts_a_repo_without_state(self):
+        (self.root / STATE).unlink()
+        (self.root / "REVIEW.md").write_text("ours\n")
+        r = self.run_sdlc("repair", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        st = self.state()
+        self.assertTrue(st["adopted"])
+        self.assertIsNone(st["files"]["REVIEW.md"]["sha256"])
+        self.assertEqual((self.root / "REVIEW.md").read_text(), "ours\n")
+
+
 if __name__ == "__main__":
     unittest.main()

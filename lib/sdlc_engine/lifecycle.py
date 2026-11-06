@@ -6,11 +6,14 @@ repair, uninstall); the guards block the agent's own writes, and CODEOWNERS cove
 ignores it.
 """
 import datetime
+import difflib
 import hashlib
 import json
 import re
+import shlex
+import sys
 
-from . import cli
+from . import approvals, cli
 from .machine import PLUGIN_ROOT, config
 
 STATE = ".aiops/install-state.json"
@@ -141,8 +144,8 @@ def cmd_list_installed(root, args):
     return 0
 
 
-def out(msg):
-    cli.out(msg)
+def out(msg, stream=None):
+    cli.out(msg, stream)
 
 
 # ---------------------------------------------------------------- scaffold history and adoption
@@ -223,3 +226,125 @@ def adopt(root):
             "plugin_version": max(versions, key=version_key) if versions else None,
             "profile": config(root).get("profile", "team"),
             "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+# ---------------------------------------------------------------- shared by repair, upgrade and uninstall
+
+def parse(args, name):
+    """({"--dry-run": bool, "--yes": bool}, None) or (None, why): the lifecycle commands take only these flags."""
+    opts = {"--dry-run": False, "--yes": False}
+    for a in args:
+        if a not in opts:
+            return None, f"unknown option {a!r}; `sdlc {name}` takes --dry-run and --yes"
+        opts[a] = True
+    return opts, None
+
+
+def human_command(name):
+    """The exact command the human runs in their own terminal (absolute python and plugin path, isolated)."""
+    return f"{approvals.PYTHON} -I {shlex.quote(str(PLUGIN_ROOT / 'bin' / 'sdlc'))} {name}"
+
+
+def agent_may_write(root, rel):
+    """Run by the agent, a lifecycle command writes only what the agent could write itself: never a human-owned
+    file (config, signers, settings, CODEOWNERS, workflows), a protected path, or code under the read-only lock."""
+    return not (cli.HUMAN_OWNED_RE.match(rel) or cli._agent_blocked(root, rel))
+
+
+def confirm(opts, name):
+    """None to go ahead, else the exit code: 0 for --dry-run, 2 when there's no terminal or no yes."""
+    if opts["--dry-run"]:
+        out("Dry run: nothing was written.")
+        return 0
+    if opts["--yes"]:
+        return None
+    from . import setup
+    if not setup._is_tty():
+        out(f"no terminal to confirm: nothing was written. Re-run with --yes to apply (`sdlc {name} --yes`).")
+        return 2
+    if not setup._confirm():
+        out("not confirmed: nothing was written.")
+        return 2
+    return None
+
+
+def refusal(root):
+    """Why a lifecycle command must not touch root (the same rules as init and setup), else None."""
+    problem = cli.scaffold_root_problem(root)
+    if problem:
+        return f"refusing: {problem}. Nothing was written."
+    links = [rel for rel in set(scaffold_paths()) | {STATE} if cli.symlink_on_path(root, rel)]
+    if links:
+        return ("refusing to write through symlinks; remove these links and run again. Nothing was written:\n  "
+                + "\n  ".join(sorted(links)))
+    return None
+
+
+def show_diff(rel, old, new, limit=40):
+    lines = list(difflib.unified_diff(old.decode(errors="replace").splitlines(), new.decode(errors="replace").splitlines(),
+                                      f"a/{rel}", f"b/{rel}", lineterm=""))
+    for ln in lines[:limit]:
+        out("      " + ln)
+    if len(lines) > limit:
+        out(f"      … {len(lines) - limit} more lines")
+
+
+def write_scaffold(root, st, rel, data, version=None):
+    cli.write_file(root, rel, data, (cli.TEMPLATES / "scaffold" / rel).stat().st_mode & 0o777
+                   if (cli.TEMPLATES / "scaffold" / rel).is_file() else 0o644)
+    st["files"][rel] = {"sha256": sha256_bytes(data), "version": version or cli.plugin_version(),
+                        "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
+
+
+def stamp(st):
+    st["updated_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------- repair
+
+def cmd_repair(root, args):
+    """Re-create missing managed files. Never touches a modified, stale or current one (upgrade does stale)."""
+    opts, why = parse(args, "repair")
+    if why:
+        out(f"{why}. Nothing was written.", sys.stderr)
+        return 1
+    why = refusal(root)
+    if why:
+        out(why, sys.stderr)
+        return 1
+    st, adopted = load(root), False
+    if st is None:
+        st, adopted = adopt(root), True
+    agent = approvals.running_under_agent()
+    ref = st.get("ref") or f"v{cli.plugin_version()}"
+    restore, human = [], []
+    for rel, status in classify(root, st).items():
+        if status != "missing":
+            continue
+        (human if agent and not agent_may_write(root, rel) else restore).append(rel)
+    if adopted:
+        out(f"No install state: adopting this repo ({len([1 for e in st['files'].values() if e['sha256']])} files "
+            f"match a released scaffold; the others are `modified` and are never touched). Writes {STATE}.")
+    if not restore and not human and not adopted:
+        out("Nothing to repair: every managed file is on disk.")
+        return 0
+    for rel in restore:
+        out(f"  + restore {rel}")
+    if human:
+        out("Human-owned or locked, not restored when the agent runs repair. The human runs, in their own terminal:\n"
+            f"  {human_command('repair')}\n  for: " + ", ".join(human))
+    rc = confirm(opts, "repair")
+    if rc is not None:
+        return rc
+    written = []
+    try:
+        for rel in restore:
+            write_scaffold(root, st, rel, expected(rel, ref, st.get("stack")))
+            written.append(rel)
+        stamp(st)
+        save(root, st)
+    except OSError as exc:
+        out(cli.write_failure(exc, written), sys.stderr)
+        return 1
+    out(f"Repaired: {len(written)} file(s) restored; {STATE} updated. Commit the result.")
+    return 0

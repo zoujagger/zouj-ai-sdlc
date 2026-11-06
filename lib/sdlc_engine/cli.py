@@ -40,6 +40,7 @@ Lifecycle (any user or agent)
   setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
   feedback                   issue links and a doctor summary to paste (sends nothing)
   list-installed             what the plugin installed here: current, stale, modified, missing, unmanaged
+  repair [--dry-run] [--yes] restore missing managed files (never a modified one)
   why <id>                   explain a block (e.g. `sdlc why G-ENV-03`): reason, stage, safe alternative
   doctor                     check tools and wiring
 
@@ -597,6 +598,11 @@ Nothing was sent: zouj-ai-sdlc never uploads diagnostics.""")
     return 0
 
 
+def cmd_repair(root, args):
+    from . import lifecycle
+    return lifecycle.cmd_repair(root, args)
+
+
 def cmd_list_installed(root, args):
     from . import lifecycle
     return lifecycle.cmd_list_installed(root, args)
@@ -777,7 +783,7 @@ COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
             "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
             "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why,
-            "list-installed": cmd_list_installed}
+            "list-installed": cmd_list_installed, "repair": cmd_repair}
 
 
 def main(argv=None):
