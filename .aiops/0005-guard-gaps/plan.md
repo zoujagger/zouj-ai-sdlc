@@ -118,7 +118,7 @@ Code to reuse:
     `.aiops/config/allowed-commands`, `.claude/settings.json` or `.github/workflows/aiops-gates.yml` are blocked; a
     `src/`-only archive is allowed; a missing archive is refused. It fails today: extraction into `.` passes.
   - Covers: AC-5
-- [ ] **S7**: Git can't bring in protected config (gap 4, part 2).
+- [x] **S7**: Git can't bring in protected config (gap 4, part 2).
   - `git stash pop|apply`: `git stash show --name-only --include-untracked`.
   - `git merge|rebase <ref>`: `git diff --name-only HEAD...<ref>`. `git cherry-pick <c>`: `git show --name-only`.
   - The main branch and `origin/<main>` are exempt, and so are paths under `.aiops/NNNN-*`.

@@ -791,6 +791,52 @@ class Incoming(RepoCase):
             r = self.bash(cmd)
             self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
 
+    def commit_on(self, branch, rel, text, base=None):
+        git(self.root, "switch", "-qc", branch, *([base] if base else []))
+        (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / rel).write_text(text)
+        git(self.root, "add", "-f", rel)
+        git(self.root, "commit", "-qm", f"change {rel}")
+        sha = git(self.root, "rev-parse", "HEAD")
+        git(self.root, "switch", "-q", "feat/0001-csv-export")
+        return sha
+
+    def test_stash(self):
+        cfg = self.root / ".aiops" / "config" / "protected-paths"
+        cfg.write_text("legacy/* frozen\n")
+        git(self.root, "add", "-f", ".aiops/config/protected-paths")
+        git(self.root, "commit", "-qm", "track config")
+        cfg.write_text("")                                             # stash@{1}: a change to protected config
+        git(self.root, "stash", "-q")
+        (self.root / "src" / "app.py").write_text("x = 3\n")          # stash@{0}: code only
+        git(self.root, "stash", "-q")
+        self.assertEqual(self.bash("git stash pop").returncode, 0)
+        self.assertBlocked("git stash apply stash@{1}")
+        self.assertBlocked("git stash pop 'stash@{1}'")
+
+    def test_merge_rebase_cherry_pick(self):
+        bad = self.commit_on("x", ".aiops/config.json", '{"approval_key_policy": "any"}\n')
+        self.commit_on("approvals", ".aiops/0001-csv-export/plan.md",
+                       (self.d / "plan.md").read_text() + "\n")
+        main_change = self.commit_on("tmp-main", ".aiops/config.json", "{}\n", base="main")
+        git(self.root, "branch", "-qf", "main", main_change)
+        git(self.root, "update-ref", "refs/remotes/origin/main", main_change)
+        for cmd in ("git merge x", "git rebase x", f"git cherry-pick {bad}", "git merge --no-ff x", "git merge nosuch"):
+            self.assertBlocked(cmd)
+        for cmd in ("git merge main", "git merge origin/main", "git rebase origin/main", "git merge approvals",
+                    "git merge --abort", "git rebase --continue"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_pull(self):
+        r = self.bash("git pull")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("[G-FILE-06]", r.stderr)
+        self.assertIn("git fetch", r.stderr)
+        self.assertBlocked("git pull origin feat/0001-csv-export")
+        git(self.root, "switch", "-q", "main")
+        self.assertNotIn("[G-FILE-06]", self.bash("git pull").stderr)        # on main: only the usual lock applies
+
 
 if __name__ == "__main__":
     unittest.main()

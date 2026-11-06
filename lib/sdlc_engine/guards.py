@@ -656,6 +656,50 @@ def _incoming_archive(name, args, cwd, root):
     return None
 
 
+def _incoming_git(sub, rest, root, on_main):
+    """Why a stash pop/apply, merge, rebase, cherry-pick or pull is refused (G-FILE-06): it would bring in
+    human-owned config or a protected path from somewhere a human didn't merge. The main branch (and origin/<main>)
+    is trusted; intent folders (approval commits) always pass. None if fine."""
+    main = config(root)["main_branch"]
+    trusted = {main, f"origin/{main}", f"refs/heads/{main}", f"refs/remotes/origin/{main}"}
+    ops = [a for a in rest if not a.startswith("-")]
+    if sub == "pull":
+        if on_main:
+            return None
+        return "`git pull` brings in changes that can't be inspected before they land"
+    if sub == "stash" and ops[:1] in (["pop"], ["apply"]):
+        ref = ops[1] if len(ops) > 1 else "stash@{0}"
+        out = git(root, "stash", "show", "--name-only", "--include-untracked", ref)
+        if out is None:
+            out = git(root, "stash", "show", "--name-only", ref)
+        if out is None:
+            return f"`git stash {ops[0]} {ref}` can't be inspected"
+        hit = _incoming_problem(root, out.split())
+        return f"`git stash {ops[0]}` would write '{hit}', which is human-owned or protected" if hit else None
+    if sub in ("merge", "rebase"):
+        if any(a in ("--abort", "--continue", "--skip", "--quit") for a in rest):
+            return None
+        ref = ops[0] if ops else "@{u}"
+        if ref in trusted:
+            return None
+        out = git(root, "diff", "--name-only", f"HEAD...{ref}")
+        if out is None:
+            return f"`git {sub} {ref}` can't be inspected (unknown ref: fetch it first)"
+        hit = _incoming_problem(root, out.split())
+        return f"`git {sub} {ref}` would bring in '{hit}', which is human-owned or protected" if hit else None
+    if sub == "cherry-pick":
+        if any(a in ("--abort", "--continue", "--skip", "--quit") for a in rest):
+            return None
+        for c in ops:
+            out = git(root, "show", "--name-only", "--format=", c)
+            if out is None:
+                return f"`git cherry-pick {c}` can't be inspected"
+            hit = _incoming_problem(root, out.split())
+            if hit:
+                return f"`git cherry-pick {c}` would bring in '{hit}', which is human-owned or protected"
+    return None
+
+
 SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.(hookspath|fsmonitor|attributesfile|sshcommand|editor|pager)|sequence\.editor|"
                                r"include\..+|includeif\..+|filter\..+|alias\..+|diff\..+)$", re.I)
 GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list"}   # not --path/-z: formats
@@ -914,6 +958,10 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
                           "leave the PR for a CODEOWNER to review and merge.")
         if name == "git":
             sub, rest, gcwd = _git_sub(args, cwd)
+            why = _incoming_git(sub, rest, root, on_main)
+            if why:
+                return _block("G-FILE-06", f"{why}.", "`git fetch`, then `git merge <ref>` (inspected) for code; a "
+                              "human brings in changes to human-owned config.")
             if sub == "config" and _git_config_writes_signing(rest, gcwd, root):
                 return _block("G-TOOL-05", "git signing, hook, monitor, filter and include settings are human-owned "
                               "(they decide who signs approvals, and what runs inside an approval).",
