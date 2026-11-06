@@ -48,7 +48,7 @@ see the reason, the playbook stage the rule protects and the safe alternative. T
 | `G-GATE-*`, `G-MERGE-*`, `G-DEPLOY-*` | Only a human approves, merges or deploys to production | Ask the human; they run it themselves |
 | `G-ART-*` | Shell writes to `.aiops/` bypass the gate guard | Edit artifacts with the Edit/Write tools |
 | `G-FILE-*`, `G-TOOL-*` | Protected paths, your shell startup files, PATH, git config, the installed plugin | A human changes those |
-| `G-SEC-*`, `G-ENV-01` | Secret files and tokens never enter the session | Use `.env.example` or the docs for names |
+| `G-SEC-*`, `G-ENV-01`, `G-ENV-04` | Secret files and tokens never enter the session | Use `.env.example` or the docs for names |
 
 **A false positive** (a safe command that's blocked): the static parser is strict on purpose. Rephrase the command,
 for example without a variable as the command word, or run it yourself. Please report it with `sdlc feedback`.
