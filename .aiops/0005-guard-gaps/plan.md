@@ -107,7 +107,7 @@ Code to reuse:
       200 ms
     - `test_tracked_secret_dir`: `rm -rf config` with a committed `config/prod.key`
   - Covers: AC-1, AC-2
-- [ ] **S6**: Archives can't bring in protected config (gap 4, part 1).
+- [x] **S6**: Archives can't bring in protected config (gap 4, part 1).
   - `guards._incoming_paths` for `tar -x` / `unzip` into the repo: `tarfile` / `zipfile` member names, joined with
     the extract dir.
   - A member under `.aiops/config*`, `.claude/settings.json` or a protected path is G-FILE-06. An unreadable or
@@ -183,3 +183,4 @@ Code to reuse:
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-06 | S5 | Two additions. **Home and its ancestors are protected too:** deleting `~` takes `~/.ssh`, the global git config and the installed plugin, whether or not the repo is under home. **`find … -delete` counts as a tree delete only without a filter** (`-name`, `-path`, `-type`, …): a filtered find deletes matching files only, and the existing G-ART-04 still protects `.aiops/` from it. | A home-delete is catastrophic in every repo layout. `find . -name '*.pyc' -delete` is a common, safe command that existing tests rely on. | S5 |
+| 2026-11-06 | S6 | An archive that can't be read is refused only when the extract directory is the repo root or holds `.aiops/`, `.claude/` or a protected path; elsewhere (`-C build`) it's allowed. AC-5's "an unreadable archive is refused" holds for extraction into the repo root, which the test uses. | GNU tar and unzip drop `..` members, so such an archive can only write under its destination. Three existing tests extract into `build/` (AC-13). | S6 |

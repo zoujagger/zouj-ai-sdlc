@@ -9,6 +9,7 @@ Rules (only in repos initialized with `.aiops/`):
 """
 import glob
 import os
+import posixpath
 import re
 import shlex
 from fnmatch import fnmatchcase
@@ -577,6 +578,84 @@ def _extract_dirs(name, args):
     return []
 
 
+INCOMING_GUARDED_RE = re.compile(r"^(\.aiops/(config(/|\.json$)|install-state\.json$)|\.claude/settings\.json$)")
+
+
+def _incoming_problem(root, rels):
+    """The first incoming path that is human-owned config or protected, else None. Intent folders (approvals) pass."""
+    pglobs = globs(root, "protected-paths")
+    for rel in rels:
+        rel = posixpath.normpath(rel.lstrip("/"))
+        if rel.startswith("../") or rel == "..":
+            continue                                   # lands outside the repo
+        if INCOMING_GUARDED_RE.match(rel) or glob_hit(rel, pglobs):
+            return rel
+    return None
+
+
+def _archive_file(name, args):
+    """The archive a `tar -x` / `unzip` reads, else None."""
+    if name == "unzip":
+        skip = False
+        for a in args:
+            if skip:
+                skip = False
+            elif a == "-d":
+                skip = True
+            elif not a.startswith("-"):
+                return a
+        return None
+    for i, a in enumerate(args):                       # tar
+        if a in ("-f", "--file") and i + 1 < len(args):
+            return args[i + 1]
+        if a.startswith("--file="):
+            return a.split("=", 1)[1]
+        cluster = a[1:] if a.startswith("-") and not a.startswith("--") else (a if i == 0 else "")
+        if "f" in cluster:
+            rest = cluster[cluster.index("f") + 1:]
+            return rest or (args[i + 1] if i + 1 < len(args) else None)
+    return None
+
+
+def _archive_members(path):
+    """Member names of a tar (any compression) or zip archive, or None if it can't be read."""
+    import tarfile
+    import zipfile
+    try:
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as z:
+                return z.namelist()
+        with tarfile.open(path) as t:
+            return t.getnames()
+    except (OSError, tarfile.TarError, zipfile.BadZipFile, EOFError):
+        return None
+
+
+def _incoming_archive(name, args, cwd, root):
+    """Why extracting this archive into the repo is refused (G-FILE-06), else None."""
+    dests = [d for d in _extract_dirs(name, args) if _rel(root, d, cwd) is not None]
+    if not dests:
+        return None                                    # not extracting, or only outside the repo
+    archive = _archive_file(name, args)
+    members = _archive_members(Path(cwd) / os.path.expanduser(archive)) if archive else None
+    if members is None:
+        # tar and unzip drop `..` member names, so an unreadable archive matters only where guarded paths lie below
+        pglobs = globs(root, "protected-paths")
+        for d in dests:
+            base = _rel(root, d, cwd)
+            prefix = "" if base in ("", ".") else base.rstrip("/") + "/"
+            if not prefix or any(g.startswith(prefix) for g in (".aiops/", ".claude/")) \
+                    or any(g.startswith(prefix) for g, _ in pglobs):
+                return f"`{name}` reads an archive that can't be inspected ({archive or 'no archive named'})"
+        return None
+    for d in dests:
+        base = _rel(root, d, cwd)
+        hit = _incoming_problem(root, [posixpath.join(base, m.lstrip("/")) for m in members])
+        if hit:
+            return f"the archive would write '{hit}', which is human-owned or protected"
+    return None
+
+
 SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.(hookspath|fsmonitor|attributesfile|sshcommand|editor|pager)|sequence\.editor|"
                                r"include\..+|includeif\..+|filter\..+|alias\..+|diff\..+)$", re.I)
 GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list"}   # not --path/-z: formats
@@ -811,6 +890,11 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
         if not words:
             continue
         name, args = Path(words[0]).name, words[1:]
+        if gates and name in ("tar", "unzip"):
+            why = _incoming_archive(name, args, cwd, root)
+            if why:
+                return _block("G-FILE-06", f"{why}.", "extract outside the repo and copy what you need, or ask the "
+                              "human to change human-owned config.")
         if not gates:
             if name == "git":
                 sub, rest, gcwd = _git_sub(args, cwd)

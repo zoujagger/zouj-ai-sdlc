@@ -128,6 +128,13 @@ workflow, `.claude/`, or a committed secret. The check counts protected-path glo
 untracked build output.
 Instead: name the paths you mean (`rm -rf build/`, `rm src/old.py`), outside `.aiops/`, `.git/` and protected paths.
 
+## G-FILE-06
+Why: extracting an archive, popping a stash, or merging, rebasing, cherry-picking or pulling from another branch can
+write `.aiops/config*`, `.claude/settings.json` or a protected path without either guard seeing a write. Changes
+from the main branch (human-merged) and to intent folders (approval commits) are allowed.
+Instead: extract outside the repo and copy what you need; `git fetch`, then `git merge <ref>` (inspected); ask the
+human to change human-owned config.
+
 ## G-MERGE-01
 Why: merging is the final human gate (state 5); the GitHub API is the same merge by another route.
 Instead: leave the PR for a CODEOWNER to review and merge.

@@ -747,5 +747,50 @@ class ProtectedTree(RepoCase):
         self.assertIn("[G-FILE-05]", r.stderr)
 
 
+class Incoming(RepoCase):
+    """0005 S6-S7 (gap 4): archives, stashes, merges and pulls can't bring in protected config (G-FILE-06)."""
+    def setUp(self):
+        super().setUp()
+        self.to_execution()                                           # state 4: unlocked
+
+    def bash(self, cmd):
+        return self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+
+    def archive(self, name, members):
+        import io
+        import tarfile
+        import zipfile
+        f = self.root / name
+        if name.endswith(".zip"):
+            with zipfile.ZipFile(f, "w") as z:
+                for m in members:
+                    z.writestr(m, "x\n")
+        else:
+            with tarfile.open(f, "w:gz") as t:
+                for m in members:
+                    info = tarfile.TarInfo(m)
+                    info.size = 2
+                    t.addfile(info, io.BytesIO(b"x\n"))
+
+    def assertBlocked(self, cmd, rid="G-FILE-06"):
+        r = self.bash(cmd)
+        self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+        self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_archives(self):
+        self.archive("bad.tgz", ["src/a.py", ".aiops/config/allowed-commands"])
+        self.archive("bad.zip", ["src/a.py", ".claude/settings.json"])
+        self.archive("ci.tgz", ["./.github/workflows/aiops-gates.yml"])
+        self.archive("good.tgz", ["src/a.py", "src/b.py"])
+        self.archive("good.zip", ["src/c.py"])
+        for cmd in ("tar -xzf bad.tgz", "tar xzf bad.tgz", "tar -x -f bad.tgz", "unzip bad.zip", "unzip -o bad.zip",
+                    "tar -xzf ci.tgz", "tar -xzf missing.tgz", "unzip missing.zip"):
+            self.assertBlocked(cmd)
+        for cmd in ("tar -xzf good.tgz", "unzip good.zip", "tar -tzf bad.tgz", "unzip -l bad.zip",
+                    "tar -xzf bad.tgz -C /tmp/elsewhere"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
 if __name__ == "__main__":
     unittest.main()
