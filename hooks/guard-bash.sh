@@ -50,8 +50,9 @@ re_write_op="(>|${S}(sed -i|tee|mv|cp|rm|truncate|perl -pi)${E})"
 # One python pass (lib/sdlc_engine/secret_scan.py) instead of a subshell per word.
 secret_scan "$input" || exit 2
 [[ "$u" =~ $re_cred_print ]] && block G-ENV-01 "printing credentials into the session" "use the tool's own auth (gh, git, aws) without printing the token; never read real secrets."
-[[ "$c" =~ $re_dump_env ]]   && block G-ENV-03 "dumping the environment can print secrets" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
+# the secret rule first: a command matching both reports the id that can never be allowed
 [[ "$c" =~ $re_echo_secret ]] && block G-ENV-04 "echoing a secret-named variable prints a credential" "check that it's set without printing it ([ -n \"\$VAR\" ])."
+[[ "$c" =~ $re_dump_env ]]   && block G-ENV-03 "dumping the environment can print secrets" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
 [[ "$c" =~ $re_system ]]     && block G-BASH-07 "privileged or dangerous system command"
 (( enabled )) && [[ "$c" =~ $re_gate ]] && block G-MERGE-04 "merging/approving/deleting is a human gate" "a CODEOWNER approves and merges the PR (state 5 is the human's decision); the agent never approves its own work."
 
