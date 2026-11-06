@@ -114,7 +114,7 @@ guard change is test-first (CLAUDE.md rule 2).
     test lock, protected and secret file, plugin path, toolchain, credential content, read secret, prod deploy, MCP
     prod, engine failure). It fails on today's `BLOCKED by guard-…:` prefix.
   - Covers: AC-16
-- [ ] **S4**: Registry ↔ sources coverage.
+- [x] **S4**: Registry ↔ sources coverage.
   - Every id literal in `hooks/*.sh` and `lib/sdlc_engine/*.py` must be in `defaults/rules`, and every non-retired
     registry id must appear in at least one source.
   - Fix any gap found.

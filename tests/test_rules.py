@@ -68,5 +68,35 @@ class Why(unittest.TestCase):
         self.assertEqual(why().returncode, 1)
 
 
+class Coverage(unittest.TestCase):
+    """defaults/rules and the guard sources agree: every id a hook emits is registered, and every live id is emitted."""
+    SOURCES = sorted((ROOT / "hooks").glob("*.sh")) + sorted((ROOT / "lib" / "sdlc_engine").glob("*.py"))
+
+    def emitted(self):
+        found = {}
+        for f in self.SOURCES:
+            for rid in re.findall(r"\bG-[A-Z]+-\d\d\b", f.read_text()):
+                found.setdefault(rid, f.name)
+        return found
+
+    def test_sources_and_registry_agree(self):
+        reg = rules.load()
+        emitted = self.emitted()
+        unregistered = sorted(f"{rid} ({where})" for rid, where in emitted.items() if rid not in reg)
+        self.assertEqual(unregistered, [], "ids used in hooks/lib but missing from defaults/rules")
+        live = {rid for rid, r in reg.items() if r.cls != "retired"}
+        self.assertEqual(sorted(live - set(emitted)), [], "registered ids that no hook emits")
+
+    def test_every_block_call_names_an_id(self):
+        for f in (ROOT / "hooks").glob("*.sh"):
+            for n, line in enumerate(f.read_text().splitlines(), 1):
+                code = line.split("#", 1)[0]
+                if re.search(r"(^|[;&|]\s*|\s)block\s+\S", code) and "block()" not in code:
+                    self.assertRegex(code, r"block\s+(G-[A-Z]+-\d\d|\"'\$v')", f"{f.name}:{n}: {line.strip()}")
+        src = (ROOT / "lib" / "sdlc_engine" / "guards.py").read_text()
+        for m in re.finditer(r"_block\((?!rule_id)([^,]+),", src):
+            self.assertRegex(m.group(1), r'^"G-[A-Z]+-\d\d"|^"G-FILE-01" if', m.group(0))
+
+
 if __name__ == "__main__":
     unittest.main()
