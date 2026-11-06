@@ -669,25 +669,40 @@ def _archive_file(name, args):
             return args[i + 1]
         if a.startswith("--file="):
             return a.split("=", 1)[1]
-        cluster = a[1:] if a.startswith("-") and not a.startswith("--") else (a if i == 0 else "")
-        if "f" in cluster:
-            rest = cluster[cluster.index("f") + 1:]
+        if a.startswith("-") and not a.startswith("--") and "f" in a:      # -xzf x.tgz, -xzfx.tgz
+            rest = a[a.index("f") + 1:]
             return rest or (args[i + 1] if i + 1 < len(args) else None)
+        if i == 0 and not a.startswith("-") and "f" in a:                  # old style: `tar xfz x.tgz`
+            return args[1] if len(args) > 1 else None
     return None
 
 
 def _archive_members(path):
-    """Member names of a tar (any compression) or zip archive, or None if it can't be read."""
+    """(member names, has link members) of a tar (any compression) or zip archive, or None if it can't be read."""
     import tarfile
     import zipfile
     try:
         if zipfile.is_zipfile(path):
             with zipfile.ZipFile(path) as z:
-                return z.namelist()
+                infos = z.infolist()
+                return [i.filename for i in infos], any((i.external_attr >> 16) & 0o170000 == 0o120000 for i in infos)
         with tarfile.open(path) as t:
-            return t.getnames()
+            members = t.getmembers()
+            return [m.name for m in members], any(m.issym() or m.islnk() for m in members)
     except (OSError, tarfile.TarError, zipfile.BadZipFile, EOFError):
         return None
+
+
+TAR_REWRITE_RE = re.compile(r"^(--transform|--xform|--absolute-names$|-P$|-[A-Za-z]*P[A-Za-z]*$)")
+
+
+def _strip_count(args):
+    for i, a in enumerate(args):
+        if a.startswith("--strip-components=") or a.startswith("--strip="):
+            return int(a.split("=", 1)[1]) if a.split("=", 1)[1].isdigit() else -1
+        if a in ("--strip-components", "--strip") and i + 1 < len(args):
+            return int(args[i + 1]) if args[i + 1].isdigit() else -1
+    return 0
 
 
 def _incoming_archive(name, args, cwd, root):
@@ -696,7 +711,17 @@ def _incoming_archive(name, args, cwd, root):
     if not dests:
         return None                                    # not extracting, or only outside the repo
     archive = _archive_file(name, args)
-    members = _archive_members(Path(cwd) / os.path.expanduser(archive)) if archive else None
+    listing = _archive_members(Path(cwd) / os.path.expanduser(archive)) if archive else None
+    strip = _strip_count(args) if name == "tar" else 0
+    if listing is not None:
+        if listing[1]:
+            return "the archive holds symlink or hardlink members, which can redirect where files land"
+        if name == "tar" and any(TAR_REWRITE_RE.match(a) for a in args if a != args[0] or a.startswith("-")):
+            return "`tar --transform` / `-P` rewrites where members land, so the archive can't be inspected"
+        if strip < 0:
+            return "`--strip-components` has no count the guard can read"
+    members = None if listing is None else [
+        "/".join(Path(m.lstrip("/")).parts[strip:]) for m in listing[0] if len(Path(m.lstrip("/")).parts) > strip]
     if members is None:
         # tar and unzip drop `..` member names, so an unreadable archive matters only where guarded paths lie below
         pglobs = globs(root, "protected-paths")
@@ -707,55 +732,116 @@ def _incoming_archive(name, args, cwd, root):
                     or any(g.startswith(prefix) for g, _ in pglobs):
                 return f"`{name}` reads an archive that can't be inspected ({archive or 'no archive named'})"
         return None
+    real_root = os.path.realpath(str(root))
     for d in dests:
         base = _rel(root, d, cwd)
-        hit = _incoming_problem(root, [posixpath.join(base, m.lstrip("/")) for m in members])
+        landed = []
+        for m in members:
+            rel = posixpath.join(base, m)
+            landed.append(rel)
+            real = os.path.realpath(os.path.join(real_root, rel))          # through symlinks already in the repo
+            if real.startswith(real_root + "/"):
+                landed.append(os.path.relpath(real, real_root))
+        hit = _incoming_problem(root, landed)
         if hit:
             return f"the archive would write '{hit}', which is human-owned or protected"
     return None
 
 
+GIT_VALUE_OPTS = {   # options whose value is the next word (0005 review round 1: a value isn't a ref)
+    "merge": {"-m", "-F", "-s", "-X", "--strategy", "--strategy-option", "--into-name", "--file", "--message",
+              "--cleanup"},
+    "rebase": {"-s", "-X", "--strategy", "--strategy-option", "-x", "--exec", "-C", "--onto"},
+    "cherry-pick": {"-m", "--mainline", "-X", "--strategy", "--strategy-option"},
+}
+
+
+def _git_operands(sub, rest):
+    """(operands, {option: value}) of a git subcommand, skipping option values."""
+    ops, vals, i, takes = [], {}, 0, GIT_VALUE_OPTS.get(sub, set())
+    while i < len(rest):
+        a = rest[i]
+        if a in takes and i + 1 < len(rest):
+            vals[a] = rest[i + 1]
+            i += 2
+            continue
+        if a.startswith("--") and "=" in a:
+            vals[a.split("=", 1)[0]] = a.split("=", 1)[1]
+        elif not a.startswith("-"):
+            ops.append(a)
+        i += 1
+    return ops, vals
+
+
+def _git_paths(root, *args):
+    """Paths a git command lists with -z, or None if it fails."""
+    out = git(root, *args)
+    return None if out is None else [p for p in out.split("\0") if p]
+
+
 def _incoming_git(sub, rest, root, on_main):
     """Why a stash pop/apply, merge, rebase, cherry-pick or pull is refused (G-FILE-06): it would bring in
     human-owned config or a protected path from somewhere a human didn't merge. The main branch (and origin/<main>)
-    is trusted; intent folders (approval commits) always pass. None if fine."""
+    is trusted; intent folders (approval commits) always pass. Every operand is inspected. None if fine."""
     main = config(root)["main_branch"]
     trusted = {main, f"origin/{main}", f"refs/heads/{main}", f"refs/remotes/origin/{main}"}
-    ops = [a for a in rest if not a.startswith("-")]
+    if any(a in ("--abort", "--continue", "--skip", "--quit") for a in rest):
+        return None
+    ops, vals = _git_operands(sub, rest)
     if sub == "pull":
         if on_main and ops in ([], ["origin"], ["origin", main]):   # a pull of main itself
             return None
         return "`git pull` brings in changes that can't be inspected before they land"
-    if sub == "stash" and ops[:1] in (["pop"], ["apply"]):
-        ref = ops[1] if len(ops) > 1 else "stash@{0}"
-        out = git(root, "stash", "show", "--name-only", "--include-untracked", ref)
-        if out is None:
-            out = git(root, "stash", "show", "--name-only", ref)
-        if out is None:
+    if sub == "stash" and ops[:1] in (["pop"], ["apply"], ["branch"]):
+        ref = (ops[2] if ops[0] == "branch" else ops[1]) if len(ops) > (2 if ops[0] == "branch" else 1) else "stash@{0}"
+        paths = _git_paths(root, "stash", "show", "-z", "--name-only", "--include-untracked", ref)
+        if paths is None:
+            paths = _git_paths(root, "stash", "show", "-z", "--name-only", ref)
+        if paths is None:
             return f"`git stash {ops[0]} {ref}` can't be inspected"
-        hit = _incoming_problem(root, out.split())
+        hit = _incoming_problem(root, paths)
         return f"`git stash {ops[0]}` would write '{hit}', which is human-owned or protected" if hit else None
     if sub in ("merge", "rebase"):
-        if any(a in ("--abort", "--continue", "--skip", "--quit") for a in rest):
-            return None
-        ref = ops[0] if ops else "@{u}"
-        if ref in trusted:
-            return None
-        out = git(root, "diff", "--name-only", f"HEAD...{ref}")
-        if out is None:
-            return f"`git {sub} {ref}` can't be inspected (unknown ref: fetch it first)"
-        hit = _incoming_problem(root, out.split())
-        return f"`git {sub} {ref}` would bring in '{hit}', which is human-owned or protected" if hit else None
-    if sub == "cherry-pick":
-        if any(a in ("--abort", "--continue", "--skip", "--quit") for a in rest):
-            return None
-        for c in ops:
-            out = git(root, "show", "--name-only", "--format=", c)
-            if out is None:
-                return f"`git cherry-pick {c}` can't be inspected"
-            hit = _incoming_problem(root, out.split())
+        refs = ops + ([vals["--onto"]] if "--onto" in vals else [])
+        if not refs:
+            if git(root, "rev-parse", "-q", "--verify", "@{u}") is None:
+                return None                              # no upstream: git refuses on its own
+            refs = ["@{u}"]
+        for n, ref in enumerate(refs):
+            if ref in trusted:
+                continue
+            paths = _git_paths(root, "diff", "-z", "--name-only", f"HEAD...{ref}")
+            if paths is not None and sub == "rebase" and n == 1:   # `rebase <upstream> <branch>` checks out <branch>
+                more = _git_paths(root, "diff", "-z", "--name-only", "HEAD", ref)
+                paths = None if more is None else paths + more
+            if paths is None:
+                return f"`git {sub} {ref}` can't be inspected (unknown ref: fetch it first)"
+            hit = _incoming_problem(root, paths)
             if hit:
-                return f"`git cherry-pick {c}` would bring in '{hit}', which is human-owned or protected"
+                return f"`git {sub} {ref}` would bring in '{hit}', which is human-owned or protected"
+        return None
+    if sub == "cherry-pick":
+        mainline = vals.get("-m") or vals.get("--mainline") or "1"
+        if any(".." in o or o.startswith("^") for o in ops):
+            listed = git(root, "rev-list", *ops)
+            commits = listed.split() if listed else None
+        else:
+            commits = [git(root, "rev-parse", "-q", "--verify", f"{o}^{{commit}}") for o in ops]
+            commits = None if None in commits else commits
+        if commits is None:
+            return "`git cherry-pick` can't be inspected (unknown commit: fetch it first)"
+        for c in commits:
+            parents = (git(root, "rev-list", "--parents", "-n", "1", c) or "").split()[1:]
+            if parents:
+                base = f"{c}^{mainline}" if len(parents) > 1 else f"{c}^"
+                paths = _git_paths(root, "diff", "-z", "--name-only", base, c)
+            else:
+                paths = _git_paths(root, "show", "-z", "--name-only", "--format=", c)
+            if paths is None:
+                return f"`git cherry-pick {c[:10]}` can't be inspected"
+            hit = _incoming_problem(root, paths)
+            if hit:
+                return f"`git cherry-pick {c[:10]}` would bring in '{hit}', which is human-owned or protected"
     return None
 
 
@@ -876,17 +962,75 @@ def delete_targets(words):
         return ops
     if name == "mv":
         return ops if _target_directory(args) else ops[:-1]
-    if name == "find" and "-delete" in args and not FIND_FILTERS & set(args):   # unfiltered: the whole tree
-        return args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))]
+    if name == "rsync" and any(a.startswith("--delete") for a in args):
+        return ops[-1:]                                  # the destination loses what the source lacks
+    if name == "find" and _find_deletes(args) and not _find_name_filters(args):   # unfiltered: the whole tree
+        return _find_roots(args)
     return []
+
+
+FIND_DELETING = {"rm", "rmdir", "unlink", "shred", "mv", "truncate"}
+
+
+def _find_roots(args):
+    return args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))] or ["."]
+
+
+def _find_deletes(args):
+    """True if this find deletes: -delete, or -exec/-execdir/-ok running a deleting command."""
+    return "-delete" in args or any(a in ("-exec", "-execdir", "-ok", "-okdir") and i + 1 < len(args)
+                                    and Path(args[i + 1]).name in FIND_DELETING for i, a in enumerate(args))
+
+
+def _find_name_filters(args):
+    """[(test, pattern)] for -name/-iname/-path/-ipath/-wholename tests."""
+    return [(a, args[i + 1]) for i, a in enumerate(args[:-1])
+            if a in ("-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename")]
+
+
+def _protected_files_under(root, rel):
+    """Existing protected files (protected-paths globs) and git-tracked protected or secret files under rel."""
+    from glob import glob as _glob
+    prefix = "" if rel in ("", ".") else rel.rstrip("/") + "/"
+    pglobs, sglobs = globs(root, "protected-paths"), globs(root, "secret-paths")
+    found = set()
+    for g, _ in pglobs:
+        if g.startswith(prefix) or not prefix:
+            for f in _glob(str(Path(root) / g), recursive=True):
+                found.add(Path(f).relative_to(root).as_posix())
+    for f in filter(None, (git(root, "ls-files", "-z", "--", rel or ".") or "").split("\0")):
+        if glob_hit(f, pglobs) or (not _secret_template(f) and glob_hit(f, sglobs)):
+            found.add(f)
+    return sorted(found)
+
+
+def _find_hits_protected(args, cwd, root):
+    """A filtered find that deletes: the first protected file under its roots that a name/path test would reach."""
+    if not _find_deletes(args):
+        return None
+    tests = _find_name_filters(args)
+    for r in _find_roots(args):
+        rel = _rel(root, r, cwd)
+        if rel is None:
+            continue
+        for f in _protected_files_under(root, rel):
+            for t, pat in tests:
+                ci = t.startswith("-i")
+                subject = f.rsplit("/", 1)[-1] if t in ("-name", "-iname") else f"./{f}"
+                if _fnmatch(subject, pat, ci) or (t not in ("-name", "-iname") and _fnmatch(f, pat, ci)):
+                    return f
+    return None
 
 
 def _contains_protected(root, target, cwd):
     """What deleting the directory `target` would take with it (blocked as G-FILE-05) would take the repo itself or something protected with it,
     else None: the repo root or a directory above it, a protected-paths glob under it, or a git-tracked file under it
     that is protected or secret. Untracked trees (node_modules, build output) are never walked."""
-    p = Path(os.path.expanduser(str(target)))
-    p = Path(os.path.realpath(str(p if p.is_absolute() else Path(cwd) / p)))
+    raw = Path(os.path.expanduser(str(target)))
+    raw = raw if raw.is_absolute() else Path(cwd) / raw
+    if not str(target).endswith("/") and raw.is_symlink():
+        return None                                      # `rm link` removes the link, not what it points to
+    p = Path(os.path.realpath(str(raw)))
     real_root = Path(os.path.realpath(str(root)))
     if p == real_root or p in real_root.parents:
         return f"'{target}' is the repository itself or a directory above it"
@@ -897,7 +1041,7 @@ def _contains_protected(root, target, cwd):
         rel = p.relative_to(real_root).as_posix()
     except ValueError:
         return None
-    if not p.is_dir() or p.is_symlink():
+    if not p.is_dir():
         return None
     prefix = rel.rstrip("/") + "/"
     pglobs, sglobs = globs(root, "protected-paths"), globs(root, "secret-paths")
@@ -918,6 +1062,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
     into the installed plugin, writes outside the repo to secrets or the approval toolchain, `git config --global`
     of signing keys, and nesting."""
     assigned = {}
+    dirstack, links = [], {}
     for words, redirs in segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
         config_env = any(GIT_CONFIG_ENV_RE.match(w) for w in words)
         words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]
@@ -927,10 +1072,21 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             assigned.update(w.split("=", 1) for w in bare)
             continue
         words = _strip_prefix(words)
-        if words and words[0] == "cd":
+        if words and words[0] in ("cd", "pushd"):
             dest = next((a for a in words[1:] if not a.startswith("-")), "~")
+            if words[0] == "pushd":
+                dirstack.append(cwd)
             cwd = Path(dest).expanduser() if Path(dest).expanduser().is_absolute() else cwd / dest
             continue
+        if words and words[0] == "popd":
+            cwd = dirstack.pop() if dirstack else cwd
+            continue
+        if words and Path(words[0]).name == "ln" and any(re.match(r"^-[a-zA-Z]*s", a) or a == "--symbolic"
+                                                          for a in words[1:]):
+            lops = [a for a in words[1:] if not a.startswith("-")]
+            if lops:                                     # a link made here: a later delete through it hits its target
+                name = lops[-1] if len(lops) > 1 else Path(lops[0]).name
+                links[os.path.normpath(str(cwd / name))] = os.path.normpath(str(cwd / lops[0]))
         inner = _nested_command(words)
         if inner is not None:
             if depth >= 3:
@@ -939,8 +1095,16 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             if msg:
                 return msg
             continue
+        if gates and words and Path(words[0]).name == "find":
+            hit = _find_hits_protected(words[1:], cwd, root)
+            if hit:
+                return _block("G-FILE-05", f"`{' '.join(words)[:80]}` would delete the protected file '{hit}'.",
+                              "narrow the find so it skips protected paths; a human removes protected files.")
         if gates:
             for t in (e for t in delete_targets(words) for e in _expand(t, cwd)):
+                key = os.path.normpath(str(t if Path(t).is_absolute() else cwd / t))
+                if t.endswith("/") and key in links:     # `ln -s .github q && rm -rf q/`
+                    t = links[key] + "/"
                 rel = _rel(root, t, cwd)
                 if rel is not None and (_aiops_protected(rel) or rel == ".git" or rel.startswith(".git/")):
                     continue             # the .aiops / .git rules below name it more precisely

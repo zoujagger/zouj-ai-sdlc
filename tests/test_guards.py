@@ -913,5 +913,69 @@ class UninitializedRound1(Uninitialized):
             self.assertEqual(self.engine(cmd).returncode, 0, cmd)
 
 
+class IncomingRound1(Incoming):
+    """0005 review round 1: every merge/rebase operand, value options, cherry-pick ranges, archive tricks."""
+    test_archives = test_stash = test_merge_rebase_cherry_pick = test_pull = None
+
+    def setUp(self):
+        super().setUp()
+        self.bad = self.commit_on("x", ".aiops/config.json", '{"approval_key_policy": "any"}\n')
+        self.commit_on("approvals", ".aiops/0001-csv-export/plan.md", (self.d / "plan.md").read_text() + "\n")
+
+    def test_every_operand_and_value_options(self):
+        for cmd in ("git merge main x", "git merge origin/main x", "git rebase main x", "git merge -m main x",
+                    "git cherry-pick ^HEAD x", f"git cherry-pick -m 1 {self.bad}", "git merge -X theirs x",
+                    "git merge --strategy=ours x"):
+            self.assertBlocked(cmd)
+        for cmd in ('git merge -m "merge it" approvals', "git merge -X theirs approvals", "git merge -s ours main",
+                    "git merge --no-ff -m 'Merge main' main", "git rebase", "git merge --no-edit approvals",
+                    "git cherry-pick -x approvals"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_archive_tricks(self):
+        import io
+        import tarfile
+        self.archive("strip.tgz", ["pkg/src/a.py", "pkg/.aiops/config/allowed-commands"])
+        self.archive("ok.tgz", ["pkg/src/a.py"])
+        with tarfile.open(self.root / "link.tgz", "w:gz") as t:              # a symlink member, then a file through it
+            lnk = tarfile.TarInfo("l")
+            lnk.type, lnk.linkname = tarfile.SYMTYPE, ".aiops/config"
+            t.addfile(lnk)
+            info = tarfile.TarInfo("l/allowed-commands")
+            info.size = 2
+            t.addfile(info, io.BytesIO(b"x\n"))
+        self.archive("via.tgz", ["l2/allowed-commands"])
+        (self.root / "l2").symlink_to(self.root / ".aiops" / "config")      # an existing in-repo symlink
+        for cmd in ("tar -xzf strip.tgz --strip-components=1", "tar -xzf strip.tgz --strip-components 1",
+                    "tar -xzf link.tgz", "tar -xzf via.tgz", "tar -xzf ok.tgz --transform s/a/b/",
+                    "tar -xzPf ok.tgz", "busybox tar -xzf strip.tgz --strip-components=1"):
+            self.assertBlocked(cmd)
+        for cmd in ("tar -xzf ok.tgz --strip-components=1", "tar xfz ok.tgz"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
+class ProtectedTreeRound1(ProtectedTree):
+    """0005 review round 1: filtered find, -exec, pushd, a symlink made in the same command, rsync --delete."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def test_more_forms_blocked(self):
+        for cmd in ("find .github -type f -delete", "find .github -name '*.yml' -delete",
+                    "find docs -name CODEOWNERS -delete", "find .github -exec rm -rf {} +",
+                    "ln -s .github q && rm -rf q/", "pushd .github && rm -rf workflows",
+                    "rsync -a --delete build/ .github/workflows/", "find . -name 'aiops-gates.yml' -delete"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn("[G-FILE-05]", r.stderr, cmd)
+
+    def test_still_allowed(self):
+        (self.root / "gh").symlink_to(self.root / ".github")
+        for cmd in ("rm -rf gh", "rm gh", "find . -name '*.pyc' -delete", "find build -type f -delete",
+                    "find docs -name '*.tmp' -delete", "rsync -a --delete src/ build/", "pushd build && rm -rf out.o"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
 if __name__ == "__main__":
     unittest.main()
