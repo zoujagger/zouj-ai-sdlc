@@ -27,6 +27,8 @@ Start from what you're doing. Every route runs the same playbook workflow, with 
 | Act on an alert or issue | `/zouj-ai-sdlc:triage alert:<metric>` → a new intent | Maintain → Trigger |
 | Get a branch reviewed | `/zouj-ai-sdlc:review`, then `/zouj-ai-sdlc:pr` | Deploy: AI review |
 | See where you are and what's next | `/zouj-ai-sdlc:status` | any |
+| Upgrade, repair or remove the setup | `sdlc list-installed`, then `sdlc upgrade`, `repair` or `uninstall --dry-run` | Maintain |
+| Understand a block | `sdlc why <id>` (the id is in `BLOCKED [G-…]`) | any |
 | Not sure | `/zouj-ai-sdlc:help-me "<what you want>"` | any |
 
 All commands: [COMMANDS-QUICK-REF.md](COMMANDS-QUICK-REF.md). Stuck? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) or
@@ -86,8 +88,32 @@ directory.
 | `team` | an SSH-signed commit, a human per signature (passphrase key out of ssh-agent) | most teams |
 | `strict` | an `sk-` key touch per signature, plus CODEOWNERS on `/.aiops/` | regulated or high-risk repos |
 
-Without `.aiops/` the plugin's **SDLC gates are dormant** until you run setup or init. Its safety guards (secret reads
-and writes, force-push, history rewrites, production deploys, edits to the installed plugin) are on in every repo.
+Without `.aiops/` the plugin's **SDLC gates are dormant** until you run setup or init. Its safety guards (secret reads,
+force-push, history rewrites, production deploys, and Edit/Write of secrets, your shell startup files and the installed
+plugin) are on in every repo. Shell writes to those are checked only in initialized repos for now (intent 0005).
+
+## Lifecycle: upgrade, repair, remove
+`init` and `setup` record what they wrote in `.aiops/install-state.json`: the plugin version, the CI ref, the profile
+and a hash of every file. The engine owns that file; the agent can't edit it, and CODEOWNERS covers it.
+
+| Command | What it does |
+|---|---|
+| `sdlc list-installed` | Each installed file: `current`, `stale` (an older plugin wrote it), `modified` (yours now), `missing`, `unmanaged`, `dropped`, `new`, `declined` (you removed it before adoption: never re-created). Read-only |
+| `sdlc repair [--dry-run] [--yes]` | Restores missing files. Never touches one you modified |
+| `sdlc upgrade [--dry-run] [--yes]` | After you update the plugin with `/plugin`: replaces stale files (diff shown), creates new ones, keeps your modified files except for the CI ref, pins every literal `ZOUJ_SDLC_REF` and the zouj marketplace `ref` (nothing else, every change shown as a diff first) to the plugin's full commit sha, and lists migrations (e.g. `legacy-approvals`, which only you run) |
+| `sdlc uninstall --dry-run`, then `sdlc uninstall` | Removes the plugin's unmodified files, install-state and its `.gitignore` lines. Never `.aiops/NNNN-*`: the audit trail stays. **Human only**: refused inside Claude Code |
+
+Repos set up by 0.2.0-alpha.1 or alpha.2 have no install-state. The first `upgrade` or `repair` adopts them: files
+equal to a released scaffold become managed, the rest count as modified and are never touched. Run by Claude, these
+commands never write a human-owned file (workflows, `.claude/settings.json`, `.aiops/config*`, CODEOWNERS) or code
+under the read-only lock: they print your terminal command instead.
+
+**Blocked by mistake?** Every block names its rule (`BLOCKED [G-ENV-03] by guard-bash: …`); `sdlc why <id>` explains
+it. Two heuristic rules (`G-ENV-03` env/printenv, `G-BASH-07` sudo and friends) accept a human-owned exact-command
+allowance: add `<id> <exact command>` to `.aiops/config/allowed-commands` (never a whole-environment dump such as a
+bare `printenv`). It lifts that one rule for that one command,
+and every other rule still runs. No rule that protects a gate, a secret or the approval toolchain can be allowed, and
+there is no per-rule disable switch (`docs/adr/0002-allowances-never-touch-a-gate.md`).
 
 ## How it works
 | State | You run | The agent produces | Leaves the state when |

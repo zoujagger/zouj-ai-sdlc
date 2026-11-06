@@ -33,7 +33,9 @@ The first failing check decides the state:
 
 **Gate open** = `status: Approved` **and** `approved-sha256` equals the current body hash. For plan.md, the hash
 ignores checkbox state and the `## Deviation log` section, so progress doesn't void the approval but changing the
-Steps does. **Review stale** = files outside `.aiops/` changed (committed or not) after `review.md`'s `commit:`.
+Steps does. **Open questions** on the card counts unticked `- [ ]` items in the `## Open questions` of intent.md and spec.md
+whose gate is still closed: once the human approves an artifact, its open questions were accepted with it.
+**Review stale** = files outside `.aiops/` changed (committed or not) after `review.md`'s `commit:`.
 
 ## Active intent
 `$AIOPS_INTENT` → the branch name (`(feat|fix|…)/NNNN-…`) → `.aiops/state/active` (set by `sdlc new` / `sdlc use`).

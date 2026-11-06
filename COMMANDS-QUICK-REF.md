@@ -8,6 +8,7 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 |---|---|
 | `/zouj-ai-sdlc:setup [solo\|team\|strict]` | Guided setup: checks prerequisites, previews every change and the gates, applies after you confirm, lists your human steps. Rerunnable. It scaffolds with the `team` default; `solo` or `strict` is applied by `<plugin>/bin/sdlc setup --profile <p>` in your own terminal |
 | `/zouj-ai-sdlc:init [--stack python\|node\|go]` | The bare scaffold, without setup's guidance |
+| `/zouj-ai-sdlc:configure [solo\|team\|strict]` | Shows the profile, key policy and installed files, previews a profile change, and hands you the one terminal command that applies it |
 | `/zouj-ai-sdlc:onboard` | An interactive tour of the workflow for your role |
 | `/zouj-ai-sdlc:help-me "<goal>"` | Maps what you want to do to the right command |
 | `/zouj-ai-sdlc:status [id]` | Where an intent is, and the exact next step |
@@ -50,7 +51,12 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 |---|---|
 | `sdlc setup [--profile P] [--stack S] [--dry-run] [--yes]` | The guided setup, as above |
 | `sdlc status [--json]` · `sdlc next` | State and next step |
-| `sdlc doctor` | Checks prerequisites, the profile, signing and artifacts |
+| `sdlc doctor` | Checks prerequisites, the profile, signing, artifacts and `allowed-commands` |
+| `sdlc list-installed` | What the plugin installed here, each file `current`, `stale`, `modified`, `missing`, `unmanaged`, `dropped` or `new` |
+| `sdlc repair [--dry-run] [--yes]` | Restores missing managed files; never touches a modified one |
+| `sdlc upgrade [--dry-run] [--yes]` | Brings the scaffold to the running plugin version: stale files replaced (diff shown), modified ones kept except the CI ref, every ref pinned to a full sha, migrations listed |
+| `sdlc uninstall --dry-run` · `sdlc uninstall [--yes]` | Lists, then (✋ human only) removes, the plugin's unmodified files. Never `.aiops/NNNN-*` |
+| `sdlc why <id>` | Explains a block (`BLOCKED [G-LOCK-01] …`): the reason, the stage it protects, the safe alternative, whether an allowance is possible |
 | `sdlc feedback` | Issue links and a doctor summary to paste (sends nothing) |
 | `sdlc approve <id> intent\|spec\|plan` | ✋ Human only, in your own terminal (refused inside Claude Code) |
 | `sdlc validate [--all] [--ci --base REF]` | Schema and approval audit (what CI runs) |

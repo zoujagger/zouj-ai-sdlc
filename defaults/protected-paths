@@ -11,6 +11,7 @@ Cargo.lock lockfiles are changed by the package manager, not by hand
 go.sum lockfiles are changed by the package manager, not by hand
 .aiops/config* guardrails are human-owned; propose the change in chat
 .aiops/state/* engine state; changed only through the sdlc CLI and hooks
+.aiops/install-state.json engine-written install record; changed only by sdlc init, setup, upgrade, repair and uninstall
 .claude/settings.json guardrails are human-owned; propose the change in chat
 governance/* org policy is human-owned
 .github/workflows/deploy.yml production gate is human-owned

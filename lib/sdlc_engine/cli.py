@@ -39,10 +39,15 @@ Lifecycle (any user or agent)
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
   setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
   feedback                   issue links and a doctor summary to paste (sends nothing)
+  list-installed             what the plugin installed here: current, stale, modified, missing, unmanaged
+  repair [--dry-run] [--yes] restore missing managed files (never a modified one)
+  upgrade [--dry-run] [--yes]  bring the scaffold to this plugin version: stale files replaced (diff shown),
+                             modified ones kept except the CI ref, every ref pinned to a full sha, migrations listed
   why <id>                   explain a block (e.g. `sdlc why G-ENV-03`): reason, stage, safe alternative
   doctor                     check tools and wiring
 
 Human only (refused inside Claude Code)
+  uninstall [--yes]          remove the plugin's unmodified scaffold files (never .aiops/NNNN-*); --dry-run: anyone
   approve <id> intent|spec|plan   open a gate (same as typing `Plan Approved NNNN` in the prompt)
   close <id>                 close an intent without implementing it
   unlock                     release the /fix test lock
@@ -199,8 +204,29 @@ def cmd_validate(root, args):
             failed += bool(errors)
     for w in dict.fromkeys(trust_warnings):
         out(f"! {w}")
+    if ci:
+        failed += _allowance_errors(root, base)
     out(f"validate: {len(dirs)} intent(s), {failed} artifact(s) with errors")
     return 1 if failed else 0
+
+
+def _allowance_errors(root, base):
+    """CI: refused allowed-commands entries (rules.allowance_problems), in the change itself and, with --base, on
+    the target branch. The hooks ignore such entries; CI makes them visible before and after the merge."""
+    from . import rules
+    f = root / rules.ALLOWANCES
+    if f.is_symlink():
+        out(f"✗ {rules.ALLOWANCES} is a symlink; it must be a regular file (the hooks ignore it)")
+        return 1
+    sources = [(rules.ALLOWANCES, f.read_text() if f.is_file() else None)]
+    if base:
+        sources.append((f"{base}:{rules.ALLOWANCES}", git(root, "show", f"{base}:{rules.ALLOWANCES}")))
+    n = 0
+    for where, text in sources:
+        for p in rules.allowance_problems(text or ""):
+            out(f"✗ {where}: {p}")
+            n += 1
+    return n
 
 
 def _confirm(question):
@@ -276,18 +302,27 @@ def cmd_unlock(root, args):
     return 0
 
 
-def _wire_stack(root, stack):
+def wire(src, stack, recipes_text=None):
+    """(src, wired targets): the Makefile text with the stack preset's recipes in place of the stubs. recipes_text
+    defaults to the running plugin's preset (scripts/scaffold-history.py passes a release's)."""
     recipes = {}
-    for line in (TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
+    if recipes_text is None:
+        recipes_text = (TEMPLATES / "stacks" / f"{stack}.recipes").read_text()
+    for line in recipes_text.splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and not parts[0].startswith("#"):
             recipes[parts[0]] = parts[1]
-    src, wired = (root / "Makefile").read_text(), []
+    wired = []
     for target, cmd in recipes.items():
         src, n = re.subn(rf'^\t@echo "\[{target}\] not configured - edit Makefile"$', "\t" + cmd.replace("\\", "\\\\"),
                          src, flags=re.M)
         if n:
             wired.append(target)
+    return src, wired
+
+
+def _wire_stack(root, stack):
+    src, wired = wire((root / "Makefile").read_text(), stack)
     write_file(root, "Makefile", src.encode())
     return wired
 
@@ -478,6 +513,12 @@ def cmd_init(root, args):
     if stack and "Makefile" in created:
         wired = _wire_stack(root, stack)
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
+    from . import lifecycle
+    try:
+        lifecycle.record(root, written, stack=stack)
+    except OSError as exc:
+        out(write_failure(exc, written), sys.stderr)
+        return 1
     out("Created:\n  " + ("\n  ".join(created) or "(nothing)"))
     if skipped:
         out("Kept existing (compare them with the plugin's templates/scaffold/):\n  "
@@ -563,6 +604,26 @@ Nothing was sent: zouj-ai-sdlc never uploads diagnostics.""")
     return 0
 
 
+def cmd_repair(root, args):
+    from . import lifecycle
+    return lifecycle.cmd_repair(root, args)
+
+
+def cmd_upgrade(root, args):
+    from . import lifecycle
+    return lifecycle.cmd_upgrade(root, args)
+
+
+def cmd_uninstall(root, args):
+    from . import lifecycle
+    return lifecycle.cmd_uninstall(root, args)
+
+
+def cmd_list_installed(root, args):
+    from . import lifecycle
+    return lifecycle.cmd_list_installed(root, args)
+
+
 def cmd_why(root, args):
     from . import rules
     if not args:
@@ -615,8 +676,22 @@ def cmd_doctor(root, args):
             row(not weak, "allowed-signers: strict accepts only sk- keys that need a touch"
                 + (f" ({len(weak)} other: {', '.join(w.split()[0] for w in weak[:3])})" if weak else ""),
                 "replace those entries with sk- keys, without no-touch-required (human-owned, via a reviewed PR)")
+    if initialized(root) and not (root / ".github" / "workflows" / "aiops-gates.yml").is_file():
+        out("  ! .github/workflows/aiops-gates.yml missing: CI doesn't audit the approvals (the hard guarantee)\n"
+            "      fix: `sdlc upgrade` offers it back, or copy it from the plugin's templates/scaffold/")
     if initialized(root) and config(root).get("require_signed_approvals"):
         _doctor_signing(root, row)
+    if initialized(root) and (root / ".aiops" / "config" / "allowed-commands").is_symlink():
+        row(False, ".aiops/config/allowed-commands is a symlink (the hooks ignore it)",
+            "replace it with a regular file (human-owned)")
+    elif initialized(root) and (root / ".aiops" / "config" / "allowed-commands").is_file():
+        from . import rules
+        probs = rules.allowance_problems((root / rules.ALLOWANCES).read_text(errors="replace"))
+        for p in probs:
+            row(False, f"{rules.ALLOWANCES} {p}", "remove or fix that line (human-owned); `sdlc why <id>` shows "
+                "whether a rule can be allowed")
+        if not probs:
+            out(f"  ✓ {rules.ALLOWANCES}: ok")
     if initialized(root):
         for d in intent_dirs(root):
             for kind in KINDS:
@@ -729,7 +804,9 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
             "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
-            "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why}
+            "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why,
+            "list-installed": cmd_list_installed, "repair": cmd_repair,
+            "upgrade": cmd_upgrade, "uninstall": cmd_uninstall}
 
 
 def main(argv=None):

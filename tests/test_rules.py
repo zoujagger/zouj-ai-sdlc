@@ -82,11 +82,16 @@ class Why(unittest.TestCase):
         self.assertIn("initialized", why("G-SEC-02").stdout)               # check_bash runs only in .aiops repos
         self.assertIn("every repo", why("G-SEC-04").stdout)                # guard-files.sh is always on
 
-    def test_no_text_ahead_of_the_code(self):
-        # PR 1 ships no allowance reader and no upgrade/repair/uninstall: nothing may promise them yet
-        text = (ROOT / "defaults" / "rules.md").read_text() + why("G-ENV-03").stdout
-        for future in ("uninstall", "upgrade", "repair", "allowed-commands"):
-            self.assertNotIn(future, text, future)
+    def test_lifecycle_commands_are_documented(self):
+        self.assertIn("uninstall", why("G-GATE-07").stdout)
+        for name in ("upgrade", "repair", "uninstall"):
+            self.assertIn(name, why("G-SCAF-01").stdout)
+
+    def test_allowable_rule_explains_the_allowance(self):
+        out = why("G-ENV-03").stdout
+        self.assertIn(".aiops/config/allowed-commands", out)
+        self.assertIn("G-ENV-03 <the exact command>", out)
+        self.assertIn("every other rule still applies", out)
 
     def test_unknown_id_near_matches(self):
         r = why("G-ENV-3")
@@ -117,15 +122,156 @@ class Coverage(unittest.TestCase):
         live = {rid for rid, r in reg.items() if r.cls != "retired"}
         self.assertEqual(sorted(live - set(emitted)), [], "registered ids that no hook emits")
 
+    def test_only_heuristic_rules_consult_allowances(self):
+        # guard-bash: `heuristic <id>` (which consults allowed-commands) is used exactly for the heuristic class
+        src = (ROOT / "hooks" / "guard-bash.sh").read_text()
+        via_helper = set(re.findall(r"&& heuristic (G-[A-Z]+-\d\d)", src))
+        heur = {rid for rid, r in rules.load().items() if r.cls == "heuristic"}
+        self.assertEqual(via_helper, heur)
+        for rid in heur:
+            self.assertNotRegex(src, rf"block {rid}\b", rid)
+
     def test_every_block_call_names_an_id(self):
         for f in (ROOT / "hooks").glob("*.sh"):
             for n, line in enumerate(f.read_text().splitlines(), 1):
                 code = line.split("#", 1)[0]
                 if re.search(r"(^|[;&|]\s*|\s)block\s+\S", code) and "block()" not in code:
-                    self.assertRegex(code, r"block\s+(G-[A-Z]+-\d\d|\"'\$v')", f"{f.name}:{n}: {line.strip()}")
+                    self.assertRegex(code, r"block\s+(G-[A-Z]+-\d\d|\"'\$v'|\"\$@\")", f"{f.name}:{n}: {line.strip()}")
         src = (ROOT / "lib" / "sdlc_engine" / "guards.py").read_text()
         for m in re.finditer(r"_block\((?!rule_id)([^,]+),", src):
             self.assertRegex(m.group(1), r'^"G-[A-Z]+-\d\d"', m.group(0))
+
+
+class Allowance(unittest.TestCase):
+    """rules.allowed / allowance_problems: an exact single-line command, one heuristic rule per entry (0004 S5)."""
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / ".aiops" / "config").mkdir(parents=True)
+        self.f = self.root / ".aiops" / "config" / "allowed-commands"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def entries(self, text):
+        self.f.write_text(text)
+
+    def test_exact_match_only(self):
+        self.entries("# human-owned\nG-ENV-03 ls env\nG-BASH-07 sudo systemctl status docker   \n")
+        self.assertTrue(rules.allowed(self.root, "G-ENV-03", "ls env"))
+        self.assertTrue(rules.allowed(self.root, "G-ENV-03", "  ls env\n"))        # surrounding whitespace trimmed
+        self.assertTrue(rules.allowed(self.root, "G-BASH-07", "sudo systemctl status docker"))
+        for cmd in ("ls  env", "ls env; git push --force", "ls env x", "LS ENV", "ls env && true", "ls"):
+            self.assertFalse(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
+        self.assertFalse(rules.allowed(self.root, "G-BASH-07", "ls env"))          # the entry names one rule
+        self.assertFalse(rules.allowed(self.root, "g-env-03", "ls env"))           # ids are exact too
+
+    def test_full_environment_dump_never_allowed(self):
+        self.entries("G-ENV-03 printenv\nG-ENV-03 env\nG-ENV-03 env -0\nG-ENV-03 FOO=1 env\nG-ENV-03 printenv PATH\n"
+                     "G-ENV-03 ls env\n")
+        for cmd in ("printenv", "env", "env -0", "FOO=1 env"):
+            self.assertFalse(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
+        # review round 2: options with arguments, wrappers, grouping, redirection and substitution are dumps too
+        for cmd in ("env -u HOME", "env -C /tmp", "env --chdir /tmp", "command env", "nice env", "exec env",
+                    "time printenv", "nohup env", "timeout 5 env", "(env)", "{ env; }", "env > /tmp/x",
+                    "echo $(env)", "cat <(env)", "echo `printenv`", "printenv -0", "/usr/bin/env", "printenv | cat"):
+            self.assertTrue(rules.dumps_environment(cmd), cmd)
+        for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "env FOO=1 make", "python -m venv env"):
+            self.assertFalse(rules.dumps_environment(cmd), cmd)
+        for cmd in ("printenv PATH", "ls env"):
+            self.assertTrue(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
+        probs = "\n".join(rules.allowance_problems(self.f.read_text()))
+        self.assertIn("line 1", probs)
+        self.assertIn("whole environment", probs)
+        self.assertNotIn("line 5", probs)
+
+    def test_problems_never_echo_unrecognised_text(self):
+        probs = "\n".join(rules.allowance_problems("-----BEGIN OPENSSH PRIVATE KEY-----\n  ssh-ed25519 AAAAsecret x\n"))
+        self.assertNotIn("OPENSSH", probs)
+        self.assertNotIn("AAAAsecret", probs)
+        self.assertIn("line 1", probs)
+
+    def test_multiline_command_never_allowed(self):
+        self.entries("G-ENV-03 ls env\n")
+        self.assertFalse(rules.allowed(self.root, "G-ENV-03", "ls env\nrm -rf .aiops"))
+        self.assertFalse(rules.allowed(self.root, "G-ENV-03", "ls env\r"))
+
+    def test_non_heuristic_ids_never_allowed(self):
+        reg = rules.load()
+        lines = "".join(f"{rid} git push origin main\n" for rid in reg)
+        self.entries(lines)
+        for rid, r in reg.items():
+            if r.cls != "heuristic":
+                self.assertFalse(rules.allowed(self.root, rid, "git push origin main"), rid)
+
+    def test_no_file_or_unknown_id(self):
+        self.assertFalse(rules.allowed(self.root, "G-ENV-03", "ls env"))
+        self.entries("G-ENV-03 ls env\n")
+        self.assertFalse(rules.allowed(self.root, "G-NOPE-01", "ls env"))
+
+    def test_problems_name_line_and_class(self):
+        probs = rules.allowance_problems(
+            "# comment\n\nG-ENV-03 ls env\nG-MERGE-03 git push origin main\nG-SEC-06 cat .env\nG-NOPE-01 x\n"
+            "G-ENV-03\nnot-an-id ls\nG-BASH-01 eval eval eval eval true\n")
+        text = "\n".join(probs)
+        self.assertEqual(len(probs), 6, text)
+        self.assertIn("line 4", text)
+        self.assertIn("G-MERGE-03 is a gate rule", text)
+        self.assertIn("G-SEC-06 is a secret rule", text)
+        self.assertIn("G-BASH-01 is a safety rule", text)
+        self.assertIn("unknown rule id G-NOPE-01", text)
+        self.assertIn("line 7", text)                                               # an id with no command
+        self.assertNotIn("line 3", text)                                            # the valid entry
+        self.assertEqual(rules.allowance_problems("G-ENV-03 ls env\n"), [])
+
+
+class History(unittest.TestCase):
+    """defaults/scaffold-history.json holds every release's scaffold, and the current one (0004 S10)."""
+    def test_current_scaffold_in_history(self):
+        import json
+        from sdlc_engine import lifecycle
+        hist = json.loads((ROOT / "defaults" / "scaffold-history.json").read_text())
+        for v in ("0.1.0", "0.2.0-alpha.1", "0.2.0-alpha.2"):
+            self.assertIn(v, hist)
+        key = lifecycle.history_key()
+        self.assertIn(key, hist, "regenerate: python3 scripts/scaffold-history.py")
+        current = {rel: lifecycle.sha256_bytes(lifecycle.normalize((ROOT / "templates" / "scaffold" / rel).read_bytes()))
+                   for rel in lifecycle.scaffold_paths()}
+        recorded = {rel: h for rel, h in hist[key].items() if "+" not in rel}
+        self.assertEqual(recorded, current, "regenerate: python3 scripts/scaffold-history.py")
+
+    def test_normalize_undoes_the_ref_pin(self):
+        from sdlc_engine import lifecycle
+        for pinned in (b"      ZOUJ_SDLC_REF: v0.1.0        # pin", b"      ZOUJ_SDLC_REF: " + b"a" * 40 + b"   # x",
+                       b'        "ref": "v0.2.0-alpha.2"'):
+            self.assertIn(b"__ZOUJ_SDLC_REF__", lifecycle.normalize(pinned), pinned)
+
+
+class Skills(unittest.TestCase):
+    """/zouj-ai-sdlc:configure is a thin, read-only wrapper over setup (0004 S17)."""
+    def test_configure_is_read_only(self):
+        f = ROOT / "skills" / "configure" / "SKILL.md"
+        self.assertTrue(f.is_file())
+        text = f.read_text()
+        self.assertRegex(text, r"(?m)^name: configure$")
+        self.assertRegex(text, r"(?m)^description: .+")
+        ran = set(re.findall(r"Run `(sdlc [a-z-]+[^`]*)`", text))
+        self.assertTrue(ran)
+        for cmd in ran:
+            self.assertRegex(cmd, r"^sdlc (list-installed|doctor|setup --profile <\w+> --dry-run)$", cmd)
+        self.assertIn("-I <plugin>/bin/sdlc setup --profile", text)     # the human's terminal command, at the end
+        self.assertLess(text.index("--dry-run"), text.index("-I <plugin>/bin/sdlc setup --profile"))
+        for word in ("--yes", "uninstall", "approve"):
+            self.assertNotIn(f"Run `sdlc {word}", text)
+
+    def test_skills_mention_the_lifecycle(self):
+        setup = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
+        status = (ROOT / "skills" / "status" / "SKILL.md").read_text()
+        for cmd in ("sdlc list-installed", "sdlc upgrade"):
+            self.assertIn(cmd, setup, cmd)
+        self.assertIn("sdlc why", status)
 
 
 if __name__ == "__main__":

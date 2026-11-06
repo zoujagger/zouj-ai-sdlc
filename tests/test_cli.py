@@ -4,7 +4,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from helpers import INTENT, RepoCase
+from helpers import INTENT, RepoCase, git
 
 
 class Init(RepoCase):
@@ -283,6 +283,53 @@ class Lifecycle(RepoCase):
         self.assertEqual(self.run_sdlc("unlock", env={"CLAUDECODE": "1"}).returncode, 1)
         self.assertEqual(self.run_sdlc("unlock").returncode, 0)
         self.assertFalse((self.root / ".aiops" / "state" / "test-lock").exists())
+
+
+class Allowances(RepoCase):
+    """doctor and `validate --ci` report allowed-commands entries the hooks ignore (0004 S7)."""
+    def allow(self, text):
+        (self.root / ".aiops" / "config" / "allowed-commands").write_text(text)
+
+    def test_doctor_flags_gate_entry(self):
+        self.allow("G-ENV-03 ls env\n")
+        self.assertNotIn("allowed-commands", self.run_sdlc("doctor").stdout.replace("allowed-commands: ok", ""))
+        self.allow("G-ENV-03 ls env\nG-MERGE-03 git push origin main\n")
+        r = self.run_sdlc("doctor")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertRegex(r.stdout, r"✗ \.aiops/config/allowed-commands line 2: G-MERGE-03 is a gate rule")
+
+    def test_validate_ci_fails_on_base_entry(self):
+        self.allow("G-SEC-06 cat .env\n")
+        git(self.root, "add", ".aiops/config/allowed-commands")
+        git(self.root, "commit", "-qm", "allowance")
+        self.allow("G-ENV-03 ls env\n")                       # the PR's own copy is fine; the base's is not
+        r = self.run_sdlc("validate", "--ci", "--base", "HEAD")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("G-SEC-06 is a secret rule", r.stdout)
+        self.assertIn("HEAD:.aiops/config/allowed-commands", r.stdout)
+
+    def test_validate_ci_fails_on_the_prs_own_entry(self):
+        self.allow("G-ENV-03 ls env\nG-BASH-02 rm -rf /\n")
+        r = self.run_sdlc("validate", "--ci", "--base", "main")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("G-BASH-02 is a safety rule", r.stdout)
+
+    def test_symlinked_file_is_not_read(self):
+        secret = self.root.parent / f"{self.root.name}.secret"
+        secret.write_text("G-NOPE-99 top-secret-line\n")
+        self.addCleanup(secret.unlink)
+        (self.root / ".aiops" / "config" / "allowed-commands").symlink_to(secret)
+        for args in (("doctor",), ("validate", "--ci", "--base", "main")):
+            r = self.run_sdlc(*args)
+            self.assertEqual(r.returncode, 1, args)
+            self.assertNotIn("top-secret-line", r.stdout + r.stderr, args)
+            self.assertNotIn("G-NOPE-99", r.stdout + r.stderr, args)
+            self.assertIn("symlink", r.stdout + r.stderr, args)
+
+    def test_valid_entries_pass(self):
+        self.allow("# human-owned\nG-ENV-03 ls env\nG-BASH-07 sudo systemctl status docker\n")
+        r = self.run_sdlc("validate", "--ci", "--base", "main")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
 if __name__ == "__main__":

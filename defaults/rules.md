@@ -28,8 +28,8 @@ Why: an approval commit (trailer `AIOps-Approval:`) is the proof CI audits; only
 Instead: ask the human to approve in the prompt or in their own terminal (`sdlc approve NNNN intent|spec|plan`).
 
 ## G-GATE-07
-Why: `approve`, `close`, `unlock`, `hook` and `legacy-approvals` decide gates; they are run by the human (or by
-Claude Code's hooks), never by the agent.
+Why: `approve`, `close`, `unlock`, `hook` and `legacy-approvals` decide gates, and a real `uninstall` removes the
+workflow's files; they are run by the human (or by Claude Code's hooks), never by the agent.
 Instead: ask the human: they type `Intent|Spec|Plan Approved NNNN`, or run the command in their own terminal.
 
 ## G-ENV-02
@@ -160,7 +160,7 @@ Why: the definition of done is a green `make check`; the session can't finish re
 Instead: fix the failures shown, then finish.
 
 ## G-SCAF-01
-Why: the agent's `sdlc init|setup` may act only on this session's repo, from there.
+Why: the agent's `sdlc init|setup|upgrade|repair|uninstall` may act only on this session's repo, from there.
 Instead: run it from the project as a command of its own; another repo is set up by the human in their terminal.
 
 ## G-SEC-01
@@ -264,5 +264,6 @@ Instead: explain why it's needed and ask the human to run it themselves.
 
 ## G-ENV-03
 Why: dumping the environment (`env`, `printenv`) can print secrets into the session. The pattern also catches
-`env` as a plain word (`ls env`, `python -m venv env`).
+`env` as a plain word (`ls env`, `python -m venv env`). Those can be allowed; a command that prints the whole
+environment (`env`, `printenv` with no variable name) never can.
 Instead: read the one variable you need by a name that isn't secret, or check that it's set (`[ -n "$VAR" ]`).

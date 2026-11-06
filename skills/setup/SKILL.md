@@ -48,6 +48,11 @@ There's no mode without the gates. Never offer one.
 7. **Doctor.** Relay the `✗` rows of the doctor output that setup printed. Then suggest
    `/zouj-ai-sdlc:intent "<first need>"` once the human has committed the scaffold.
 
+**Already set up?** `sdlc list-installed` shows what the plugin installed and each file's status. `sdlc repair`
+restores missing files, and `sdlc upgrade` brings the scaffold to a newer plugin version (the human updates the
+plugin with `/plugin` first). Both keep every file the user modified. `/zouj-ai-sdlc:configure` previews a profile
+change.
+
 To change the profile later, the human runs `sdlc setup --profile <new>` in their own terminal. Run by the agent,
 setup only prints that change. That "never under the agent" check reads Claude Code's environment markers, so it is a
 deterrent, like the other local guards: the guarantee is CI, which reads the config, the signers and CODEOWNERS from

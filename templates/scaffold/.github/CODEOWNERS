@@ -3,6 +3,7 @@
 /.aiops/                   @your-org/product          # lifecycle artifacts and gate approvals
 /.aiops/config/            @your-org/maintainers @your-org/platform   # guard lists, signers, legacy approvals
 /.aiops/config.json        @your-org/maintainers @your-org/platform   # signing switch
+/.aiops/install-state.json @your-org/maintainers @your-org/platform   # what the plugin installed (engine-written)
 /.claude/                  @your-org/maintainers @your-org/platform
 /CLAUDE.md                 @your-org/maintainers
 /REVIEW.md                 @your-org/maintainers

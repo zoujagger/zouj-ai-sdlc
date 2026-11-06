@@ -5,6 +5,66 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+Planned as **0.2.0-alpha.3**. The version stays 0.2.0-alpha.2 until that release is tagged.
+
+Roadmap Phase 2 (`docs/roadmap.md`), delivered as intent `.aiops/0004-safe-lifecycle/`: the plugin now knows what it
+installed, upgrades and repairs a repo safely, and explains every block. The playbook workflow is unchanged.
+
+### Added
+- **Rule ids and `sdlc why <id>`.** Every block reads `BLOCKED [G-AREA-NN] by <hook>: …` and ends with
+  `sdlc why <id>`. The command explains the reason, the stage the rule protects and the safe alternative. The
+  registry is `defaults/rules` (64 rules, each in one class: gate, secret, toolchain, safety or heuristic) plus
+  `defaults/rules.md`.
+- **Exact-command allowances.** `.aiops/config/allowed-commands` (human-owned) can let one exact command through one
+  `heuristic` rule. Only two rules are heuristic: `G-ENV-03` (env/printenv) and `G-BASH-07` (sudo, mkfs, dd,
+  chmod 777). Every other rule still runs on that command. `sdlc doctor` and `sdlc validate --ci` reject entries for
+  any other rule, an unknown id or a command with control characters. There is no per-rule disable switch.
+- **`.aiops/install-state.json`.** `init` and `setup` record the plugin version, the CI ref, the profile, the stack,
+  and a hash of each file they wrote. The engine writes it; the agent can't (protected path, CODEOWNERS).
+- **`sdlc list-installed`.** Shows each installed file as current, stale, modified, missing, unmanaged, dropped or new.
+- **`sdlc repair [--dry-run] [--yes]`.** Restores missing files.
+- **`sdlc upgrade [--dry-run] [--yes]`.** Brings the scaffold to the running plugin version:
+  - replaces stale files, showing a diff
+  - creates new files
+  - keeps modified files, except for the CI ref
+  - pins every ref to the plugin's full commit sha, from `installed_plugins.json` or a pushed checkout
+  - lists migrations; `legacy-approvals` is human-only and is never run for you
+- **`sdlc uninstall [--dry-run] [--yes]`.** Human-only. Removes unmodified scaffold files, never `.aiops/NNNN-*`.
+- **`upgrade` changes only the plugin's own refs:** literal `ZOUJ_SDLC_REF` values (an expression is left alone and
+  reported) and the zouj marketplace's `ref` in JSON (another marketplace is never touched). Each pin is shown as a
+  diff before you confirm. After adoption, a scaffold file you had deleted is `declined` and never re-created.
+- **Adoption.** Repos from 0.1.0, 0.2.0-alpha.1 and alpha.2 are adopted from `defaults/scaffold-history.json`, which
+  `scripts/scaffold-history.py` generates from the release tags.
+- **`/zouj-ai-sdlc:configure`.** Shows the profile and installed files and previews a profile change, then hands you
+  the terminal command.
+- **Tests.** `tests/test_playbook.py` runs the agent's `upgrade` and `repair` in states 1, 4 and 5 of every profile
+  walk and requires no change to any gate, artifact or the lock. A permanent test breaks `upgrade` on purpose and
+  checks that each break is caught.
+
+### Changed
+- `G-ENV-04` (secret): `echo $…TOKEN/KEY/SECRET/PASSWORD` is now a separate rule from env dumping.
+- The post-edit schema check reads `NOT VALID [G-ART-09] … was saved` (the edit had already landed).
+- Run by the agent, `sdlc upgrade|repair|uninstall` act only on the session's repo (G-SCAF-01). A real `uninstall` is
+  blocked (G-GATE-07).
+- `docs/architecture.md` no longer claims that shell writes to the toolchain and secrets are guarded in repos without
+  `.aiops/`.
+
+### Known issues (planned for intent 0005)
+- In states 4-5 the shell-write check misses `rm -rf ./`, `rm -rf "$PWD"`, `rm -rf .github/workflows` and
+  `mv .github …`. Protected paths are matched exactly, not as a parent directory.
+- In a repo without `.aiops/`, shell writes to `~/.gitconfig`, `~/.bashrc`, `git config --global`, the installed
+  plugin and `~/.ssh` aren't checked. Edit/Write to them is. Signing and the CI audit keep such writes from opening a
+  gate.
+- `sdlc doctor` doesn't report install-state yet. Use `sdlc list-installed`.
+- G-ENV-03's whole-environment check works from a list of known forms: nested forms (`bash -c env`, `env env`,
+  `xargs env`, `if …; then env; fi`) aren't recognised, so a human who writes one of them into `allowed-commands`
+  lets the environment through. `re_dump_env` also doesn't match `/usr/bin/env` or `cat /proc/self/environ`.
+
+### Upgrading from 0.2.0-alpha.2
+Update the plugin with `/plugin`, then run `sdlc upgrade --dry-run` and `sdlc upgrade` in your own terminal. Your
+repo is adopted first (only install-state is written), and every `ZOUJ_SDLC_REF` is pinned to a full sha. Commit
+the result through a PR.
+
 ## [0.2.0-alpha.2] - 2026-11-04
 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.

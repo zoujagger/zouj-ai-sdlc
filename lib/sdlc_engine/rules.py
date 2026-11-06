@@ -2,6 +2,7 @@
 (the reason and the safe alternative per rule). `sdlc why <id>` reads both."""
 import difflib
 import re
+from pathlib import Path
 from typing import NamedTuple
 
 from .machine import PLUGIN_ROOT
@@ -93,8 +94,9 @@ def why(rid):
         return 1, f"unknown rule id {rid!r}." + (f" Did you mean: {', '.join(near)}?" if near else
                                                   " The ids are listed in the plugin's defaults/rules.")
     if r.cls in ALLOWABLE:
-        allow = ("allowable class: from 0.2.0-alpha.3 the human can let one exact command through this rule, and "
-                 "every other rule still applies. Until then, rephrase the command or run it yourself.")
+        allow = (f"allowable class: the human can let one exact command through this rule by adding the line "
+                 f"`{r.id} <the exact command>` to .aiops/config/allowed-commands (human-owned, under CODEOWNERS). "
+                 "Only that command, and only this rule: every other rule still applies.")
     else:
         allow = f"no allowance: {r.cls} rules can't be lifted (there is no per-rule disable switch)."
     return 0, "\n".join([
@@ -105,3 +107,88 @@ def why(rid):
         f"  instead: {r.instead}",
         f"  allowance: {allow}",
     ])
+
+
+ALLOWANCES = ".aiops/config/allowed-commands"     # human-owned: protected by .aiops/config* and CODEOWNERS
+ENTRY_RE = re.compile(r"^(\S+)(?:[ \t]+(.*?))?[ \t]*$")
+CONTROL_RE = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")   # any control character but tab: no multi-line, no \r tricks
+
+
+def _entries(text):
+    """[(line number, id, command or "")] for each non-comment line of an allowed-commands file."""
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        m = ENTRY_RE.match(line)
+        out.append((n, m.group(1), m.group(2) or "") if m else (n, line.strip(), ""))
+    return out
+
+
+def dumps_environment(command):
+    """True if a simple command in it prints the whole environment: `env` or `printenv` with nothing but options
+    and assignments (`printenv PATH` names one variable; `env FOO=1 make` runs a command)."""
+    import shlex
+    wrappers = {"command", "exec", "nice", "time", "nohup", "stdbuf", "timeout", "builtin", "sudo", "doas", "!"}
+    if re.search(r"(\$\(|`|<\(|>\()", command) and re.search(r"\b(env|printenv)\b", command):
+        return True                                       # inside a substitution: can't tell what it prints
+    for part in re.split(r"[;&|\n(){}]+", command):
+        try:
+            words = shlex.split(part)
+        except ValueError:
+            return True                                   # can't tell: treat as a dump
+        while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in wrappers
+                         or re.match(r"^(-\S*|\d+[smhd]?)$", words[0])):
+            words = words[1:]                             # assignments, wrappers and their options
+        if not words:
+            continue
+        name, args = Path(words[0]).name, words[1:]
+        if name == "printenv" and not (args and all(re.match(r"^[A-Za-z_]\w*$", a) for a in args)):
+            return True                                   # only `printenv NAME…` prints chosen variables
+        if name == "env":
+            rest = [a for a in args if not re.match(r"^[A-Za-z_]\w*=", a)]
+            if not rest or rest[0].startswith("-") or any(c in a for a in rest for c in "<>"):
+                return True                               # env with options, nothing to run, or a redirect
+    return False
+
+
+def allowed(root, rule_id, command):
+    """True only if rule_id is in an allowable class and `<rule_id> <command>` is listed, byte-equal, in the repo's
+    allowed-commands. The command is compared after trimming surrounding spaces, tabs and newlines, and must hold no
+    other control character. An allowance lifts this one rule for this one command; callers keep checking the rest."""
+    r = load().get(rule_id)
+    if r is None or r.cls not in ALLOWABLE:
+        return False
+    cmd = (command or "").strip(" \t\n")
+    if not cmd or CONTROL_RE.search(cmd):
+        return False
+    if rule_id == "G-ENV-03" and dumps_environment(cmd):   # every token in the session: never allowable
+        return False
+    f = Path(root) / ALLOWANCES
+    try:
+        text = f.read_text() if f.is_file() and not f.is_symlink() else ""
+    except (OSError, UnicodeDecodeError):
+        return False
+    return any(rid == rule_id and entry == cmd for _, rid, entry in _entries(text))
+
+
+def allowance_problems(text):
+    """Why each allowed-commands entry is refused: an unknown id, a class that can't be allowed, or no command.
+    The hooks ignore such entries; doctor and `validate --ci` report them."""
+    reg, probs = load(), []
+    for n, rid, cmd in _entries(text):
+        r = reg.get(rid)
+        if not ID_RE.match(rid):                          # never echo text that isn't a rule id
+            probs.append(f"line {n}: doesn't start with a rule id (format: `<rule id> <exact command>`)")
+        elif r is None:
+            probs.append(f"line {n}: unknown rule id {rid} (see `sdlc why`)")
+        elif r.cls not in ALLOWABLE:
+            probs.append(f"line {n}: {rid} is a {r.cls} rule; only heuristic rules "
+                         f"({', '.join(sorted(k for k, v in reg.items() if v.cls in ALLOWABLE))}) can be allowed")
+        elif not cmd:
+            probs.append(f"line {n}: {rid} has no command (format: `<rule id> <exact command>`)")
+        elif CONTROL_RE.search(cmd):
+            probs.append(f"line {n}: the command contains a control character")
+        elif rid == "G-ENV-03" and dumps_environment(cmd):
+            probs.append(f"line {n}: G-ENV-03 can't allow a command that prints the whole environment")
+    return probs
