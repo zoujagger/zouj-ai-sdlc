@@ -615,11 +615,13 @@ class InstallState(RepoCase):
         import subprocess
         from helpers import ROOT
         path = str(self.root / ".aiops" / "install-state.json")
-        for r in (self.hook("pre-edit", self.hook_input("Write", file_path=path, content="{}")),
-                  self.hook("pre-bash", self.hook_input("Bash", command="echo '{}' > .aiops/install-state.json")),
-                  self.hook("pre-bash", self.hook_input("Bash", command="rm .aiops/install-state.json"))):
+        # the exact ids (AC-15, review round 2): the engine's own rules for .aiops/ fire first; guard-files adds G-FILE-04
+        for r, rid in ((self.hook("pre-edit", self.hook_input("Write", file_path=path, content="{}")), "G-ART-01"),
+                       (self.hook("pre-bash", self.hook_input("Bash", command="echo '{}' > .aiops/install-state.json")),
+                        "G-ART-05"),
+                       (self.hook("pre-bash", self.hook_input("Bash", command="rm .aiops/install-state.json")), "G-ART-05")):
             self.assertEqual(r.returncode, 2, r.stderr)
-            self.assertRegex(r.stderr, r"\[G-(ART|FILE)-\d\d\]")
+            self.assertIn(f"[{rid}]", r.stderr)
         files = subprocess.run([str(ROOT / "hooks" / "guard-files.sh")], capture_output=True, text=True,
                                input=json.dumps({"tool_input": {"file_path": path, "content": "{}"}}),
                                env={**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)})

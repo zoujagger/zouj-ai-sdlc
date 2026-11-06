@@ -173,6 +173,13 @@ class Allowance(unittest.TestCase):
                      "G-ENV-03 ls env\n")
         for cmd in ("printenv", "env", "env -0", "FOO=1 env"):
             self.assertFalse(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
+        # review round 2: options with arguments, wrappers, grouping, redirection and substitution are dumps too
+        for cmd in ("env -u HOME", "env -C /tmp", "env --chdir /tmp", "command env", "nice env", "exec env",
+                    "time printenv", "nohup env", "timeout 5 env", "(env)", "{ env; }", "env > /tmp/x",
+                    "echo $(env)", "cat <(env)", "echo `printenv`", "printenv -0", "/usr/bin/env", "printenv | cat"):
+            self.assertTrue(rules.dumps_environment(cmd), cmd)
+        for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "env FOO=1 make", "python -m venv env"):
+            self.assertFalse(rules.dumps_environment(cmd), cmd)
         for cmd in ("printenv PATH", "ls env"):
             self.assertTrue(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
         probs = "\n".join(rules.allowance_problems(self.f.read_text()))

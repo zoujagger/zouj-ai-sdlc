@@ -676,6 +676,9 @@ def cmd_doctor(root, args):
             row(not weak, "allowed-signers: strict accepts only sk- keys that need a touch"
                 + (f" ({len(weak)} other: {', '.join(w.split()[0] for w in weak[:3])})" if weak else ""),
                 "replace those entries with sk- keys, without no-touch-required (human-owned, via a reviewed PR)")
+    if initialized(root) and not (root / ".github" / "workflows" / "aiops-gates.yml").is_file():
+        out("  ! .github/workflows/aiops-gates.yml missing: CI doesn't audit the approvals (the hard guarantee)\n"
+            "      fix: `sdlc upgrade` offers it back, or copy it from the plugin's templates/scaffold/")
     if initialized(root) and config(root).get("require_signed_approvals"):
         _doctor_signing(root, row)
     if initialized(root) and (root / ".aiops" / "config" / "allowed-commands").is_symlink():

@@ -73,6 +73,10 @@ def record(root, written, profile=None, stack=None, ref=None):
     save(root, st)
 
 
+# security scaffold a repo must not silently lose: offered back by upgrade even if it was missing at adoption
+NEVER_DECLINED = {".github/workflows/aiops-gates.yml", ".github/CODEOWNERS", ".aiops/config/allowed-signers",
+                  ".aiops/config/secret-paths", ".aiops/config/protected-paths"}
+
 STATUSES = ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new", "declined")
 
 
@@ -229,7 +233,7 @@ def adopt(root):
     newest = max(versions, key=version_key) if versions else None
     release = next((k for k in hist if (running if k == "unreleased" else k) == newest), None)
     for rel in hist.get(release, {}):                  # in the adopted release, but not on disk: the user removed it
-        if "+" not in rel and rel not in files and not (root / rel).exists() and not (root / rel).is_symlink():
+        if "+" not in rel and rel not in files and rel not in NEVER_DECLINED and not (root / rel).exists() and not (root / rel).is_symlink():
             files[rel] = {"sha256": None, "version": None, "declined": True,
                           "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
     return {"schema": SCHEMA, "adopted": True, "files": files, "migrations": [], "stack": stack, "ref": ref,
@@ -445,13 +449,11 @@ def pin(data, ref):
     """data with the plugin's CI ref set to ref, and nothing else changed: each literal `ZOUJ_SDLC_REF:` value, and in
     JSON only the `"ref"` of the zouj-ai-sdlc marketplace source (another marketplace's ref is never touched)."""
     data = PIN_LINE_RE.sub(lambda m: m.group(1) + ref.encode(), data)
-    for m in ZOUJ_REPO_RE.finditer(data):
-        span = _object_span(data, m.start())
-        if not span:
-            continue
-        s, e = span
-        inner = REF_JSON_RE.sub(lambda r: r.group(1) + ref.encode() + r.group(3), data[s:e + 1])
-        data = data[:s] + inner + data[e + 1:]
+    spans = {_object_span(data, m.start()) for m in ZOUJ_REPO_RE.finditer(data)} - {None}
+    for s, e in sorted(spans, reverse=True):              # right to left: earlier offsets stay valid
+        for r in reversed(list(REF_JSON_RE.finditer(data, s, e + 1))):
+            if _object_span(data, r.start()) == (s, e):   # the object's own ref, not a nested one
+                data = data[:r.start(2)] + ref.encode() + data[r.end(2):]
     return data
 
 
@@ -533,6 +535,9 @@ def cmd_upgrade(root, args):
         if normalize(disk) != normalize(expected(rel, ref, st.get("stack"))):
             out(f"  = kept {rel} (modified): it differs from the new template; compare and merge by hand:")
             show_diff(rel, disk, expected(rel, ref, st.get("stack")))
+    for rel, status in classify(root, st).items():
+        if status == "declined":
+            out(f"  ! {rel} is declined (removed before adoption); upgrade never re-creates it")
     if human:
         out("Human-owned or locked, not written when the agent runs upgrade (install-state keeps them at their old "
             f"version). The human runs, in their own terminal:\n  {human_command('upgrade')}\n  for: " + ", ".join(human))

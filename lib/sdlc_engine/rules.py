@@ -129,16 +129,26 @@ def dumps_environment(command):
     """True if a simple command in it prints the whole environment: `env` or `printenv` with nothing but options
     and assignments (`printenv PATH` names one variable; `env FOO=1 make` runs a command)."""
     import shlex
-    for part in re.split(r"[;&|\n]+", command):
+    wrappers = {"command", "exec", "nice", "time", "nohup", "stdbuf", "timeout", "builtin", "sudo", "doas", "!"}
+    if re.search(r"(\$\(|`|<\(|>\()", command) and re.search(r"\b(env|printenv)\b", command):
+        return True                                       # inside a substitution: can't tell what it prints
+    for part in re.split(r"[;&|\n(){}]+", command):
         try:
             words = shlex.split(part)
         except ValueError:
             return True                                   # can't tell: treat as a dump
-        while words and re.match(r"^[A-Za-z_]\w*=", words[0]):
-            words = words[1:]
-        if words and Path(words[0]).name in ("env", "printenv") and \
-                all(w.startswith("-") or re.match(r"^[A-Za-z_]\w*=", w) for w in words[1:]):
-            return True
+        while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in wrappers
+                         or re.match(r"^(-\S*|\d+[smhd]?)$", words[0])):
+            words = words[1:]                             # assignments, wrappers and their options
+        if not words:
+            continue
+        name, args = Path(words[0]).name, words[1:]
+        if name == "printenv" and not (args and all(re.match(r"^[A-Za-z_]\w*$", a) for a in args)):
+            return True                                   # only `printenv NAME…` prints chosen variables
+        if name == "env":
+            rest = [a for a in args if not re.match(r"^[A-Za-z_]\w*=", a)]
+            if not rest or rest[0].startswith("-") or any(c in a for a in rest for c in "<>"):
+                return True                               # env with options, nothing to run, or a redirect
     return False
 
 

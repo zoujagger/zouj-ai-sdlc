@@ -207,9 +207,24 @@ class Adoption(RepoCase):
         self.assertFalse((self.root / ".github" / "workflows" / "deploy.yml").exists())
         rows = self.run_sdlc("list-installed").stdout
         self.assertRegex(rows, r"(?m)^  declined\s+\.github/workflows/deploy\.yml$")
+        self.assertIn("deploy.yml", self.run_sdlc("upgrade", "--dry-run").stdout)   # declined files are mentioned
         r = self.run_sdlc("upgrade", "--yes")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertFalse((self.root / ".github" / "workflows" / "deploy.yml").exists())  # never re-created
+
+    def test_security_scaffold_is_never_declined(self):
+        from sdlc_engine import lifecycle
+        self.scaffold_as_released("0.2.0-alpha.2")
+        for rel in (".github/workflows/aiops-gates.yml", ".github/CODEOWNERS", ".aiops/config/secret-paths",
+                    ".aiops/config/protected-paths", ".aiops/config/allowed-signers"):
+            (self.root / rel).unlink()
+        st = lifecycle.adopt(self.root)
+        status = lifecycle.classify(self.root, st)
+        for rel in (".github/workflows/aiops-gates.yml", ".github/CODEOWNERS", ".aiops/config/secret-paths",
+                    ".aiops/config/protected-paths", ".aiops/config/allowed-signers"):
+            self.assertNotEqual(status.get(rel), "declined", rel)               # upgrade offers them back
+        doctor = self.run_sdlc("doctor").stdout
+        self.assertIn("aiops-gates.yml", doctor)                                 # the missing CI audit is flagged
 
     def test_links_and_non_scaffold_files_are_never_claimed(self):
         from sdlc_engine import lifecycle
@@ -403,6 +418,20 @@ class Upgrade(RepoCase):
         self.assertIn("ci.yml", r.stdout)
         self.assertIn("not a literal", r.stdout)
 
+    def test_pin_with_two_zouj_entries_and_another_marketplace(self):
+        from sdlc_engine import lifecycle
+        zouj = '{"source": {"source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "%s"}}'
+        other = '{"source": {"source": "github", "repo": "acme/tools", "ref": "keep"}}'
+        for first in ("v1", "v" + "9" * 120):                                    # short and long first refs
+            data = ('{"extraKnownMarketplaces": {"a": %s, "x": %s, "b": %s}}' % (zouj % first, other, zouj % "v1")).encode()
+            out = json.loads(lifecycle.pin(data, self.SHA))["extraKnownMarketplaces"]
+            self.assertEqual(out["a"]["source"]["ref"], self.SHA, first[:5])
+            self.assertEqual(out["b"]["source"]["ref"], self.SHA, first[:5])
+            self.assertEqual(out["x"]["source"]["ref"], "keep", first[:5])
+        nested = b'{"repo": "zoujagger/zouj-ai-sdlc", "ref": "v1", "inner": {"ref": "keep"}}'
+        out = json.loads(lifecycle.pin(nested, self.SHA))
+        self.assertEqual((out["ref"], out["inner"]["ref"]), (self.SHA, "keep"))     # only the object's own ref
+
     def test_agent_lists_migrations_but_never_runs_them(self):
         import os
         from unittest import mock
@@ -527,7 +556,7 @@ class RoundTrip(Upgrade):
     test_replaces_stale_keeps_modified_bumps_ref = test_second_run_is_noop = None
     test_dry_run_and_no_tty_write_nothing = test_agent_never_writes_human_owned = None
     test_legacy_approvals_listed_never_run = test_pin_touches_only_zouj_refs = None
-    test_agent_lists_migrations_but_never_runs_them = None
+    test_agent_lists_migrations_but_never_runs_them = test_pin_with_two_zouj_entries_and_another_marketplace = None
 
     def test_init_upgrade_uninstall_dry_run(self):
         from helpers import git
@@ -545,6 +574,7 @@ class Compat(Adoption):
     """A repo initialized by 0.2.0-alpha.2 works unchanged without any new command (AC-21)."""
     test_alpha1_and_alpha2_repos_adopted = test_stack_wired_makefile_matches = None
     test_links_and_non_scaffold_files_are_never_claimed = test_upgrade_and_repair_end_to_end_on_a_release_repo = None
+    test_security_scaffold_is_never_declined = None
 
     def test_alpha2_repo_unchanged(self):
         self.scaffold_as_released("0.2.0-alpha.2")
