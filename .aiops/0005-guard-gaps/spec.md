@@ -1,10 +1,14 @@
 ---
 id: 0005
 title: Close the shell-write guard gaps found in the 0004 reviews
-status: Draft
+status: Approved
 risk: medium           # changes guard decisions in every repo (more blocks); no gate semantics change
 intent: ./intent.md
 created: 2026-11-06
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-11-06T13:35:17Z
+approved-via: cli
+approved-sha256: 325039b29e458524d2ec5e9145a2e521cd2a8044d44f279ad5d519b3e6c87e19
 ---
 
 # Spec: Close the shell-write guard gaps found in the 0004 reviews
