@@ -335,7 +335,7 @@ guard change is test-first (CLAUDE.md rule 2).
     `RoundTrip::test_init_upgrade_uninstall_dry_run` and `Compat::test_alpha2_repo_unchanged` are added in the same
     step.
   - Covers: AC-14, AC-20, AC-21
-- [ ] **S17**: The `/zouj-ai-sdlc:configure` skill.
+- [x] **S17**: The `/zouj-ai-sdlc:configure` skill.
   - It runs `sdlc list-installed`, `sdlc doctor` and `sdlc setup --dry-run --profile <choice>`, then gives the
     human the terminal command `<python> -I <plugin>/bin/sdlc setup --profile <choice>`. No writes.
   - `skills/setup` and `skills/status` mention `list-installed`, `upgrade` and `why`.

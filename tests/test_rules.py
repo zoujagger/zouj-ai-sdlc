@@ -224,5 +224,30 @@ class History(unittest.TestCase):
             self.assertIn(b"__ZOUJ_SDLC_REF__", lifecycle.normalize(pinned), pinned)
 
 
+class Skills(unittest.TestCase):
+    """/zouj-ai-sdlc:configure is a thin, read-only wrapper over setup (0004 S17)."""
+    def test_configure_is_read_only(self):
+        f = ROOT / "skills" / "configure" / "SKILL.md"
+        self.assertTrue(f.is_file())
+        text = f.read_text()
+        self.assertRegex(text, r"(?m)^name: configure$")
+        self.assertRegex(text, r"(?m)^description: .+")
+        ran = set(re.findall(r"Run `(sdlc [a-z-]+[^`]*)`", text))
+        self.assertTrue(ran)
+        for cmd in ran:
+            self.assertRegex(cmd, r"^sdlc (list-installed|doctor|setup --profile <\w+> --dry-run)$", cmd)
+        self.assertIn("-I <plugin>/bin/sdlc setup --profile", text)     # the human's terminal command, at the end
+        self.assertLess(text.index("--dry-run"), text.index("-I <plugin>/bin/sdlc setup --profile"))
+        for word in ("--yes", "uninstall", "approve"):
+            self.assertNotIn(f"Run `sdlc {word}", text)
+
+    def test_skills_mention_the_lifecycle(self):
+        setup = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
+        status = (ROOT / "skills" / "status" / "SKILL.md").read_text()
+        for cmd in ("sdlc list-installed", "sdlc upgrade"):
+            self.assertIn(cmd, setup, cmd)
+        self.assertIn("sdlc why", status)
+
+
 if __name__ == "__main__":
     unittest.main()
