@@ -259,19 +259,13 @@ def human_command(name):
     return f"{approvals.PYTHON} -I {shlex.quote(str(PLUGIN_ROOT / 'bin' / 'sdlc'))} {name}"
 
 
-LOCK_ENV = ("SDLC_HOOK_PROFILE", "AIOPS_INTENT")    # the agent sets these in its own command: they can't lift the lock
-
-
 def agent_may_write(root, rel):
     """Run by the agent, a lifecycle command writes only what the agent could write itself: never a human-owned
     file (config, signers, settings, CODEOWNERS, workflows), a protected path, or code under the read-only lock. The
     lock is judged without SDLC_HOOK_PROFILE / AIOPS_INTENT, which the agent's own command line could set."""
-    import os
-    saved = {k: os.environ.pop(k) for k in LOCK_ENV if k in os.environ}
-    try:
+    from .machine import lock_env_stripped
+    with lock_env_stripped():
         return not (cli.HUMAN_OWNED_RE.match(rel) or cli._agent_blocked(root, rel))
-    finally:
-        os.environ.update(saved)
 
 
 def confirm(opts, name):

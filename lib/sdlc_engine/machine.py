@@ -263,3 +263,18 @@ def lock(root):
     if st.state in (0, 6) and idle:
         return True, f"intent {st.id} is {st.name}; start a new intent for further changes", st
     return False, f"intent {st.id} is in state {st.state} {st.name}", st
+
+
+LOCK_ENV = ("SDLC_HOOK_PROFILE", "AIOPS_INTENT")   # the agent can set these in its own command line
+
+
+class lock_env_stripped:
+    """Judge the read-only lock without SDLC_HOOK_PROFILE / AIOPS_INTENT: what the agent's own command sets can't
+    lift the lock for a write the engine does on its behalf (init --force, upgrade, repair). Restores them after."""
+    def __enter__(self):
+        self.saved = {k: os.environ.pop(k) for k in LOCK_ENV if k in os.environ}
+        return self
+
+    def __exit__(self, *exc):
+        os.environ.update(self.saved)
+        return False

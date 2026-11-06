@@ -73,7 +73,7 @@ Code to reuse:
     entry; `bash -c env` and `env env` blocked with one). They fail: today `bash -c env`, `env env`,
     `if true; then env; fi`, `env FOO=1 make` and `watch env` are accepted.
   - Covers: AC-10
-- [ ] **S3**: The lock is judged without the agent's env, for `init --force` too (gap 5).
+- [x] **S3**: The lock is judged without the agent's env, for `init --force` too (gap 5).
   - `machine.lock_env_stripped()` (a context manager that pops `SDLC_HOOK_PROFILE` and `AIOPS_INTENT`).
   - `lifecycle.agent_may_write` uses it (no behaviour change there), and `cli.init_actions(agent=True)` wraps
     `_agent_blocked` in it.
