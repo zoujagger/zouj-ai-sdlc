@@ -118,7 +118,7 @@
   "ops/bands.yaml": "d1c287b5d93bdcf36b5e34bc285f11d71553c739fb7bab392b56c935d83c131d",
   "scripts/check-bands.py": "ac6cf04c6311e38f9d59cbd51e2bba9c337f2c7f181a0f4ba0610453e586200f"
  },
- "unreleased": {
+ "0.2.0-alpha.3": {
   ".aiops/README.md": "43635b30a179e01795fe528f2e4b13098605c4d9605fb2bc17eb774c919a8170",
   ".aiops/config.json": "a1a61a7c5d12de06df04e65c81a305064d8f3e2ae02ea9152edddea88e164da0",
   ".aiops/config/allowed-signers": "5a2eaade0ac08b2c3e9254d77bfb3dd40666d3d25f1a84037ee02f51c56853be",
