@@ -8,12 +8,13 @@ source "$(dirname "$0")/lib.sh"
 input=$(cat)   # the production gate applies in every repo, initialized or not
 tool=$(json_get tool_name <<<"$input") || fail_closed guard-deploy
 
+# block <rule-id> <what>: the id is in defaults/rules (`sdlc why <id>` explains it).
 block() {
   {
-    echo "BLOCKED by guard-deploy: $1 targets production."
+    echo "BLOCKED [$1] by guard-deploy: $2 targets production."
     echo "Reason: production is a human gate. The agent stops at staging."
     echo "Procedure: run /zouj-ai-sdlc:deploy to produce the handoff note; a named approver then approves the 'production'"
-    echo "environment in the GitHub 'deploy' workflow, or runs 'make deploy ENV=prod' themselves."
+    echo "environment in the GitHub 'deploy' workflow, or runs 'make deploy ENV=prod' themselves. (details: \`sdlc why $1\`)"
   } >&2
   exit 2
 }
@@ -28,7 +29,7 @@ if [[ "$tool" == "Bash" ]]; then
   re_tools2="(kubectl|helm|terraform|pulumi|vercel|flyctl|fly)[^;&|]*${P}[^;&|]*(apply|deploy|up|upgrade|install)"
   re_vercel="vercel[^;&|]*--prod"
   for re in "$re_make" "$re_wf" "$re_tools" "$re_tools2" "$re_vercel"; do
-    [[ "$c" =~ $re ]] && block "'$c'"
+    [[ "$c" =~ $re ]] && block G-DEPLOY-01 "'$c'"
   done
   exit 0
 fi
@@ -36,6 +37,6 @@ fi
 # MCP deploy tools: block when any argument mentions production.
 if [[ "$tool" == mcp__* ]]; then
   args=$(json_get tool_input <<<"$input" | tr '[:upper:]' '[:lower:]')
-  [[ "$args" =~ $P ]] && block "MCP tool $tool"
+  [[ "$args" =~ $P ]] && block G-DEPLOY-02 "MCP tool $tool"
 fi
 exit 0

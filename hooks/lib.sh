@@ -30,7 +30,8 @@ hook_profile() {
 
 # fail_closed <hook-name>: block when no JSON parser is available rather than silently allowing.
 fail_closed() {
-  echo "BLOCKED by $1: neither jq nor python3 is installed, so the guardrail cannot inspect this call. Install jq." >&2
+  echo "BLOCKED [G-FAIL-02] by $1: neither jq nor python3 is installed, so the guardrail cannot inspect this call." >&2
+  echo "Procedure: install jq (or python3). (details: \`sdlc why G-FAIL-02\`)" >&2
   exit 2
 }
 
@@ -100,7 +101,8 @@ from sdlc_engine.secret_scan import main; sys.exit(main())' "$PLUGIN_ROOT/lib" |
   case $rc in
     0) return 0 ;;
     2) return 1 ;;
-    *) echo "BLOCKED: the secret-read scan failed to run (exit $rc), so it fails closed. python3 >= 3.9 is required." >&2
+    *) echo "BLOCKED [G-FAIL-03] by zouj-ai-sdlc: the secret-read scan failed to run (exit $rc), so it fails closed." >&2
+       echo "Procedure: install python3 >= 3.9, or tell the human. (details: \`sdlc why G-FAIL-03\`)" >&2
        return 1 ;;
   esac
 }

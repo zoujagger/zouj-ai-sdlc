@@ -101,7 +101,7 @@ guard change is test-first (CLAUDE.md rule 2).
     `BLOCKED \[G-[A-Z]+-\d\d\]` with the expected id and a `Procedure:`. It fails on today's `(read-only lock)`
     labels.
   - Covers: AC-16
-- [ ] **S3**: Ids in the bash hooks.
+- [x] **S3**: Ids in the bash hooks.
   - `block()` in `guard-bash.sh`, `guard-files.sh`, `guard-read.sh`, `guard-deploy.sh` and `guard-tests.sh` takes
     the id first and prints `BLOCKED [<id>] by <hook>: …`.
   - `lib.sh` `fail_closed`/`secret_scan`, `engine.sh` and `stop-verify.sh` get ids too.

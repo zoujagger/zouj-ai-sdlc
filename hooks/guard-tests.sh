@@ -13,14 +13,17 @@ path=$(json_get tool_input.file_path <<<"$input") || fail_closed guard-tests
 rel=$(rel_path "$path" "$root")
 
 if [[ "$rel" == ".aiops/state/test-lock" ]]; then
-  echo "BLOCKED by guard-tests: the test lock can only be released by the Stop hook (make check green) or a human." >&2
+  {
+    echo "BLOCKED [G-TEST-01] by guard-tests: the test lock can only be released by the Stop hook (make check green) or a human."
+    echo "Procedure: fix the code until make check passes. (details: \`sdlc why G-TEST-01\`)"
+  } >&2
   exit 2
 fi
 if is_test_path "$path" "$root"; then
   {
-    echo "BLOCKED by guard-tests: '$rel' is a test file and tests are locked during this fix."
+    echo "BLOCKED [G-TEST-02] by guard-tests: '$rel' is a test file and tests are locked during this fix."
     echo "Reason: the approved failing test defines done; changing it would hide the bug."
-    echo "Procedure: change production code only. If the test itself is wrong, stop and ask the human to re-approve it."
+    echo "Procedure: change production code only. If the test itself is wrong, stop and ask the human to re-approve it. (details: \`sdlc why G-TEST-02\`)"
   } >&2
   exit 2
 fi
