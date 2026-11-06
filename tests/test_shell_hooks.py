@@ -581,6 +581,12 @@ class Allowance(RepoCase):
         self.assertBlockedBy("sudo gh pr merge 12", "G-MERGE-04")
         self.assertBlockedBy("echo $MY_API_KEY; printenv", "G-ENV-04")
 
+    def test_safe_env_forms_through_the_hook(self):
+        self.allow("G-ENV-03 ls env", "G-ENV-03 bash -c env", "G-ENV-03 env env")
+        self.assertEqual(self.bash("ls env").returncode, 0)
+        self.assertBlockedBy("bash -c env", "G-ENV-03")
+        self.assertBlockedBy("env env", "G-ENV-03")
+
     def test_gate_and_secret_entries_ignored(self):
         self.allow("G-MERGE-03 git push origin main", "G-SEC-03 cat .env", "G-BASH-03 git push --force origin x",
                    "G-BASH-02 rm -rf /", "G-ENV-04 echo $GITHUB_TOKEN", "G-ENV-01 gh auth token")

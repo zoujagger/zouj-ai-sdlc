@@ -125,31 +125,46 @@ def _entries(text):
     return out
 
 
-def dumps_environment(command):
-    """True if a simple command in it prints the whole environment: `env` or `printenv` with nothing but options
-    and assignments (`printenv PATH` names one variable; `env FOO=1 make` runs a command)."""
+# G-ENV-03 allowances accept only commands that can't print the whole environment (0005, gap 6): `printenv NAME…`,
+# or a command that doesn't run env/printenv at all. Anything else is refused: no list of known dumps to outgrow.
+SAFE_ENV_COMMANDS = {"ls", "cd", "cat", "head", "tail", "wc", "file", "stat", "du", "tree", "source", ".",
+                     "virtualenv"}                    # commands that never run their arguments
+ENV_WORD_RE = re.compile(r"(^|/)(env|printenv)$")
+SUBSTITUTION_RE = re.compile(r"\$\(|`|<\(|>\(|[<>]")
+
+
+def safe_env_command(command):
+    """True if the command can't print the whole environment: every simple command is `printenv NAME…` (names only),
+    or doesn't mention env/printenv as a word, or is one of SAFE_ENV_COMMANDS (or `python -m venv`) with env only
+    as an argument. Substitutions and redirections are refused outright."""
     import shlex
-    wrappers = {"command", "exec", "nice", "time", "nohup", "stdbuf", "timeout", "builtin", "sudo", "doas", "!"}
-    if re.search(r"(\$\(|`|<\(|>\()", command) and re.search(r"\b(env|printenv)\b", command):
-        return True                                       # inside a substitution: can't tell what it prints
+    if SUBSTITUTION_RE.search(command):
+        return False
     for part in re.split(r"[;&|\n(){}]+", command):
         try:
             words = shlex.split(part)
         except ValueError:
-            return True                                   # can't tell: treat as a dump
-        while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in wrappers
-                         or re.match(r"^(-\S*|\d+[smhd]?)$", words[0])):
-            words = words[1:]                             # assignments, wrappers and their options
+            return False
+        while words and re.match(r"^[A-Za-z_]\w*=", words[0]):
+            words = words[1:]
         if not words:
             continue
         name, args = Path(words[0]).name, words[1:]
-        if name == "printenv" and not (args and all(re.match(r"^[A-Za-z_]\w*$", a) for a in args)):
-            return True                                   # only `printenv NAME…` prints chosen variables
-        if name == "env":
-            rest = [a for a in args if not re.match(r"^[A-Za-z_]\w*=", a)]
-            if not rest or rest[0].startswith("-") or any(c in a for a in rest for c in "<>"):
-                return True                               # env with options, nothing to run, or a redirect
-    return False
+        if name == "printenv":
+            if args and all(re.match(r"^[A-Za-z_]\w*$", a) for a in args):
+                continue
+            return False
+        if not any(ENV_WORD_RE.search(w) for w in words):
+            continue
+        if name in SAFE_ENV_COMMANDS or (name in ("python", "python3") and args[:2] == ["-m", "venv"]):
+            continue
+        return False
+    return True
+
+
+def dumps_environment(command):
+    """Deprecated alias (0.2.0-alpha.3): True if the command isn't a safe G-ENV-03 form."""
+    return not safe_env_command(command)
 
 
 def allowed(root, rule_id, command):
@@ -162,7 +177,7 @@ def allowed(root, rule_id, command):
     cmd = (command or "").strip(" \t\n")
     if not cmd or CONTROL_RE.search(cmd):
         return False
-    if rule_id == "G-ENV-03" and dumps_environment(cmd):   # every token in the session: never allowable
+    if rule_id == "G-ENV-03" and not safe_env_command(cmd):   # could print every token: never allowable
         return False
     f = Path(root) / ALLOWANCES
     try:
@@ -189,6 +204,7 @@ def allowance_problems(text):
             probs.append(f"line {n}: {rid} has no command (format: `<rule id> <exact command>`)")
         elif CONTROL_RE.search(cmd):
             probs.append(f"line {n}: the command contains a control character")
-        elif rid == "G-ENV-03" and dumps_environment(cmd):
-            probs.append(f"line {n}: G-ENV-03 can't allow a command that prints the whole environment")
+        elif rid == "G-ENV-03" and not safe_env_command(cmd):
+            probs.append(f"line {n}: G-ENV-03 allows only `printenv NAME…` or a command that doesn't run env/printenv "
+                         "(it could print the whole environment)")
     return probs

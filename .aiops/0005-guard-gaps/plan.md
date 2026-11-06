@@ -62,7 +62,7 @@ Code to reuse:
     `tests/test_rules.py::Why::test_safety_rules_every_repo` (G-SEC-01, G-TOOL-02, G-TOOL-04, G-TOOL-05, G-BASH-01
     → "in every repo"). They fail on today's regex and stages.
   - Covers: AC-4, AC-11
-- [ ] **S2**: G-ENV-03 allowances accept only safe forms (gap 6).
+- [x] **S2**: G-ENV-03 allowances accept only safe forms (gap 6).
   - `rules.safe_env_command(cmd)` (R-6 rules); `allowed()` requires it for G-ENV-03.
   - `allowance_problems` reports others: "G-ENV-03 allows only `printenv NAME…` or a command that doesn't run
     env/printenv".
