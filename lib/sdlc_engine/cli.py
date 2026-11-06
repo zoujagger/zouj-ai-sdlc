@@ -47,6 +47,7 @@ Lifecycle (any user or agent)
   doctor                     check tools and wiring
 
 Human only (refused inside Claude Code)
+  uninstall [--yes]          remove the plugin's unmodified scaffold files (never .aiops/NNNN-*); --dry-run: anyone
   approve <id> intent|spec|plan   open a gate (same as typing `Plan Approved NNNN` in the prompt)
   close <id>                 close an intent without implementing it
   unlock                     release the /fix test lock
@@ -610,6 +611,11 @@ def cmd_upgrade(root, args):
     return lifecycle.cmd_upgrade(root, args)
 
 
+def cmd_uninstall(root, args):
+    from . import lifecycle
+    return lifecycle.cmd_uninstall(root, args)
+
+
 def cmd_list_installed(root, args):
     from . import lifecycle
     return lifecycle.cmd_list_installed(root, args)
@@ -791,7 +797,7 @@ COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd
             "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
             "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why,
             "list-installed": cmd_list_installed, "repair": cmd_repair,
-            "upgrade": cmd_upgrade}
+            "upgrade": cmd_upgrade, "uninstall": cmd_uninstall}
 
 
 def main(argv=None):

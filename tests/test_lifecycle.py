@@ -4,7 +4,7 @@ import json
 import shutil
 import unittest
 
-from helpers import ROOT, RepoCase
+from helpers import INTENT, ROOT, RepoCase
 from test_setup import SetupCase
 
 VERSION = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
@@ -412,6 +412,55 @@ class Upgrade(RepoCase):
                 mock.patch.object(lifecycle, "resolve_ref", return_value=(self.SHA, None)), mock.patch("sdlc_engine.cli.out"):
             self.assertEqual(lifecycle.cmd_upgrade(self.root, ["--yes"]), 0)
         self.assertIn("legacy-approvals", json.loads((self.root / STATE).read_text())["migrations"])
+
+
+class Uninstall(RepoCase):
+    """sdlc uninstall: human-only; removes only unmodified managed scaffold files, never artifacts (0004 S14)."""
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.d.mkdir(parents=True)
+        self.write("intent", INTENT)
+
+    def test_removes_only_unmodified_managed(self):
+        (self.root / "REVIEW.md").write_text("ours\n")
+        r = self.run_sdlc("uninstall", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for rel in ("CLAUDE.md", "Makefile", ".github/workflows/aiops-gates.yml", ".aiops/config.json",
+                    ".aiops/README.md", STATE):
+            self.assertFalse((self.root / rel).exists(), rel)
+        for rel in ("REVIEW.md", ".aiops/0001-csv-export/intent.md", "src/app.py", "README.md"):
+            self.assertTrue((self.root / rel).exists(), rel)
+        self.assertTrue((self.root / ".aiops" / "state").is_dir())
+        self.assertIn("REVIEW.md", r.stdout)                                    # kept, and why
+        self.assertNotIn(".aiops/state/", (self.root / ".gitignore").read_text() if (self.root / ".gitignore").exists() else "")
+        self.assertIn("/plugin uninstall", r.stdout)
+
+    def test_tampered_state_refused(self):
+        st = json.loads((self.root / STATE).read_text())
+        for rel in ("src/app.py", ".aiops/0001-csv-export/intent.md", "../outside.txt"):
+            st["files"][rel] = {"sha256": sha(self.root / rel) if (self.root / rel).is_file() else "0" * 64,
+                                "version": VERSION, "human_owned": False}
+        (self.root / STATE).write_text(json.dumps(st))
+        r = self.run_sdlc("uninstall", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue((self.root / "src" / "app.py").exists())
+        self.assertTrue((self.root / ".aiops" / "0001-csv-export" / "intent.md").exists())
+        self.assertRegex(r.stdout, r"refused.*src/app\.py|src/app\.py.*not a scaffold path")
+        self.assertIn(".aiops/0001-csv-export/intent.md", r.stdout)
+
+    def test_agent_refused_dry_run_allowed(self):
+        before = sorted(str(p) for p in self.root.rglob("*"))
+        r = self.run_sdlc("uninstall", "--yes", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("human", r.stderr)
+        r = self.run_sdlc("uninstall", "--dry-run", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("CLAUDE.md", r.stdout)
+        self.assertEqual(sorted(str(p) for p in self.root.rglob("*")), before)
+        self.assertEqual(self.run_sdlc("uninstall").returncode, 2)               # no terminal, no --yes
+        self.assertEqual(sorted(str(p) for p in self.root.rglob("*")), before)
 
 
 if __name__ == "__main__":

@@ -501,3 +501,104 @@ def cmd_upgrade(root, args):
     out(f"Upgraded: {len(written)} file(s) written; {STATE} updated. Review the diff and commit it."
         + ("" if not human else " The human finishes the human-owned files and the ref."))
     return 0
+
+
+# ---------------------------------------------------------------- uninstall
+
+ARTIFACT_TREE_RE = re.compile(r"^\.aiops/(\d{4}-[^/]+|state)(/|$)")
+GITIGNORE_LINES = ("# zouj-ai-sdlc engine state (active intent, test lock)", ".aiops/state/")
+
+
+def remove_file(root, rel):
+    """Unlink root/rel without following a link anywhere on its path; only a regular file is removed."""
+    import os
+    import stat
+    from pathlib import Path
+    *dirs, name = Path(rel).parts
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in dirs:
+            sub = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = sub
+        if not stat.S_ISREG(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
+            raise OSError(f"{rel} is not a regular file; refusing to remove it")
+        os.unlink(name, dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
+def plan_uninstall(root, st):
+    """(remove, kept): remove lists the paths uninstall may delete; kept is [(rel, why)]. A path is removed only if it
+    is recorded, is a scaffold path of some release, and still has its recorded hash. Artifacts (.aiops/NNNN-*,
+    .aiops/state) are never removed, whatever install-state says."""
+    known = {rel for files in history().values() for rel in files if "+" not in rel} | set(scaffold_paths())
+    remove, kept = [], []
+    for rel, entry in sorted(st.get("files", {}).items()):
+        f = root / rel
+        if ARTIFACT_TREE_RE.match(rel) or rel == STATE:
+            kept.append((rel, "refused: an artifact or engine state, never removed"))
+        elif rel not in known:
+            kept.append((rel, "refused: not a scaffold path of any release"))
+        elif cli.symlink_on_path(root, rel) or not f.is_file():
+            if f.exists() or f.is_symlink():
+                kept.append((rel, "refused: not a regular file"))
+        elif not entry.get("sha256") or sha256_file(f) != entry["sha256"]:
+            kept.append((rel, "kept: modified since the plugin wrote it"))
+        else:
+            remove.append(rel)
+    return remove, kept
+
+
+def cmd_uninstall(root, args):
+    """Human-only (the dry run is open to anyone): remove the plugin's unmodified scaffold files, install-state and the
+    .gitignore lines init added. Intent folders and .aiops/ stay: they are the audit trail."""
+    opts, why = parse(args, "uninstall")
+    if why:
+        out(f"{why}. Nothing was written.", sys.stderr)
+        return 1
+    if approvals.running_under_agent() and not opts["--dry-run"]:
+        out(cli.HUMAN_ONLY.replace("this is a human gate", "uninstall is human-only") +
+            " Preview it with `sdlc uninstall --dry-run`.", sys.stderr)
+        return 1
+    why = refusal(root)
+    if why:
+        out(why, sys.stderr)
+        return 1
+    st = load(root)
+    if st is None:
+        st = adopt(root)
+        out("No install state: what adoption recognises as the plugin's files is planned for removal.")
+    remove, kept = plan_uninstall(root, st)
+    for rel in remove:
+        out(f"  - remove {rel}")
+    if (root / STATE).is_file():
+        out(f"  - remove {STATE}")
+    out("  - remove the .aiops/state/ lines from .gitignore")
+    for rel, reason in kept:
+        out(f"  = {rel}: {reason}")
+    out("Kept: .aiops/ and its intent folders (the audit trail), and every file the plugin didn't write.")
+    rc = confirm(opts, "uninstall")
+    if rc is not None:
+        return rc
+    removed = []
+    try:
+        for rel in remove:
+            remove_file(root, rel)
+            removed.append(rel)
+        if (root / STATE).is_file() and not (root / STATE).is_symlink():
+            remove_file(root, STATE)
+        gi = root / ".gitignore"
+        if gi.is_file() and not gi.is_symlink():
+            lines = [ln for ln in gi.read_text().splitlines() if ln not in GITIGNORE_LINES]
+            if any(ln.strip() for ln in lines):
+                cli.write_file(root, ".gitignore", ("\n".join(lines).rstrip("\n") + "\n").encode())
+            else:
+                remove_file(root, ".gitignore")
+    except OSError as exc:
+        out(f"✗ {exc}. Removed before the error: {', '.join(removed) or 'none'}.", sys.stderr)
+        return 1
+    out(f"Uninstalled: {len(removed)} file(s) removed. Next: review and commit the removal, then remove the plugin "
+        "itself with `/plugin uninstall zouj-ai-sdlc@zouj` (and its entries in .claude/settings.json, if you kept "
+        "that file).")
+    return 0
