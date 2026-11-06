@@ -78,5 +78,57 @@ class SetupState(SetupCase):
         self.assertFalse((self.root / STATE).exists())
 
 
+class ListInstalled(RepoCase):
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+        self.assertEqual(self.run_sdlc("init", "--stack", "python").returncode, 0)
+
+    def snapshot(self):
+        return {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*")
+                if p.is_file() and ".git" not in p.relative_to(self.root).parts[:1]}
+
+    def rows(self, out):
+        return dict(reversed(ln.split(None, 1)) for ln in out.splitlines()
+                    if ln.startswith("  ") and ln.split(None, 1)[0] in
+                    ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new"))
+
+    def test_statuses_and_no_writes(self):
+        (self.root / "REVIEW.md").write_text("ours\n")
+        (self.root / "ops" / "bands.yaml").unlink()
+        before = self.snapshot()
+        r = self.run_sdlc("list-installed")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = self.rows(r.stdout)
+        self.assertEqual(rows["REVIEW.md"], "modified")
+        self.assertEqual(rows["ops/bands.yaml"], "missing")
+        self.assertEqual(rows["Makefile"], "current")                  # stack-wired, still current
+        self.assertEqual(rows[".github/workflows/aiops-gates.yml"], "current")
+        self.assertIn(f"recorded: {VERSION}", r.stdout)
+        self.assertIn("stack python", r.stdout)
+        self.assertIn(f"running plugin: {VERSION}", r.stdout)
+        self.assertEqual(self.snapshot(), before)                       # read-only
+
+    def test_stale_and_dropped(self):
+        st = json.loads((self.root / STATE).read_text())
+        (self.root / "REVIEW.md").write_text("old template\n")         # what an older plugin wrote
+        st["files"]["REVIEW.md"] = {"sha256": sha(self.root / "REVIEW.md"), "version": "0.1.0", "human_owned": False}
+        (self.root / "docs" / "old.md").write_text("gone from the plugin\n")
+        st["files"]["docs/old.md"] = {"sha256": sha(self.root / "docs" / "old.md"), "version": "0.1.0",
+                                      "human_owned": False}
+        (self.root / STATE).write_text(json.dumps(st))
+        rows = self.rows(self.run_sdlc("list-installed").stdout)
+        self.assertEqual(rows["REVIEW.md"], "stale")
+        self.assertEqual(rows["docs/old.md"], "dropped")
+
+    def test_without_install_state(self):
+        (self.root / STATE).unlink()
+        r = self.run_sdlc("list-installed")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("no install state", r.stdout)
+        self.assertEqual(self.rows(r.stdout)["REVIEW.md"], "unmanaged")
+        self.assertFalse((self.root / STATE).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

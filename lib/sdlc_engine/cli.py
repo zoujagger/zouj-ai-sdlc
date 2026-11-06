@@ -39,6 +39,7 @@ Lifecycle (any user or agent)
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
   setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
   feedback                   issue links and a doctor summary to paste (sends nothing)
+  list-installed             what the plugin installed here: current, stale, modified, missing, unmanaged
   why <id>                   explain a block (e.g. `sdlc why G-ENV-03`): reason, stage, safe alternative
   doctor                     check tools and wiring
 
@@ -294,18 +295,24 @@ def cmd_unlock(root, args):
     return 0
 
 
-def _wire_stack(root, stack):
+def wire(src, stack):
+    """(src, wired targets): the Makefile text with the stack preset's recipes in place of the stubs."""
     recipes = {}
     for line in (TEMPLATES / "stacks" / f"{stack}.recipes").read_text().splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and not parts[0].startswith("#"):
             recipes[parts[0]] = parts[1]
-    src, wired = (root / "Makefile").read_text(), []
+    wired = []
     for target, cmd in recipes.items():
         src, n = re.subn(rf'^\t@echo "\[{target}\] not configured - edit Makefile"$', "\t" + cmd.replace("\\", "\\\\"),
                          src, flags=re.M)
         if n:
             wired.append(target)
+    return src, wired
+
+
+def _wire_stack(root, stack):
+    src, wired = wire((root / "Makefile").read_text(), stack)
     write_file(root, "Makefile", src.encode())
     return wired
 
@@ -587,6 +594,11 @@ Nothing was sent: zouj-ai-sdlc never uploads diagnostics.""")
     return 0
 
 
+def cmd_list_installed(root, args):
+    from . import lifecycle
+    return lifecycle.cmd_list_installed(root, args)
+
+
 def cmd_why(root, args):
     from . import rules
     if not args:
@@ -761,7 +773,8 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
             "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
-            "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why}
+            "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why,
+            "list-installed": cmd_list_installed}
 
 
 def main(argv=None):

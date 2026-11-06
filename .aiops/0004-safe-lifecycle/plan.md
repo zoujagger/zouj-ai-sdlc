@@ -196,7 +196,7 @@ guard change is test-first (CLAUDE.md rule 2).
     (Edit, Write and `echo > .aiops/install-state.json` are each blocked with a `G-FILE`/`G-ART` id). They fail
     because nothing writes the file and the path isn't protected.
   - Covers: AC-1, AC-15
-- [ ] **S9**: `sdlc list-installed`.
+- [x] **S9**: `sdlc list-installed`.
   - `lifecycle.classify(root, state)` → `{rel: current|stale|modified|missing|unmanaged}`. `stale` compares with
     `render(rel, state.ref)` of the running template.
   - `cmd_list_installed` prints the header and the rows, and writes nothing.
@@ -420,4 +420,5 @@ guard change is test-first (CLAUDE.md rule 2).
 | 2026-11-06 | S6 | The `heuristic` helper doesn't parse `allowed-commands` with `grep` in bash. It calls `rules.allowed` through `python3 -I`, only on the block path. Only G-BASH-07 and G-ENV-03 go through it, after the PR 1 class decision. `sdlc why` now describes the allowance line. | One definition of an exact match, the same in the hook, doctor and CI. If python3 can't run, the command stays blocked. | S6 |
 | 2026-11-06 | S7 | `validate --ci` checks `allowed-commands` in the change itself as well as on `--base` (the spec names only the base). | A PR that adds a bad entry fails CI before it merges, not only afterwards. Stricter, no new trust. | S7 |
 | 2026-11-06 | S8 | `init` and `setup` record only the files they wrote. Kept files are claimed later by adoption (S10, R-5). `.gitignore` is never recorded. `.aiops/install-state.json` is also in `guards.GUARDED_RE`, so `check_edit` blocks it (G-ART-01) as well as `protected-paths` (G-FILE-*). Nothing is written when nothing was, so a rerun leaves the state unchanged. | R-1's matching of kept files needs S10's history; two guard layers instead of one. | S8 |
+| 2026-11-06 | S9 | Two more statuses than R-2 lists: `dropped` (recorded, no longer in the plugin's scaffold) and `new` (in the scaffold, never installed). `stale` is decided from the entry's version and the running template, since the old template isn't known until S10's history. S10's split of `_wire_stack` into a pure `cli.wire()` is done here. Without install-state, the command lists files on disk as `unmanaged`; S10 adds the adoption preview. | R-4 needs both extra cases named. A stack-wired Makefile would otherwise always look stale. | S9 |
 | 2026-11-06 | S4b | PR 1 is #11, merged by zoujagger as 267f34a. Review: code PASS 93/100 after one CHANGES_REQUESTED round, security PASS 23/25 (0 decision differences from main). S5-S7 were built on the PR 1 branch while it waited, then rebased onto main. | PR 1 sat open after CI passed. | 267f34a |

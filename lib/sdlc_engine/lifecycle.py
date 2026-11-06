@@ -67,3 +67,76 @@ def record(root, written, profile=None, stack=None, ref=None):
         st["files"][rel] = {"sha256": sha256_file(root / rel), "version": version,
                             "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
     save(root, st)
+
+
+STATUSES = ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new")
+
+
+def scaffold_paths():
+    root = cli.TEMPLATES / "scaffold"
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+
+
+def expected(rel, ref, stack=None):
+    """The bytes the running plugin would write for rel today (ref pinned, the stack's recipes wired in)."""
+    data = render(rel, ref)
+    if rel == "Makefile" and stack in cli.STACKS:
+        data = cli.wire(data.decode(), stack)[0].encode()
+    return data
+
+
+def classify(root, st):
+    """{rel: status} for the scaffold and every recorded path:
+    current   on disk as recorded, and what the running plugin would write
+    stale     on disk as recorded, but written by an older plugin whose template has changed (upgrade replaces it)
+    modified  changed since the plugin wrote it (never touched)
+    missing   recorded, but not on disk (repair restores it)
+    unmanaged a scaffold path on disk that install-state doesn't claim (never touched)
+    dropped   recorded, but no longer in the plugin's scaffold
+    new       in the running plugin's scaffold, never installed here (upgrade creates it)"""
+    version = cli.plugin_version()
+    scaffold = set(scaffold_paths())
+    files = (st or {}).get("files", {})
+    out = {}
+    for rel, entry in files.items():
+        f = root / rel
+        if rel not in scaffold:
+            out[rel] = "dropped"
+        elif not f.is_file() or f.is_symlink():
+            out[rel] = "missing"
+        elif sha256_file(f) != entry.get("sha256"):
+            out[rel] = "modified"
+        elif entry.get("version") == version or \
+                sha256_bytes(expected(rel, f"v{version}", st.get("stack"))) == entry.get("sha256"):
+            out[rel] = "current"
+        else:
+            out[rel] = "stale"
+    for rel in scaffold - set(files):
+        if (root / rel).exists():
+            out[rel] = "unmanaged"
+        elif st:
+            out[rel] = "new"
+    return dict(sorted(out.items()))
+
+
+def cmd_list_installed(root, args):
+    """Read-only: what install-state says the plugin wrote here, against the files and the running plugin."""
+    st = load(root)
+    if st:
+        out(f"zouj-ai-sdlc install state ({STATE})")
+        out(f"  recorded: {st.get('plugin_version')} · ref {st.get('ref')} · profile {st.get('profile')} · "
+            f"stack {st.get('stack') or 'none'}")
+    else:
+        out(f"zouj-ai-sdlc: this repo has no install state ({STATE}); it was initialized before 0.2.0-alpha.3 or "
+            "not at all. Scaffold files on disk are listed as unmanaged.")
+    out(f"  running plugin: {cli.plugin_version()}")
+    rows = classify(root, st)
+    for rel, status in rows.items():
+        out(f"  {status:<9}  {rel}")
+    counts = {s: sum(1 for v in rows.values() if v == s) for s in STATUSES}
+    out("Summary: " + ", ".join(f"{n} {s}" for s, n in counts.items() if n))
+    return 0
+
+
+def out(msg):
+    cli.out(msg)
