@@ -1,23 +1,31 @@
 ---
 id: 0005
 verdict: CHANGES_REQUESTED
-commit: 7f8f557f46d5ba4a2ef10c714263f05bbf270fac
-score: 62/100
+commit: 50e79c9e4a4246821f7de1551e535fe608a05a8e
+score: 74/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-06
 ---
 
 # Review: Close the shell-write guard gaps found in the 0004 reviews
 
-<!-- State 5 PRE-REVIEW, round 1. Written from the reports of three fresh-context personas that did not write the
-     code. -->
+<!-- State 5 PRE-REVIEW. Round 1 at 7f8f557: CHANGES_REQUESTED 62/100. Round 2 at 50e79c9 (this file): verifier
+     VERIFIED; code review 84/100 CHANGES_REQUESTED (3 new false positives); security FAIL 17/25 (4 HIGH classes).
+     Written from the three fresh-context personas' reports. -->
 
 ## Summary
-S1-S9 are built and `make check` passes (272 tests). No existing decision got weaker: the security reviewer ran the
-same probe against main and HEAD. But every closed gap is closed only for the tested forms, and simple variants get
-past G-FILE-05, G-FILE-06, G-ENV-05 and the safety pass for repos without `.aiops/`. The G-ENV-03 regex change also
-blocks everyday commands that main allowed (`grep -n "env" Makefile`, `git commit -m "fix env"`), so the commit
-introduces false positives. Verdict: **CHANGES_REQUESTED**.
+Round 2 checks the round-1 fixes (3e31fff, a252209, 50e79c9). Every round-1 form is fixed and tested, and nothing is
+weaker than main: the security reviewer compared about 140 probes across main, round 1 and HEAD. But the fixes
+closed the reported forms, not their classes. Four HIGH classes still have simple bypasses:
+- **wrapper and nested forms:** `trap`, `coproc`, `watch`, `parallel`, `flock -c`, `find -exec sh -c`, rebase
+  `--exec`, git aliases
+- **negated `find` tests**
+- **symlinks made in the same command:** any path under the link
+- **`git config --fil` / `-f<path>`, and `/proc` spellings** (`/dev/fd/../environ`, `/p*`, `cd /proc && cat env*`)
+
+The round-1 fixes also introduced three false positives on everyday commands: `find . -type d -empty -delete`, copies
+into the repo root while a venv is on PATH, and archives with symlink members extracted into subdirectories.
+Verdict: **CHANGES_REQUESTED**.
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
@@ -37,6 +45,26 @@ introduces false positives. Verdict: **CHANGES_REQUESTED**.
 | AC-13 | ❌ not met | the suite is green, but there are new blocks on everyday commands (quoted `env`, `git merge -m`, `tar xfz`, `rm <symlink-to-dir>`) |
 
 ## Security
+Round 2 (at 50e79c9), still open:
+- [HIGH] More wrapper and nested forms: `trap`, `coproc`, `watch`, `parallel`, `flock -c`, `find -exec sh -c` and
+  wrapped `-exec`, `git rebase --exec`/`-x`, and `git -c alias.*='!…'`.
+- [HIGH] A negated or alternative `find` test (`-not`, `!`, `-o`) is read as a positive name filter.
+- [HIGH] A symlink made in the same command is honoured only for `q/`, not for `q/…`, `q/*`, mv sources or extract
+  directories.
+- [HIGH] `git config --fil`, `--fil=…` and stuck `-f<path>` (already on main for initialized repos), and an exported
+  `GIT_CONFIG`.
+- [HIGH] More G-ENV-05 spellings: `/dev/fd/../environ`, `/p*`, `/pr?c`, a variable path, `cd / && cat
+  proc/self/environ`, `cd /proc/self && cat env*`.
+- [MEDIUM] `rsync --del`, a destination that isn't the last word, `--remove-source-files`; `tar --one-top-level`;
+  checks that read the archive or ref before an earlier segment of the same command replaces it (`cp evil good &&
+  tar x good`, `git branch -f`); cherry-pick `-m2` and `--stdin`; `git pull` on main with `-c branch.*`/`remote.*`
+  or after `branch -u`; writes into home via `git clone`, `--work-tree`, `wget -P`, `curl --output-dir`.
+- [LOW] Safe forms: `printenv *_URL`/`*_DSN`; assignment prefixes (`LD_PRELOAD=…`).
+- False positives (code review, MAJOR): `find . -type d -empty -delete`; copies into the repo root with an in-repo
+  venv on PATH; archives with link members extracted into subdirectories. MINOR: `git config -f <toolchain>` from a
+  `$HOME` root; `git stash pop` with no stash; no fail-closed test for the safety pass.
+
+Round 1 (at 7f8f557):
 - [HIGH] `lib/sdlc_engine/guards.py:143,251` (already on main): a wrapper prefix (`nice`, `timeout 5`, `stdbuf`,
   `setsid`, `ionice`, `command -p`, `sudo -u`) skips every shell-write check, including the read-only lock. →
   `_strip_prefix` should strip `WRAPPER_WORDS` and their operands.
@@ -87,4 +115,4 @@ evidence is the planted `_contains_protected → None` run, as the plan decided.
 | Test quality & test-first | 20 | 14 | Red/Green present; tests cover only the simplest forms |
 | Plan conformance | 10 | 6 | six changes not logged |
 | Maintainability | 5 | 3 | `out.split()`, dead `is_symlink`, garbled docstring |
-| **Total** | 100 | **62** | CHANGES_REQUESTED |
+| **Total** | 100 | **62 (round 1)** | round 2: 74 (code 84, security 17/25), CHANGES_REQUESTED |
