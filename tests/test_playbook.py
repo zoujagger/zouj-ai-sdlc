@@ -154,12 +154,21 @@ class Playbook(SetupCase):
         self.assertIn("G-MERGE-03 is a gate rule", doctor.stdout)
         (d / ".aiops" / "config" / "allowed-commands").unlink()
 
+    PROTECTED_TREE = ("rm -rf ./", "rm -rf -- .", "rm -rf .github/workflows", "mv .github /tmp/x", "rm -rf .claude",
+                      "rm -rf .aiops", "rm -rf .git", "rm -rf ..")
+
+    def protected_tree_blocked(self, d, where):
+        """0005 AC-12: in every state, the repo, .aiops, .git and protected trees can't be deleted or moved."""
+        for cmd in self.PROTECTED_TREE:
+            self.assertIsNotNone(guards.check_bash({"tool_input": {"command": cmd}, "cwd": str(d)}), f"{where}: {cmd}")
+
     def walk(self, profile):
         d, intent = self.repo(profile)
         (intent / "intent.md").write_text(INTENT.format(id="0001"))
         state = lambda: evaluate(d, intent).state  # noqa: E731
         self.assertEqual(state(), 1)
         self.lifecycle_as_agent(d, intent, f"{profile} state 1")
+        self.protected_tree_blocked(d, f"{profile} state 1")
         self.gate_allowances_rejected(d)
         # the proof differs by profile: the weak test key is refused by team and strict
         ok, msg = approvals.approve(d, intent, "intent", via="test")
@@ -177,6 +186,7 @@ class Playbook(SetupCase):
                 (intent / f"{nxt}.md").write_text((SPEC if nxt == "spec" else PLAN).format(id="0001"))
         self.assertEqual(state(), 4)
         self.lifecycle_as_agent(d, intent, f"{profile} state 4")
+        self.protected_tree_blocked(d, f"{profile} state 4")
         self.assertFalse(self.edit_blocked(d, "src/app.py"))             # state 4: code unlocked
         # the Stop hook requires `make check` green
         (d / "src" / "app.py").write_text("x = 2\n")
@@ -194,6 +204,7 @@ class Playbook(SetupCase):
         plan.write_text(plan.read_text().replace("- [ ]", "- [x]"))
         self.assertEqual(state(), 5)
         self.lifecycle_as_agent(d, intent, f"{profile} state 5")
+        self.protected_tree_blocked(d, f"{profile} state 5")
         git(d, "add", "-A")
         git(d, "commit", "-qm", "feat: csv export")
         # a failing review keeps it at state 5, even once that review reaches main

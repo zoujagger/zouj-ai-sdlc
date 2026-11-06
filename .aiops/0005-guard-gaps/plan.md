@@ -130,7 +130,7 @@ Code to reuse:
       and an approval-only branch are allowed
     - `test_pull`: refused on a feature branch, allowed on main
   - Covers: AC-6, AC-7, AC-8
-- [ ] **S8**: Playbook conformance and the existing suite.
+- [x] **S8**: Playbook conformance and the existing suite.
   - `test_playbook.Playbook.walk` asserts each AC-1 command stays blocked in states 1, 4 and 5, in all three
     profiles.
   - Fix any existing test that a new block catches only if the command really is unsafe; otherwise narrow the
