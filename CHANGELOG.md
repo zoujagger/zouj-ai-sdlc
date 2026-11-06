@@ -56,6 +56,9 @@ installed, upgrades and repairs a repo safely, and explains every block. The pla
   plugin and `~/.ssh` aren't checked. Edit/Write to them is. Signing and the CI audit keep such writes from opening a
   gate.
 - `sdlc doctor` doesn't report install-state yet. Use `sdlc list-installed`.
+- G-ENV-03's whole-environment check works from a list of known forms: nested forms (`bash -c env`, `env env`,
+  `xargs env`, `if …; then env; fi`) aren't recognised, so a human who writes one of them into `allowed-commands`
+  lets the environment through. `re_dump_env` also doesn't match `/usr/bin/env` or `cat /proc/self/environ`.
 
 ### Upgrading from 0.2.0-alpha.2
 Update the plugin with `/plugin`, then run `sdlc upgrade --dry-run` and `sdlc upgrade` in your own terminal. Your
