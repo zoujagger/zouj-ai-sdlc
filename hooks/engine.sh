@@ -27,8 +27,8 @@ case "$event:$rc" in
   *:0|*:2) exit "$rc" ;;
   pre-*:*)
     {
-      echo "BLOCKED by zouj-ai-sdlc: the state engine failed to run (exit $rc), so the guard fails closed."
-      echo "Procedure: tell the human. They can fix the plugin (python3 >= 3.9 required) or run /plugin disable zouj-ai-sdlc."
+      echo "BLOCKED [G-FAIL-04] by zouj-ai-sdlc: the state engine failed to run (exit $rc), so the guard fails closed."
+      echo "Procedure: tell the human. They can fix the plugin (python3 >= 3.9 required) or run /plugin disable zouj-ai-sdlc. (details: \`sdlc why G-FAIL-04\`)"
     } >&2
     exit 2 ;;
   *) exit 0 ;;

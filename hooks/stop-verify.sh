@@ -29,7 +29,8 @@ fi
 
 if ! out=$(make check 2>&1); then
   {
-    echo "Definition of done not met: 'make check' failed. Fix the issues below before finishing."
+    echo "BLOCKED [G-STOP-01] by stop-verify: definition of done not met: 'make check' failed."
+    echo "Procedure: fix the issues below before finishing. (details: \`sdlc why G-STOP-01\`)"
     [[ -f "$lock" ]] && echo "Tests are locked (/zouj-ai-sdlc:fix): change production code only."
     echo "---"
     printf '%s\n' "$out" | tail -n 60

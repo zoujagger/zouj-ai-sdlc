@@ -184,8 +184,9 @@ def main():
     else:
         why = check_search({**ti, "_tool": tool}, root)
     if why:
-        print(f"BLOCKED by guard-{'bash' if tool == 'Bash' else 'read'}: {why}\n"
-              "Procedure: use .env.example / documentation for names; never read real secrets into the session.",
+        print(f"BLOCKED [G-SEC-03] by guard-{'bash' if tool == 'Bash' else 'read'}: {why}\n"
+              "Procedure: use .env.example / documentation for names; never read real secrets into the session. "
+              "(details: `sdlc why G-SEC-03`)",
               file=sys.stderr)
         return 2
     return 0

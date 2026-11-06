@@ -9,9 +9,9 @@ input=$(cat)
 root=${CLAUDE_PROJECT_DIR:-$PWD}
 tool=$(json_get tool_name <<<"$input") || fail_closed guard-read
 
-block() {
-  echo "BLOCKED by guard-read: $1" >&2
-  echo "Procedure: use .env.example or the docs for variable names; real secrets never enter the session." >&2
+block() {   # the rule is G-SEC-06 (defaults/rules)
+  echo "BLOCKED [G-SEC-06] by guard-read: $1" >&2
+  echo "Procedure: use .env.example or the docs for variable names; real secrets never enter the session. (details: \`sdlc why G-SEC-06\`)" >&2
   exit 2
 }
 

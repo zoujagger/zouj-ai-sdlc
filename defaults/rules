@@ -1,0 +1,96 @@
+# zouj-ai-sdlc rule registry: one line per guard rule. `sdlc why <id>` explains a rule (details in rules.md).
+# Format: <id> <class> <stage> <summary...>
+#   id     G-<AREA>-NN, stable: never reused. A retired rule stays here with class `retired`.
+#   class  gate | secret | toolchain | safety | heuristic | retired
+#          Only `heuristic` rules accept an exact-command allowance (.aiops/config/allowed-commands, human-owned).
+#   stage  the playbook stage the rule protects; every-repo for the always-on safety guards, initialized-repo for
+#          safety rules that act only in repos with .aiops/ (the engine's shell parser).
+# Every block message reads `BLOCKED [<id>] by <hook>: ...`; tests/test_rules.py keeps this file and the hooks in sync.
+
+# Human gates and engine calls
+G-GATE-01 gate intent-spec-plan an artifact needs its upstream artifact approved first
+G-GATE-02 gate intent-spec-plan a new artifact must start as status Draft
+G-GATE-03 gate intent-spec-plan approved-* fields on a new artifact are written only by a human approval
+G-GATE-04 gate intent-spec-plan approved-* fields are written only by a human approval
+G-GATE-05 gate intent-spec-plan setting an artifact's gate status is a human decision
+G-GATE-06 gate intent-spec-plan approval commits are created only by a human approval
+G-GATE-07 gate intent-spec-plan human-only engine commands (approve, close, unlock, hook, legacy-approvals)
+G-ENV-02 gate intent-spec-plan changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION or clearing the environment
+
+# Read-only lock (states 1-3)
+G-LOCK-01 gate read-only-lock editing code before Plan Approved
+G-LOCK-02 gate read-only-lock a shell command writing code before Plan Approved
+G-LOCK-03 gate read-only-lock a git command changing the working tree before Plan Approved
+G-LOCK-04 gate read-only-lock git add of code before Plan Approved
+G-LOCK-05 gate read-only-lock git commit of code before Plan Approved
+G-LOCK-06 gate read-only-lock changing dependencies before Plan Approved
+G-LOCK-07 gate read-only-lock a make target that rewrites code before Plan Approved
+G-LOCK-08 gate read-only-lock patch, unzip or tar writing files before Plan Approved
+
+# Artifacts and .aiops/
+G-ART-01 gate artifacts editing engine state or human-owned .aiops configuration
+G-ART-02 gate artifacts an artifact's id must match its folder
+G-ART-03 gate artifacts an artifact's id can't be changed
+G-ART-04 gate artifacts find deleting or rewriting part of the .aiops tree
+G-ART-05 gate artifacts shell writes to .aiops bypass the gate guard
+G-ART-06 gate artifacts patch touching .aiops, or a piped patch
+G-ART-07 gate artifacts git apply/am with a patch touching .aiops, or from stdin
+G-ART-08 gate artifacts a git command deleting or rewriting an artifact
+G-ART-09 gate artifacts an artifact that doesn't validate against its schema
+
+# Protected paths
+G-FILE-01 gate every-stage a shell write to a protected path
+G-FILE-02 gate every-stage git checkout/restore of the whole tree from another revision
+G-FILE-03 gate every-stage a git command rewriting a protected path
+G-FILE-04 gate every-stage editing a protected path
+
+# Merge, push to main, deploy (final human gates)
+G-MERGE-01 gate merge merging through the GitHub API
+G-MERGE-02 gate merge git merge/rebase/cherry-pick/am on the main branch
+G-MERGE-03 gate merge a direct push to main/master
+G-MERGE-04 gate merge gh pr merge, approving a PR, deleting a release or a repo
+G-DEPLOY-01 gate deploy a shell command deploying to production
+G-DEPLOY-02 gate deploy an MCP tool call mentioning production
+
+# /fix test lock and the definition of done
+G-TEST-01 gate test-lock changing the /fix test lock
+G-TEST-02 gate test-lock editing test files while /fix has them locked
+G-STOP-01 gate definition-of-done make check must be green before finishing
+
+# Scaffold location
+G-SCAF-01 gate setup sdlc init/setup run by the agent only in the session's repo
+
+# Secrets and credentials (every repo)
+G-SEC-01 secret initialized-repo a shell write to secret material outside the repo
+G-SEC-02 secret initialized-repo a shell write to secret material in the repo
+G-SEC-03 secret every-repo a shell command or search reading secret material
+G-SEC-04 secret every-repo editing secret material
+G-SEC-05 secret every-repo content that looks like a credential
+G-SEC-06 secret every-repo reading secret material
+G-ENV-01 secret every-repo printing credentials into the session
+G-ENV-04 secret every-repo echoing a secret-named variable (echo $...TOKEN, KEY, SECRET, PASSWORD)
+
+# Approval toolchain (every repo)
+G-TOOL-01 toolchain every-repo editing the installed plugin
+G-TOOL-02 toolchain initialized-repo a shell write into the installed plugin
+G-TOOL-03 toolchain initialized-repo a shell write under .git (config, hooks)
+G-TOOL-04 toolchain every-repo writing a path that runs when the human approves (PATH, shell startup, git config)
+G-TOOL-05 toolchain initialized-repo git config of signing, hook, monitor, filter, include, alias or diff keys
+
+# Safety (every repo)
+G-BASH-03 safety every-repo force push
+G-BASH-04 safety every-repo history or worktree destruction (reset --hard, clean -f, filter-branch)
+G-BASH-05 safety every-repo bypassing hooks or permissions
+# Not allowable although they look like heuristics (PR 1 review, zoujagger 2026-11-06): each stands in front of
+# every other check, so lifting it would lift them all.
+G-BASH-01 safety initialized-repo nested shells too deep to inspect
+G-BASH-02 safety every-repo recursive delete of root, home, the current directory or *
+G-BASH-06 safety every-repo piping a downloaded script into a shell
+G-FAIL-01 safety every-repo the gate guard crashed, so it fails closed
+G-FAIL-02 safety every-repo no JSON parser (jq or python3), so the hook fails closed
+G-FAIL-03 safety every-repo the secret-read scan failed to run, so it fails closed
+G-FAIL-04 safety every-repo the state engine failed to run, so the guard fails closed
+
+# Heuristics (every repo): the only rules an exact-command allowance can lift
+G-BASH-07 heuristic every-repo a privileged or dangerous system command (sudo, mkfs, dd if=, chmod -R 777)
+G-ENV-03 heuristic every-repo dumping the environment (env or printenv as a word)

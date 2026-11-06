@@ -35,19 +35,20 @@ its fix. If you're stuck, `sdlc feedback` prints the issue links and a summary t
 - **"could not read Username":** git has no credential helper. Run `gh auth setup-git`, or configure any helper.
 - **"refusing to allow an OAuth App to create or update workflow … without `workflow` scope":** your `gh` token can't
   push changes to `.github/workflows/`. Run `gh auth refresh -h github.com -s workflow`.
-- **"BLOCKED by guard-bash: direct push to main/master":** by design. Push a feature branch and open a PR
+- **"BLOCKED [G-MERGE-03] by guard-bash: direct push to main/master":** by design. Push a feature branch and open a PR
   (`/zouj-ai-sdlc:pr`); a human merges.
 
 ## A command is BLOCKED
-Every block message gives the reason **and** the procedure. The common ones:
+Every block message reads `BLOCKED [<id>] by <hook>: <reason>`, followed by the procedure. Run `sdlc why <id>` to
+see the reason, the playbook stage the rule protects and the safe alternative. The common ones:
 
-| Message | Why | What to do |
+| Id | Why | What to do |
 |---|---|---|
-| `BLOCKED … (read-only lock)` | States 1-3: code is read-only until `Plan Approved` | Finish the artifact; the human approves the plan |
-| `BLOCKED … (human gate)` | Only a human approves, merges or deploys to production | Ask the human; they run it themselves |
-| `BLOCKED … (artifacts)` | Shell writes to `.aiops/` bypass the gate guard | Edit artifacts with the Edit/Write tools |
-| `BLOCKED … (protected)` / `(toolchain)` | Protected paths, secrets, your shell startup files, PATH, git config, the installed plugin | A human changes those |
-| `BLOCKED by guard-bash: reading secret material` | Secret files never enter the session | Use `.env.example` or the docs for names |
+| `G-LOCK-*` | States 1-3: code is read-only until `Plan Approved` | Finish the artifact; the human approves the plan |
+| `G-GATE-*`, `G-MERGE-*`, `G-DEPLOY-*` | Only a human approves, merges or deploys to production | Ask the human; they run it themselves |
+| `G-ART-*` | Shell writes to `.aiops/` bypass the gate guard | Edit artifacts with the Edit/Write tools |
+| `G-FILE-*`, `G-TOOL-*` | Protected paths, your shell startup files, PATH, git config, the installed plugin | A human changes those |
+| `G-SEC-*`, `G-ENV-01`, `G-ENV-04` | Secret files and tokens never enter the session | Use `.env.example` or the docs for names |
 
 **A false positive** (a safe command that's blocked): the static parser is strict on purpose. Rephrase the command,
 for example without a variable as the command word, or run it yourself. Please report it with `sdlc feedback`.
@@ -55,7 +56,7 @@ A known one: a line that mentions `sdlc init` or `sdlc setup` next to a director
 `pushd`, `-C`, `--chdir`, `-execdir`, `GIT_*=`, `HOME=`, `CLAUDE_PROJECT_DIR=`; a commit message, `grep -C3`), or run
 from another repo, is refused on purpose; run it as two commands.
 
-## The Stop hook keeps saying "Definition of done not met"
+## The Stop hook keeps saying "definition of done not met" (`G-STOP-01`)
 `make check` must pass before a turn can end, whenever the working tree changed. Run `make check` and fix what fails.
 If a Makefile target still prints `not configured`, wire it: edit the
 Makefile's recipes (the plugin ships presets in `templates/stacks/`).

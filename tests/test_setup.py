@@ -213,7 +213,7 @@ class Apply(SetupCase):
                 h = subprocess.run([sys.executable, SDLC, "hook", "pre-edit"], cwd=d, input=json.dumps(edit),
                                    capture_output=True, text=True, env=env)
                 self.assertEqual(h.returncode, 2, h.stdout + h.stderr)
-                self.assertIn("read-only lock", h.stderr)
+                self.assertIn("G-LOCK-01", h.stderr)
 
     def test_rerun_plans_nothing(self):
         d = self.fresh_repo("rerun")

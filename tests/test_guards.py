@@ -20,7 +20,7 @@ class EditGuard(RepoCase):
             self.assertIn(n, r.stderr)
 
     def test_code_is_read_only_until_plan_approved(self):
-        self.assertBlocked(self.edit("src/app.py", "x = 2\n"), "read-only lock", "Procedure:")
+        self.assertBlocked(self.edit("src/app.py", "x = 2\n"), "G-LOCK-01", "Procedure:")
         self.write("intent", INTENT)
         self.approve("intent")
         self.write("spec", SPEC)
@@ -37,14 +37,14 @@ class EditGuard(RepoCase):
     def test_policy_files_not_exempt(self):
         self.write("intent", INTENT)                                   # state 1: read-only
         for rel in ("CLAUDE.md", "REVIEW.md", "skills/x/SKILL.md", "agents/x.md", "NOTES.md"):
-            self.assertBlocked(self.edit(rel, "x"), "read-only lock")
+            self.assertBlocked(self.edit(rel, "x"), "G-LOCK-01")
         for rel in ("README.md", "sub/README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "docs/x.md"):
             self.assertEqual(self.edit(rel, "x").returncode, 0, rel)
 
     def test_agent_cannot_approve_by_editing(self):
         self.write("intent", INTENT)
         r = self.edit(".aiops/0001-csv-export/intent.md", old="status: Draft", new="status: Approved")
-        self.assertBlocked(r, "human gate", "Intent Approved 0001")
+        self.assertBlocked(r, "G-GATE-05", "Intent Approved 0001")
         self.assertEqual(self.edit(".aiops/0001-csv-export/intent.md", old="Users cannot", new="Reps cannot")
                          .returncode, 0)
 
@@ -493,6 +493,119 @@ class PromptAndSessionHooks(RepoCase):
         r = self.hook("post-edit", self.hook_input("Write", file_path=str(self.d / "intent.md")))
         self.assertEqual(r.returncode, 2)
         self.assertIn("## Constraints", r.stderr)
+
+
+class Ids(RepoCase):
+    """Every Python guard block carries a registered rule id, a Procedure and the `sdlc why` pointer (0004 S2)."""
+    BLOCK_RE = __import__("re").compile(r"^BLOCKED \[(G-[A-Z]+-\d\d)\] by zouj-ai-sdlc: ", __import__("re").M)
+
+    def assertId(self, r, rid):
+        from sdlc_engine import rules
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        m = self.BLOCK_RE.search(r.stderr)
+        self.assertIsNotNone(m, r.stderr)
+        self.assertEqual(m.group(1), rid, r.stderr)
+        self.assertIn(rid, rules.load())
+        self.assertIn("Procedure:", r.stderr)
+        self.assertIn(f"sdlc why {rid}", r.stderr)
+
+    def bash(self, cmd, cwd=None, env=None):
+        payload = self.hook_input("Bash", command=cmd)
+        if cwd:
+            payload["cwd"] = str(cwd)
+        return self.hook("pre-bash", payload, env=env)
+
+    def edit(self, rel, content):
+        return self.hook("pre-edit", self.hook_input("Write", file_path=str(self.root / rel), content=content))
+
+    def test_python_blocks_carry_registered_id(self):
+        from helpers import ROOT
+        cases = [
+            (lambda: self.edit("src/app.py", "x = 2\n"), "G-LOCK-01"),
+            (lambda: self.edit(".aiops/config.json", "{}"), "G-ART-01"),
+            (lambda: self.edit(".aiops/0001-csv-export/intent.md", INTENT.format(id="0002")), "G-ART-02"),
+            (lambda: self.edit(".aiops/0001-csv-export/spec.md", SPEC.format(id="0001")), "G-GATE-01"),
+            (lambda: self.edit(".aiops/0001-csv-export/intent.md",
+                               INTENT.format(id="0001").replace("status: Draft", "status: Approved")), "G-GATE-02"),
+            (lambda: self.hook("pre-edit", self.hook_input("Write", file_path=str(ROOT / "lib" / "x.py"),
+                                                           content="")), "G-TOOL-01"),
+            (lambda: self.bash("git commit -m x -m 'AIOps-Approval: plan 0001'"), "G-GATE-06"),
+            (lambda: self.bash("CLAUDECODE= sdlc status"), "G-ENV-02"),
+            (lambda: self.bash("sdlc approve 0001 plan"), "G-GATE-07"),
+            (lambda: self.bash("echo x > src/app.py"), "G-LOCK-02"),
+            (lambda: self.bash("rm -rf .aiops/0001-csv-export"), "G-ART-05"),
+            (lambda: self.bash("find .aiops -name '*.md' -delete"), "G-ART-04"),
+            (lambda: self.bash("eval eval eval eval true"), "G-BASH-01"),
+            (lambda: self.bash("echo x > .git/config"), "G-TOOL-03"),
+            (lambda: self.bash("git config gpg.program /tmp/x"), "G-TOOL-05"),
+            (lambda: self.bash("gh api -X PUT repos/o/r/pulls/1/merge"), "G-MERGE-01"),
+            (lambda: self.bash("echo x > .aiops/config/protected-paths"), "G-ART-05"),
+            (lambda: self.bash("pip install requests"), "G-LOCK-06"),
+            (lambda: self.bash("make format"), "G-LOCK-07"),
+            (lambda: self.bash("git stash"), "G-LOCK-03"),
+            (lambda: self.bash("echo x > .env"), "G-SEC-02"),
+            (lambda: self.bash("echo x > package-lock.json"), "G-FILE-01"),
+            (lambda: self.bash("git rm .aiops/0001-csv-export/intent.md"), "G-ART-08"),
+            (lambda: self.bash("git checkout main -- ."), "G-FILE-02"),
+            (lambda: self.bash("git checkout -- package-lock.json"), "G-FILE-03"),
+            (lambda: self.bash("cat fix.diff | patch -p1"), "G-ART-06"),
+            (lambda: self.bash("cat fix.diff | git apply"), "G-ART-07"),
+            (lambda: self.bash("git add src/app.py"), "G-LOCK-04"),
+            (lambda: self.bash("tar -xf x.tar -C /tmp/out"), "G-LOCK-08"),
+            (lambda: self.bash(f"echo x > {ROOT}/lib/x.py"), "G-TOOL-02"),
+            (lambda: self.bash("echo x > /tmp/elsewhere/.ssh/config"), "G-SEC-01"),
+            (lambda: self.bash("echo x > ~/.bashrc"), "G-TOOL-04"),
+        ]
+        for run, rid in cases:
+            with self.subTest(rid=rid):
+                self.assertId(run(), rid)
+
+    def test_artifact_field_rules(self):
+        self.assertId(self.edit(".aiops/0001-csv-export/intent.md",
+                                INTENT.format(id="0001").replace("created:", "approved-by: x\ncreated:")), "G-GATE-03")
+        self.write("intent", INTENT)
+        text = (self.d / "intent.md").read_text()
+        self.assertId(self.edit(".aiops/0001-csv-export/intent.md", text.replace("created:", "approved-by: x\ncreated:")),
+                      "G-GATE-04")
+        self.assertId(self.edit(".aiops/0001-csv-export/intent.md", text.replace("id: 0001\n", "")), "G-ART-03")
+
+    def test_commit_of_code_and_crash(self):
+        (self.root / "src" / "app.py").write_text("x = 2\n")
+        self.assertId(self.bash("git commit -a -m x"), "G-LOCK-05")
+        r = self.hook("pre-bash", {"tool_name": "Bash", "tool_input": "not an object", "cwd": str(self.root)})
+        self.assertId(r, "G-FAIL-01")
+
+    def test_merge_on_main_and_scaffold_elsewhere(self):
+        git(self.root, "switch", "-q", "main")
+        self.assertId(self.bash("git merge feat/0001-csv-export"), "G-MERGE-02")
+        import tempfile
+        with tempfile.TemporaryDirectory() as other:
+            git(other, "init", "-q")
+            r = self.bash("sdlc init", cwd=other, env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertId(r, "G-SCAF-01")
+
+    def test_post_edit_validation_carries_id(self):
+        self.write("intent", INTENT.replace("## Problem", "## Issue"))
+        r = self.hook("post-edit", self.hook_input("Write", file_path=str(self.d / "intent.md")))
+        self.assertEqual(r.returncode, 2)
+        # PostToolUse: the edit was saved, so this is feedback, not a block
+        self.assertRegex(r.stderr, r"^NOT VALID \[G-ART-09\] by zouj-ai-sdlc: ")
+        self.assertNotIn("BLOCKED", r.stderr)
+        self.assertIn("was saved", r.stderr)
+        self.assertIn("sdlc why G-ART-09", r.stderr)
+
+    def test_secret_scan_carries_id(self):
+        import subprocess
+        import sys
+        from helpers import ROOT
+        (self.root / ".env").write_text("TOKEN=x\n")
+        r = subprocess.run([sys.executable, "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1])\n"
+                            "from sdlc_engine.secret_scan import main; sys.exit(main())", str(ROOT / "lib")],
+                           input=__import__("json").dumps(self.hook_input("Bash", command="cat .env")),
+                           capture_output=True, text=True, cwd=self.root)
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertRegex(r.stderr, r"^BLOCKED \[G-SEC-03\] by guard-bash: ")
+        self.assertIn("sdlc why G-SEC-03", r.stderr)
 
 
 if __name__ == "__main__":

@@ -29,8 +29,9 @@ def _aiops_protected(rel):
     return bool(INTENT_TREE_RE.match(rel) or GUARDED_RE.match(rel))
 
 
-def _block(rule, reason, procedure):
-    return f"BLOCKED by zouj-ai-sdlc ({rule}): {reason}\nProcedure: {procedure}"
+def _block(rule_id, reason, procedure):
+    """The block message: the rule id (defaults/rules), the reason and the procedure."""
+    return f"BLOCKED [{rule_id}] by zouj-ai-sdlc: {reason}\nProcedure: {procedure} (details: `sdlc why {rule_id}`)"
 
 
 def lock_procedure(st):
@@ -78,13 +79,13 @@ def check_edit(data):
     if not initialized(root):
         return None
     if _in_plugin(path, cwd, root):
-        return _block("toolchain", f"'{path}' is inside the installed plugin, which the human runs to approve.",
+        return _block("G-TOOL-01", f"'{path}' is inside the installed plugin, which the human runs to approve.",
                       "change the plugin through its own repo.")
     rel = _rel(root, path, cwd)
     if rel is None:
         return None
     if GUARDED_RE.match(rel):
-        return _block("guardrails", f"'{rel}' is engine state or human-owned configuration.",
+        return _block("G-ART-01", f"'{rel}' is engine state or human-owned configuration.",
                       "propose the change in chat; a human edits .aiops/config. State changes go through `sdlc`.")
     m = ARTIFACT_RE.match(rel)
     if m:
@@ -94,7 +95,7 @@ def check_edit(data):
         return None
     locked, reason, st = lock(root)
     if locked:
-        return _block("read-only lock", f"cannot edit '{rel}': {reason}.", lock_procedure(st))
+        return _block("G-LOCK-01", f"cannot edit '{rel}': {reason}.", lock_procedure(st))
     return None
 
 
@@ -105,32 +106,32 @@ def check_artifact(d, kind, new_text):
     new = A.parse(new_text)
     gate_value = schema["gate"]
     if new.get("id") and new.get("id") != ident:
-        return _block("artifacts", f"`id: {new.get('id')}` in {kind}.md must match its folder ({ident}).",
+        return _block("G-ART-02", f"`id: {new.get('id')}` in {kind}.md must match its folder ({ident}).",
                       "keep `id` equal to the folder number; artifacts can't be moved between intents.")
     if not path.is_file():
         if schema["requires"]:
             ok, why = gate(d, schema["requires"])
             if not ok:
                 req = schema["requires"]
-                return _block("state order", f"{kind}.md needs an approved {req}.md first ({req}.md: {why}).",
+                return _block("G-GATE-01", f"{kind}.md needs an approved {req}.md first ({req}.md: {why}).",
                               f"finish {req}.md and ask the human to type `{phrase(req, ident)}`.")
         if gate_value and new.get("status") not in ("", "Draft"):
-            return _block("human gate", f"a new {kind}.md must start as `status: Draft`.",
+            return _block("G-GATE-02", f"a new {kind}.md must start as `status: Draft`.",
                           "write it as Draft; the human approves it by typing the approval phrase.")
         if any(new.get(f) for f in A.APPROVAL_FIELDS):
-            return _block("human gate", "approved-* fields are written only by a human approval.",
+            return _block("G-GATE-03", "approved-* fields are written only by a human approval.",
                           "leave them out; they are stamped when the human approves.")
         return None
     old = A.parse(path.read_text())
     if old.get("id") != new.get("id"):
-        return _block("artifacts", f"`id` in {kind}.md can't be changed.", "keep `id` equal to the folder number.")
+        return _block("G-ART-03", f"`id` in {kind}.md can't be changed.", "keep `id` equal to the folder number.")
     for f in A.APPROVAL_FIELDS:
         if old.get(f) != new.get(f):
-            return _block("human gate", f"`{f}` in {kind}.md can only be written by a human approval.",
+            return _block("G-GATE-04", f"`{f}` in {kind}.md can only be written by a human approval.",
                           f"leave approval fields untouched. The human types `{phrase(kind, ident)}`."
                           if gate_value else "leave approval fields untouched.")
     if gate_value and new.get("status") != old.get("status") and new.get("status") != "Draft":
-        return _block("human gate", f"setting {kind}.md to `status: {new.get('status')}` is a human decision.",
+        return _block("G-GATE-05", f"setting {kind}.md to `status: {new.get('status')}` is a human decision.",
                       f"stop and ask the human to type `{phrase(kind, ident)}` in the prompt."
                       if new.get("status") == gate_value else "only `Draft` may be set by the agent.")
     return None
@@ -387,7 +388,7 @@ def _scaffold_elsewhere(cwd, plain):
     if not session or not SCAFFOLD_RE.search(plain):
         return None
     if RELOCATE_RE.search(plain) or project_root(cwd) != project_root(session):
-        return _block("scaffold", "`sdlc init|setup` run by the agent may scaffold only this session's repo "
+        return _block("G-SCAF-01", "`sdlc init|setup` run by the agent may scaffold only this session's repo "
                       f"({project_root(session)}), from there, without cd, -C, --chdir, -execdir or GIT_*, "
                       "CLAUDE_PROJECT_DIR or HOME settings.",
                       "run it from the project as a command of its own; another repo is set up by the human in "
@@ -407,15 +408,15 @@ def check_bash(data):
         return None
     if TRAILER_RE.search(plain) or (FORMAT_TRAILER_RE.search(plain) and "Approval" in plain
                                     and re.search(r"\bgit\b", plain)):   # also printf- or variable-built
-        return _block("human gate", "approval commits are created only by a human approval.",
+        return _block("G-GATE-06", "approval commits are created only by a human approval.",
                       "ask the human to approve in their terminal (`<plugin>/bin/sdlc approve NNNN intent|spec|plan`, "
                       "the exact path is in the refusal message).")
     if any(r.search(plain) for r in ENV_RES):
-        return _block("human gate", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
+        return _block("G-ENV-02", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
                       "would let human-only commands run as the agent.",
                       "leave the environment alone; human-only steps are run by the human.")
     if any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain):
-        return _block("human gate", "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
+        return _block("G-GATE-07", "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
                       "stop and ask the human: they type `Intent|Spec|Plan Approved NNNN` in the prompt, "
                       "or run the command in their own terminal.")
     locked, reason, st = lock(root)
@@ -679,14 +680,14 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
         inner = _nested_command(words)
         if inner is not None:
             if depth >= 3:
-                return _block("bash", "nested shells are too deep to inspect.", "run the command directly.")
+                return _block("G-BASH-01", "nested shells are too deep to inspect.", "run the command directly.")
             msg = _check_command(inner, cwd, root, locked, reason, st, on_main, depth + 1)
             if msg:
                 return msg
             continue
         targets = [e for t in redirs + write_targets(words, cwd) for e in _expand(t, cwd)]
         if words and Path(words[0]).name == "find" and _find_hits_aiops(words[1:], cwd, root):
-            return _block("artifacts", "this `find` would delete or rewrite part of the .aiops tree.",
+            return _block("G-ART-04", "this `find` would delete or rewrite part of the .aiops tree.",
                           "narrow it (e.g. `-not -path './.aiops/*'`), or ask the human to remove artifacts.")
         if words:
             targets += _extract_dirs(Path(words[0]).name, words[1:])
@@ -694,73 +695,76 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
             if t.startswith("/dev/"):
                 continue
             if _in_plugin(t, cwd, root):
-                return _block("toolchain", f"`{' '.join(words)[:80]}` writes into the installed plugin ({t}).",
+                return _block("G-TOOL-02", f"`{' '.join(words)[:80]}` writes into the installed plugin ({t}).",
                               "the plugin's code is what the human runs to approve; change it through its own repo.")
             rel = _rel(root, t, cwd)
             if rel is not None and (rel == ".git" or rel.startswith(".git/")):
-                return _block("toolchain", f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
+                return _block("G-TOOL-03", f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
                               "use git commands; ask the human for config or hook changes.")
             if rel is None:   # outside the repo: never secret material, nor what runs inside the human's approval
                 p = Path(t).expanduser()
                 p = p if p.is_absolute() else Path(cwd) / p
                 if glob_hit(str(p), globs(root, "secret-paths")) and not _secret_template(p.name):
-                    return _block("protected", f"'{p}' is secret material; shell writes count too.",
+                    return _block("G-SEC-01", f"'{p}' is secret material; shell writes count too.",
                                   "ask the human to change credentials themselves.")
                 if _toolchain_path(p, root):
-                    return _block("toolchain", f"'{p}' is part of what runs when the human approves (PATH, shell "
+                    return _block("G-TOOL-04", f"'{p}' is part of what runs when the human approves (PATH, shell "
                                   "startup, git config, installed plugins).", "ask the human to change it themselves.")
                 continue
             if _aiops_protected(rel):
-                return _block("artifacts", f"shell writes to '{rel}' bypass the gate guard.",
+                return _block("G-ART-05", f"shell writes to '{rel}' bypass the gate guard.",
                               "edit artifacts with the Edit/Write tools; engine state changes go through `sdlc`.")
-            hit = glob_hit(rel, globs(root, "protected-paths")) or \
-                (not _secret_template(rel) and glob_hit(rel, globs(root, "secret-paths")))
-            if hit:
-                return _block("protected", f"'{rel}' is protected ({hit[1] or hit[0]}); shell writes count too.",
+            prot_hit = glob_hit(rel, globs(root, "protected-paths"))
+            hit = prot_hit or (not _secret_template(rel) and glob_hit(rel, globs(root, "secret-paths")))
+            if prot_hit:
+                return _block("G-FILE-01", f"'{rel}' is protected ({hit[1] or hit[0]}); shell writes count too.",
                               "propose the change in chat; a human edits protected files.")
+            if hit:
+                return _block("G-SEC-02", f"'{rel}' is secret material ({hit[1] or hit[0]}); shell writes count too.",
+                              "use .env.example for names; ask the human to change real secrets.")
             if locked and _code_paths(root, [rel]):
-                return _block("read-only lock", f"`{' '.join(words)[:80]}` writes '{rel}': {reason}.",
+                return _block("G-LOCK-02", f"`{' '.join(words)[:80]}` writes '{rel}': {reason}.",
                               lock_procedure(st))
         if not words:
             continue
         name, args = Path(words[0]).name, words[1:]
         why = _patch_check(args, cwd, root) if name == "patch" else None
         if why:
-            return _block("artifacts", "this `patch` touches .aiops/, which bypasses the gate guard." if why == "aiops"
+            return _block("G-ART-06", "this `patch` touches .aiops/, which bypasses the gate guard." if why == "aiops"
                           else "`patch` from a pipe can't be inspected for .aiops/ changes.",
                           "edit artifacts with the Edit/Write tools, or pass the patch file by name (`-i` or `<`).")
         if name == "gh" and args[:1] == ["api"] and any(re.search(r"/pulls/\d+/merge\b|/merges\b", a) for a in args):
-            return _block("final gate", "merging through the GitHub API is the human's decision.",
+            return _block("G-MERGE-01", "merging through the GitHub API is the human's decision.",
                           "leave the PR for a CODEOWNER to review and merge.")
         if name == "git":
             sub, rest, gcwd = _git_sub(args, cwd)
             if sub == "config" and _git_config_writes_signing(rest, gcwd, root):
-                return _block("toolchain", "git signing, hook, monitor, filter and include settings are human-owned "
+                return _block("G-TOOL-05", "git signing, hook, monitor, filter and include settings are human-owned "
                               "(they decide who signs approvals, and what runs inside an approval).",
                               "ask the human to change git config themselves (globally).")
             why = _patch_check(rest, gcwd, root, git_am=sub == "am") if sub in ("apply", "am") else None
             if why:
-                return _block("artifacts", f"`git {sub}` with a patch touching .aiops/ bypasses the gate guard."
+                return _block("G-ART-07", f"`git {sub}` with a patch touching .aiops/ bypasses the gate guard."
                               if why == "aiops" else f"`git {sub}` from stdin can't be inspected for .aiops/ changes.",
                               "edit artifacts with the Edit/Write tools, or apply a patch file by name.")
             if sub in GIT_TREE_WRITERS:
                 if _rewrites_tree_from_rev(sub, rest):
-                    return _block("protected", f"`git {sub}` from another revision with a whole-tree pathspec would "
+                    return _block("G-FILE-02", f"`git {sub}` from another revision with a whole-tree pathspec would "
                                   "rewrite protected files and artifacts.",
                                   "name the paths you need (outside protected paths and .aiops/).")
                 rels = [r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-")) if r]
                 hit = next((r for r in rels if _aiops_protected(r)), None)
                 if hit:
-                    return _block("artifacts", f"`git {sub}` on '{hit}' would delete or rewrite an artifact outside the "
+                    return _block("G-ART-08", f"`git {sub}` on '{hit}' would delete or rewrite an artifact outside the "
                                   "gate guard.", "edit artifacts with the Edit/Write tools; ask the human to remove one.")
                 pglobs = globs(root, "protected-paths")
                 prot = next((r for r in rels if glob_hit(r, pglobs)
                              or any(g.startswith(r.rstrip("/") + "/") for g, _ in pglobs)), None)   # a directory
                 if prot:
-                    return _block("protected", f"`git {sub}` would rewrite '{prot}', a protected path.",
+                    return _block("G-FILE-03", f"`git {sub}` would rewrite '{prot}', a protected path.",
                                   "propose the change in chat; a human edits protected files.")
             if on_main and sub in GIT_MAIN_FORBIDDEN:
-                return _block("final gate", f"`git {sub}` on {config(root)['main_branch']}: merging is the human's decision.",
+                return _block("G-MERGE-02", f"`git {sub}` on {config(root)['main_branch']}: merging is the human's decision.",
                               "leave the branch for the human to review and merge (/zouj-ai-sdlc:pr).")
             if sub == "commit":
                 for i, a in enumerate(rest):
@@ -768,14 +772,14 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                         a.split("=", 1)[1] if a.startswith("--file=") else None
                     path = (gcwd / f) if f and f != "-" else None
                     if path and path.is_file() and "AIOps-Approval" in path.read_text(errors="replace"):
-                        return _block("human gate", "approval commits are created only by a human approval.",
+                        return _block("G-GATE-06", "approval commits are created only by a human approval.",
                                       "ask the human to type the approval phrase (e.g. `Plan Approved 0001`).")
             if not locked:
                 continue
             checkout_paths = sub == "checkout" and _code_paths(root, [
                 r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-") and (gcwd / a).is_file()) if r])
             if sub in GIT_LOCKED or (sub == "checkout" and "--" in rest) or checkout_paths:
-                return _block("read-only lock", f"`git {sub}` changes the working tree: {reason}.", lock_procedure(st))
+                return _block("G-LOCK-03", f"`git {sub}` changes the working tree: {reason}.", lock_procedure(st))
             if sub == "add":
                 paths = [a for a in rest if not a.startswith("-")]
                 if not paths or any(a in ("-A", "--all", "-u", "--update") for a in rest) or "." in paths:
@@ -783,14 +787,14 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
                 else:
                     rels = [_rel(root, p, gcwd) for p in paths]
                 if bad := _code_paths(root, rels):
-                    return _block("read-only lock", f"`git add` would stage code ({', '.join(bad[:3])}): {reason}.",
+                    return _block("G-LOCK-04", f"`git add` would stage code ({', '.join(bad[:3])}): {reason}.",
                                   lock_procedure(st))
             if sub == "commit":
                 all_flag = any(re.match(r"^-[a-zA-Z]*a", a) or a == "--all" for a in rest)
                 rels = _git_changed(root, staged_only=not all_flag) + \
                     [_rel(root, p, gcwd) for p in _git_commit_pathspecs(rest)]
                 if bad := _code_paths(root, rels):
-                    return _block("read-only lock", f"`git commit` would commit code ({', '.join(bad[:3])}): {reason}.",
+                    return _block("G-LOCK-05", f"`git commit` would commit code ({', '.join(bad[:3])}): {reason}.",
                                   lock_procedure(st))
             continue
         if not locked:
@@ -799,11 +803,11 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth):
         if name.startswith("python") and args[:2] == ["-m", "pip"]:
             name, sub = "pip", (args[2] if len(args) > 2 else "")
         if name in PKG and sub in PKG[name]:
-            return _block("read-only lock", f"`{name} {sub}` changes dependencies: {reason}.", lock_procedure(st))
+            return _block("G-LOCK-06", f"`{name} {sub}` changes dependencies: {reason}.", lock_procedure(st))
         if name == "make" and any(a in MAKE_WRITERS for a in args):
-            return _block("read-only lock", f"`make {' '.join(args)}` rewrites code: {reason}.", lock_procedure(st))
+            return _block("G-LOCK-07", f"`make {' '.join(args)}` rewrites code: {reason}.", lock_procedure(st))
         if name in ("patch", "unzip") or (name == "tar" and _extract_dirs(name, args)):
-            return _block("read-only lock", f"`{name}` writes files: {reason}.", lock_procedure(st))
+            return _block("G-LOCK-08", f"`{name}` writes files: {reason}.", lock_procedure(st))
     return None
 
 

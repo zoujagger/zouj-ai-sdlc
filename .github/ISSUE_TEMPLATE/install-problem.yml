@@ -15,7 +15,7 @@ body:
         - sdlc setup / init
         - An approval (Intent/Spec/Plan Approved)
         - Signing / doctor
-        - A blocked command (BLOCKED by …)
+        - A blocked command (BLOCKED [G-…] by …)
         - CI (aiops-gates)
         - Other
     validations:
