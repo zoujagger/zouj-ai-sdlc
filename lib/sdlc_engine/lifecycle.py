@@ -348,3 +348,42 @@ def cmd_repair(root, args):
         return 1
     out(f"Repaired: {len(written)} file(s) restored; {STATE} updated. Commit the result.")
     return 0
+
+
+# ---------------------------------------------------------------- the ref upgrade pins
+
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def resolve_ref(plugin_root=PLUGIN_ROOT, home=None):
+    """(ref, warning or None): the full commit sha of the running plugin, for CI to fetch, in this order:
+    1. ~/.claude/plugins/installed_plugins.json: the gitCommitSha of the install whose installPath is this plugin
+       (marketplace installs have no .git; Claude Code records the sha there)
+    2. this plugin's own git checkout (`claude --plugin-dir`): HEAD, if a remote-tracking branch contains it
+    3. the tag v<version>, with a warning: a tag can be moved."""
+    from pathlib import Path
+    plugin_root = Path(plugin_root).resolve()
+    home = Path(home) if home is not None else Path.home()
+    try:
+        data = json.loads((home / ".claude" / "plugins" / "installed_plugins.json").read_text())
+        installs = data.get("plugins", data) if isinstance(data, dict) else {}
+        for entries in (installs.values() if isinstance(installs, dict) else []):
+            for e in (entries if isinstance(entries, list) else [entries]):
+                if not isinstance(e, dict) or not e.get("installPath"):
+                    continue
+                sha = str(e.get("gitCommitSha") or "")
+                if Path(e["installPath"]).resolve() == plugin_root and SHA_RE.match(sha):
+                    return sha, None
+    except (OSError, ValueError, TypeError):
+        pass
+    tag = f"v{cli.plugin_version()}"
+    top = cli.git(plugin_root, "rev-parse", "--show-toplevel")
+    if top and Path(top).resolve() == plugin_root:
+        head = cli.git(plugin_root, "rev-parse", "HEAD") or ""
+        if SHA_RE.match(head):
+            if (cli.git(plugin_root, "branch", "-r", "--contains", head) or "").strip():
+                return head, None
+            return tag, (f"the plugin checkout's HEAD ({head[:10]}) is not pushed to a remote, so CI couldn't fetch "
+                         f"it; pinning the tag {tag} instead (a tag can be moved: pin a full sha when you can)")
+    return tag, (f"no commit sha found for this plugin install; pinning the tag {tag} (a tag can be moved: pin a "
+                 "full sha when you can)")

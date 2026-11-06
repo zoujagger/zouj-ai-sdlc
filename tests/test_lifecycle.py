@@ -264,5 +264,53 @@ class Repair(RepoCase):
         self.assertEqual((self.root / "REVIEW.md").read_text(), "ours\n")
 
 
+class Ref(unittest.TestCase):
+    """resolve_ref: installed_plugins.json's gitCommitSha, a pushed checkout's HEAD, else the tag (0004 S12)."""
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.home = self.tmp / "home"
+        (self.home / ".claude" / "plugins").mkdir(parents=True)
+        self.plugin = self.tmp / "cache" / "zouj" / "zouj-ai-sdlc" / VERSION
+        self.plugin.mkdir(parents=True)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def installed(self, sha, path=None):
+        (self.home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {
+            "zouj-ai-sdlc@zouj": [{"scope": "user", "installPath": str(path or self.plugin), "version": VERSION,
+                                   "gitCommitSha": sha}]}}))
+
+    def test_installed_plugins_sha(self):
+        from sdlc_engine import lifecycle
+        self.installed("a" * 40)
+        self.assertEqual(lifecycle.resolve_ref(self.plugin, self.home), ("a" * 40, None))
+
+    def test_malformed_or_other_install_ignored(self):
+        from sdlc_engine import lifecycle
+        for sha, path in (("not-a-sha", None), ("b" * 40, self.tmp / "elsewhere"), ("C" * 40, None)):
+            self.installed(sha, path)
+            ref, warning = lifecycle.resolve_ref(self.plugin, self.home)
+            self.assertEqual(ref, f"v{VERSION}", sha)
+            self.assertIn("tag", warning)
+
+    def test_checkout_head_reachable(self):
+        import subprocess
+        from sdlc_engine import lifecycle
+        g = lambda *a, cwd=self.plugin: subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True,  # noqa: E731
+                                                       check=True).stdout.strip()
+        g("init", "-q", "-b", "main")
+        g("-c", "user.name=x", "-c", "user.email=x@x", "commit", "-q", "--allow-empty", "-m", "x")
+        head = g("rev-parse", "HEAD")
+        ref, warning = lifecycle.resolve_ref(self.plugin, self.home)
+        self.assertEqual(ref, f"v{VERSION}")                                # not on any remote: CI can't fetch it
+        self.assertIn("not pushed", warning)
+        g("update-ref", "refs/remotes/origin/main", head)
+        self.assertEqual(lifecycle.resolve_ref(self.plugin, self.home), (head, None))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -237,7 +237,7 @@ guard change is test-first (CLAUDE.md rule 2).
     - `::test_agent_skips_human_owned` (`CLAUDECODE=1`, a deleted `.github/workflows/ci.yml` isn't restored and is
       printed)
   - Covers: AC-3, AC-6
-- [ ] **S12**: Ref resolution.
+- [x] **S12**: Ref resolution.
   - `lifecycle.resolve_ref(plugin_root, home)`, in order:
     1. `installed_plugins.json` (any entry whose `installPath` resolves to `plugin_root` →
        `gitCommitSha`, validated as 40 hex)
