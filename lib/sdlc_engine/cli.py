@@ -41,6 +41,8 @@ Lifecycle (any user or agent)
   feedback                   issue links and a doctor summary to paste (sends nothing)
   list-installed             what the plugin installed here: current, stale, modified, missing, unmanaged
   repair [--dry-run] [--yes] restore missing managed files (never a modified one)
+  upgrade [--dry-run] [--yes]  bring the scaffold to this plugin version: stale files replaced (diff shown),
+                             modified ones kept except the CI ref, every ref pinned to a full sha, migrations listed
   why <id>                   explain a block (e.g. `sdlc why G-ENV-03`): reason, stage, safe alternative
   doctor                     check tools and wiring
 
@@ -603,6 +605,11 @@ def cmd_repair(root, args):
     return lifecycle.cmd_repair(root, args)
 
 
+def cmd_upgrade(root, args):
+    from . import lifecycle
+    return lifecycle.cmd_upgrade(root, args)
+
+
 def cmd_list_installed(root, args):
     from . import lifecycle
     return lifecycle.cmd_list_installed(root, args)
@@ -783,7 +790,8 @@ COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
             "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
             "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why,
-            "list-installed": cmd_list_installed, "repair": cmd_repair}
+            "list-installed": cmd_list_installed, "repair": cmd_repair,
+            "upgrade": cmd_upgrade}
 
 
 def main(argv=None):

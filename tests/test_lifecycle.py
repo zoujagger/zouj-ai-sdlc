@@ -312,5 +312,107 @@ class Ref(unittest.TestCase):
         self.assertEqual(lifecycle.resolve_ref(self.plugin, self.home), (head, None))
 
 
+class Upgrade(RepoCase):
+    """sdlc upgrade: stale files replaced, modified kept but for the ref, ref pinned to a sha, migrations listed."""
+    SHA = "a" * 40
+
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        home = self.root.parent / f"{self.root.name}.home"
+        (home / ".claude" / "plugins").mkdir(parents=True)
+        (home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {
+            "zouj-ai-sdlc@zouj": [{"installPath": str(ROOT), "gitCommitSha": self.SHA}]}}))
+        self.addCleanup(shutil.rmtree, home, True)
+        self.home = {"HOME": str(home)}
+        st = json.loads((self.root / STATE).read_text())
+        (self.root / "REVIEW.md").write_text("old template\n")                # stale: an older plugin wrote this
+        st["files"]["REVIEW.md"] = {"sha256": sha(self.root / "REVIEW.md"), "version": "0.1.0", "human_owned": False}
+        (self.root / STATE).write_text(json.dumps(st))
+        claude = self.root / ".github" / "workflows" / "claude.yml"          # modified by the user
+        claude.write_text(claude.read_text() + "# ours\n")
+
+    def upgrade(self, *args, env=None):
+        return self.run_sdlc("upgrade", *args, env={**self.home, **(env or {})})
+
+    def snapshot(self):
+        return {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*")
+                if p.is_file() and ".git" not in p.relative_to(self.root).parts[:1]}
+
+    def test_replaces_stale_keeps_modified_bumps_ref(self):
+        r = self.upgrade("--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.root / "REVIEW.md").read_bytes(), (ROOT / "templates" / "scaffold" / "REVIEW.md").read_bytes())
+        self.assertIn("-old template", r.stdout)                               # the diff was shown
+        claude = (self.root / ".github" / "workflows" / "claude.yml").read_text()
+        self.assertTrue(claude.endswith("# ours\n"))
+        self.assertIn(f"ZOUJ_SDLC_REF: {self.SHA}", claude)
+        for rel in (".github/workflows/aiops-gates.yml", ".github/workflows/claude-pr-review.yml"):
+            self.assertIn(f"ZOUJ_SDLC_REF: {self.SHA}", (self.root / rel).read_text(), rel)
+        self.assertIn(f'"ref": "{self.SHA}"', (self.root / ".claude" / "settings.json").read_text())
+        st = json.loads((self.root / STATE).read_text())
+        self.assertEqual((st["plugin_version"], st["ref"]), (VERSION, self.SHA))
+        self.assertEqual(st["files"]["REVIEW.md"], {"sha256": sha(self.root / "REVIEW.md"), "version": VERSION,
+                                                    "human_owned": False})
+        self.assertEqual(st["files"][".github/workflows/aiops-gates.yml"]["sha256"],
+                         sha(self.root / ".github" / "workflows" / "aiops-gates.yml"))
+
+    def test_second_run_is_noop(self):
+        self.assertEqual(self.upgrade("--yes").returncode, 0)
+        before = self.snapshot()
+        r = self.upgrade("--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"Already at {VERSION}", r.stdout)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_dry_run_and_no_tty_write_nothing(self):
+        before = self.snapshot()
+        r = self.upgrade("--dry-run")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("REVIEW.md", r.stdout)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.upgrade().returncode, 2)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.upgrade("--force").returncode, 1)
+
+    def test_agent_never_writes_human_owned(self):
+        human_owned = [".github/workflows/aiops-gates.yml", ".github/workflows/claude.yml", ".claude/settings.json",
+                       ".aiops/config.json", ".github/CODEOWNERS"]
+        before = {rel: (self.root / rel).read_bytes() for rel in human_owned}
+        st0 = json.loads((self.root / STATE).read_text())
+        r = self.upgrade("--yes", env={"CLAUDECODE": "1"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for rel in human_owned:
+            self.assertEqual((self.root / rel).read_bytes(), before[rel], rel)
+        self.assertIn(".github/workflows/aiops-gates.yml", r.stdout)
+        self.assertRegex(r.stdout, r"-I \S+/bin/sdlc upgrade")
+        st = json.loads((self.root / STATE).read_text())
+        self.assertEqual(st["files"][".github/workflows/aiops-gates.yml"], st0["files"][".github/workflows/aiops-gates.yml"])
+        self.assertEqual(st["ref"], st0["ref"])                                 # the human finishes the ref bump
+
+    def test_legacy_approvals_listed_never_run(self):
+        import os
+        from unittest import mock
+        from sdlc_engine import approvals, lifecycle
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, str(ROOT))
+        pending = [("b" * 40, "0001-x/intent.md")]
+        with mock.patch.object(approvals, "unsigned_approvals", return_value=pending), \
+                mock.patch.object(lifecycle, "resolve_ref", return_value=(self.SHA, None)), \
+                mock.patch("sdlc_engine.cli.out") as said:
+            self.assertEqual(lifecycle.cmd_upgrade(self.root, ["--yes"]), 0)
+        text = "\n".join(str(c.args[0]) for c in said.call_args_list)
+        self.assertIn("legacy-approvals", text)
+        self.assertIn("legacy-approvals --write", text)
+        legacy = self.root / ".aiops" / "config" / "legacy-approvals"
+        self.assertNotIn("b" * 40, legacy.read_text() if legacy.exists() else "")   # never run by upgrade
+        self.assertNotIn("legacy-approvals", json.loads((self.root / STATE).read_text())["migrations"])
+        with mock.patch.object(approvals, "unsigned_approvals", return_value=[]), \
+                mock.patch.object(lifecycle, "resolve_ref", return_value=(self.SHA, None)), mock.patch("sdlc_engine.cli.out"):
+            self.assertEqual(lifecycle.cmd_upgrade(self.root, ["--yes"]), 0)
+        self.assertIn("legacy-approvals", json.loads((self.root / STATE).read_text())["migrations"])
+
+
 if __name__ == "__main__":
     unittest.main()

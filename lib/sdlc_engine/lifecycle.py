@@ -387,3 +387,117 @@ def resolve_ref(plugin_root=PLUGIN_ROOT, home=None):
                          f"it; pinning the tag {tag} instead (a tag can be moved: pin a full sha when you can)")
     return tag, (f"no commit sha found for this plugin install; pinning the tag {tag} (a tag can be moved: pin a "
                  "full sha when you can)")
+
+
+# ---------------------------------------------------------------- upgrade
+
+MERGED_JSON = (".aiops/config.json", ".claude/settings.json")   # setup merges its keys into these: never replaced
+
+
+def pin(data, ref):
+    """data with every pinned CI ref value set to ref (one value per line shape; the rest of the file kept)."""
+    data = REF_LINE_RE.sub(lambda m: m.group(1) + ref.encode(), data)
+    return REF_JSON_RE.sub(lambda m: m.group(1) + ref.encode() + m.group(3), data)
+
+
+def plan_upgrade(root, st, ref, agent):
+    """(actions, human, advice): actions are (kind, rel, bytes) with kind create (missing or new), replace (stale or
+    current, from the running template) or pin (modified, unmanaged or a merged JSON file: only the ref value).
+    human lists what the agent may not write; advice lists modified files that differ from the new template."""
+    actions, human, advice = [], [], []
+    stack = st.get("stack")
+    for rel, status in classify(root, st).items():
+        f = root / rel
+        if status == "dropped":
+            continue
+        if status in ("missing", "new"):
+            act = ("create", rel, expected(rel, ref, stack))
+        else:
+            disk = f.read_bytes()
+            if status in ("current", "stale") and rel not in MERGED_JSON:
+                act = ("replace", rel, expected(rel, ref, stack))
+            else:
+                act = ("pin", rel, pin(disk, ref))
+                if status in ("modified", "unmanaged") and normalize(disk) != normalize(expected(rel, ref, stack)):
+                    advice.append(rel)
+            if act[2] == disk:
+                continue
+        if agent and not agent_may_write(root, rel):
+            human.append(rel)
+        else:
+            actions.append(act)
+    return actions, human, advice
+
+
+def cmd_upgrade(root, args):
+    """Bring the repo's scaffold to the running plugin: replace stale files (diff shown), create missing and new ones,
+    keep modified files except for the CI ref, pin every ref to a full sha, list migrations. No network."""
+    from . import migrations
+    opts, why = parse(args, "upgrade")
+    if why:
+        out(f"{why}. Nothing was written.", sys.stderr)
+        return 1
+    why = refusal(root)
+    if why:
+        out(why, sys.stderr)
+        return 1
+    version, agent = cli.plugin_version(), approvals.running_under_agent()
+    st, adopted = load(root), False
+    if st is None:
+        st, adopted = adopt(root), True
+    ref, warning = resolve_ref()
+    actions, human, advice = plan_upgrade(root, st, ref, agent)
+    done = set(st.get("migrations") or [])
+    pending = [m for m in migrations.MIGRATIONS if m.id not in done and m.applies(root)]
+    finished = [m.id for m in migrations.MIGRATIONS if m.id not in done and m not in pending]
+    if warning:
+        out(f"! {warning}")
+    if not (actions or human or adopted or finished) and st.get("plugin_version") == version and st.get("ref") == ref:
+        out(f"Already at {version} (ref {ref}). Nothing to upgrade.")
+        for m in pending:
+            out(f"  ! migration {m.id} is pending: {m.why}. The human runs `{m.command}` in their own terminal.")
+        return 0
+    out(f"Upgrade {st.get('plugin_version') or 'an adopted repo'} → {version}, ref {st.get('ref')} → {ref}")
+    if adopted:
+        out(f"  No install state: adopting this repo first ({STATE}).")
+    for kind, rel, data in actions:
+        out(f"  {'+' if kind == 'create' else '~'} {kind} {rel}")
+        if kind == "replace":
+            show_diff(rel, (root / rel).read_bytes(), data)
+    for rel in advice:
+        out(f"  = kept {rel} (modified): it differs from the new template; compare and merge by hand:")
+        show_diff(rel, (root / rel).read_bytes(), expected(rel, ref, st.get("stack")))
+    if human:
+        out("Human-owned or locked, not written when the agent runs upgrade (install-state keeps them at their old "
+            f"version). The human runs, in their own terminal:\n  {human_command('upgrade')}\n  for: " + ", ".join(human))
+    for m in pending:
+        out(f"  ! migration {m.id}: {m.why}. "
+            + (f"Human-only: the human runs `{m.command}` in their own terminal; upgrade never runs it."
+               if m.human_only else f"Run `{m.command}`."))
+    rc = confirm(opts, "upgrade")
+    if rc is not None:
+        return rc
+    written = []
+    try:
+        for kind, rel, data in actions:
+            if kind == "pin":
+                entry, before = st["files"].get(rel), sha256_file(root / rel)
+                cli.write_file(root, rel, data, (root / rel).stat().st_mode & 0o777)
+                if entry and entry.get("sha256") == before:     # managed and as recorded (a merged JSON file)
+                    entry.update(sha256=sha256_bytes(data), version=version)
+            else:
+                write_scaffold(root, st, rel, data)
+            written.append(rel)
+        st["plugin_version"] = version
+        if not human:
+            st["ref"] = ref
+        st["migrations"] = sorted(done | set(finished))
+        st.pop("adopted", None)
+        stamp(st)
+        save(root, st)
+    except OSError as exc:
+        out(cli.write_failure(exc, written), sys.stderr)
+        return 1
+    out(f"Upgraded: {len(written)} file(s) written; {STATE} updated. Review the diff and commit it."
+        + ("" if not human else " The human finishes the human-owned files and the ref."))
+    return 0
