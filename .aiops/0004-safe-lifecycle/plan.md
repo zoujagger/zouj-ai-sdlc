@@ -89,7 +89,7 @@ guard change is test-first (CLAUDE.md rule 2).
     `rules.md` section per id), `Why::test_known_id`, `Why::test_unknown_id_near_matches`. They fail because the
     module and the command don't exist.
   - Covers: AC-17, AC-22
-- [ ] **S2**: Ids in the Python guards.
+- [x] **S2**: Ids in the Python guards.
   - `guards._block(id, reason, procedure)` emits `BLOCKED [<id>] by zouj-ai-sdlc: …\nProcedure: … (sdlc why <id>)`,
     and every call site passes its specific id.
   - `secret_scan.main` emits `BLOCKED [G-SEC-…] by guard-…`.

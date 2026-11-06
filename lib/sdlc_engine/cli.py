@@ -644,8 +644,9 @@ def hook(event):
         return HOOKS[event](data)
     except Exception as exc:  # noqa: BLE001: a guard that crashes must not silently allow
         if event in ("pre-edit", "pre-bash"):
-            out(f"BLOCKED by zouj-ai-sdlc: the guard crashed ({type(exc).__name__}: {exc}), so it fails closed.\n"
-                "Procedure: tell the human. They can fix the plugin or run /plugin disable zouj-ai-sdlc.", sys.stderr)
+            out(f"BLOCKED [G-FAIL-01] by zouj-ai-sdlc: the guard crashed ({type(exc).__name__}: {exc}), so it fails "
+                "closed.\nProcedure: tell the human. They can fix the plugin or run /plugin disable zouj-ai-sdlc. "
+                "(details: `sdlc why G-FAIL-01`)", sys.stderr)
             return 2
         out(f"zouj-ai-sdlc {event} hook error: {exc}", sys.stderr)
         return 0
@@ -713,8 +714,10 @@ def hook_post_edit(data):
         return 0
     errors, warnings = validate(root / ".aiops" / m.group(1), m.group(2))
     if errors:
-        out(f"zouj-ai-sdlc: {rel} does not validate yet (fix before asking for approval):\n- "
-            + "\n- ".join(errors + warnings), sys.stderr)
+        out(f"BLOCKED [G-ART-09] by zouj-ai-sdlc: {rel} does not validate yet (fix before asking for approval):\n- "
+            + "\n- ".join(errors + warnings)
+            + f"\nProcedure: fix the errors above; `sdlc validate {m.group(1)[:4]}` lists them. "
+              "(details: `sdlc why G-ART-09`)", sys.stderr)
         return 2
     return 0
 
