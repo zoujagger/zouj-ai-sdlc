@@ -24,6 +24,15 @@ Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 
 - **G-ENV-03 allowances accept only safe forms:** `printenv NAME…`, or a command that doesn't run env/printenv
   (`ls env`, `python -m venv env`, `source env/bin/activate`). The list of known dumps is gone.
 - **The agent's `sdlc init --force`** judges the read-only lock without `SDLC_HOOK_PROFILE` / `AIOPS_INTENT`.
+- **Wrappers no longer hide a write.** `nice`, `timeout 5`, `stdbuf`, `setsid`, `ionice`, `sudo -u x`,
+  `command -p`, `flock f`, `xargs`, `busybox` and the like are seen through by every shell rule, including the
+  read-only lock. This hole predates 0005.
+- Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
+  `.aiops/`, and G-ENV-03's list of known dumps.
+
+### Changed
+- `git pull` is refused off the main branch (G-FILE-06): `git fetch`, then `git merge <ref>`, which is inspected.
+- A G-ENV-03 allowance must be safe in every simple command; `source`/`.` and secret-named `printenv` are refused.
 
 ## [0.2.0-alpha.3] - 2026-11-06
 

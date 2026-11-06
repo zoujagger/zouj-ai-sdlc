@@ -713,7 +713,8 @@ class ProtectedTree(RepoCase):
                     "rm -rf .git", "rm -rf docs", "rmdir .github", "find .github -delete", "find . -delete"):
             r = self.bash(cmd)
             self.assertEqual(r.returncode, 2, cmd)
-            self.assertRegex(r.stderr, r"BLOCKED \[G-[A-Z]+-\d\d\]", cmd)
+            want = "G-ART-05" if ".aiops" in cmd else "G-TOOL-03" if ".git " in cmd + " " else "G-FILE-05"
+            self.assertIn(f"[{want}]", r.stderr, cmd)                    # AC-1: the exact id (review round 1)
             self.assertIn("Procedure:", r.stderr, cmd)
 
     def test_allows_ordinary_deletes(self):

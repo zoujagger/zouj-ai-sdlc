@@ -630,6 +630,8 @@ class EnvSpellings(RepoCase):
             self.assertIn(f"[{rid}]", r.stderr, cmd)
         for cmd in ("cat config/env.example", "ls build/environment", "python -m venv .venv"):
             self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+        for cmd in ("ls env", "python -m venv env", "env FOO=1 make"):        # AC-4: still blocked, unchanged
+            self.assertIn("[G-ENV-03]", self.bash(cmd).stderr, cmd)
 
 
 class EnvRound1(EnvSpellings):

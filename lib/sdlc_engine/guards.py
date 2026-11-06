@@ -1023,9 +1023,9 @@ def _find_hits_protected(args, cwd, root):
 
 
 def _contains_protected(root, target, cwd):
-    """What deleting the directory `target` would take with it (blocked as G-FILE-05) would take the repo itself or something protected with it,
-    else None: the repo root or a directory above it, a protected-paths glob under it, or a git-tracked file under it
-    that is protected or secret. Untracked trees (node_modules, build output) are never walked."""
+    """Why deleting the directory `target` is refused (G-FILE-05), else None: it is the repo, a directory above it or
+    above home, or a directory with a protected-paths glob or a git-tracked protected or secret file under it.
+    Untracked trees (node_modules, build output) are never walked; `rm link` (no trailing slash) is fine."""
     raw = Path(os.path.expanduser(str(target)))
     raw = raw if raw.is_absolute() else Path(cwd) / raw
     if not str(target).endswith("/") and raw.is_symlink():

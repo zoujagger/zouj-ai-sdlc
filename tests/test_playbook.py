@@ -154,12 +154,13 @@ class Playbook(SetupCase):
         self.assertIn("G-MERGE-03 is a gate rule", doctor.stdout)
         (d / ".aiops" / "config" / "allowed-commands").unlink()
 
-    PROTECTED_TREE = ("rm -rf ./", "rm -rf -- .", "rm -rf .github/workflows", "mv .github /tmp/x", "rm -rf .claude",
-                      "rm -rf .aiops", "rm -rf .git", "rm -rf ..")
+    PROTECTED_TREE = ("rm -rf ./", "rm -rf -- .", 'rm -rf "$PWD"', "rm -rf {d}", "rm -rf ..", "rm -rf ~/",
+                      "rm -rf .github/workflows", "mv .github /tmp/x", "rm -rf .claude", "rm -rf .aiops", "rm -rf .git",
+                      "find .github -type f -delete", "nice rm -rf .github")
 
     def protected_tree_blocked(self, d, where):
         """0005 AC-12: in every state, the repo, .aiops, .git and protected trees can't be deleted or moved."""
-        for cmd in self.PROTECTED_TREE:
+        for cmd in (c.format(d=d) for c in self.PROTECTED_TREE):
             self.assertIsNotNone(guards.check_bash({"tool_input": {"command": cmd}, "cwd": str(d)}), f"{where}: {cmd}")
 
     def walk(self, profile):
