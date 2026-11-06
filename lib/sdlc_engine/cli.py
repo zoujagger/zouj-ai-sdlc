@@ -39,6 +39,7 @@ Lifecycle (any user or agent)
   init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
   setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
   feedback                   issue links and a doctor summary to paste (sends nothing)
+  why <id>                   explain a block (e.g. `sdlc why G-ENV-03`): reason, stage, safe alternative
   doctor                     check tools and wiring
 
 Human only (refused inside Claude Code)
@@ -562,6 +563,16 @@ Nothing was sent: zouj-ai-sdlc never uploads diagnostics.""")
     return 0
 
 
+def cmd_why(root, args):
+    from . import rules
+    if not args:
+        out("usage: sdlc why <rule id>   (the id is in the block message, e.g. BLOCKED [G-ENV-03])", sys.stderr)
+        return 1
+    rc, text = rules.why(args[0])
+    out(text, sys.stderr if rc else None)
+    return rc
+
+
 def cmd_setup(root, args):
     from . import setup   # imported here: setup builds on init_actions/apply_init in this module
     return setup.main(root, args)
@@ -714,7 +725,7 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
             "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
-            "setup": cmd_setup, "feedback": cmd_feedback}
+            "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why}
 
 
 def main(argv=None):

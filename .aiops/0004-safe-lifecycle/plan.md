@@ -75,7 +75,7 @@ guard change is test-first (CLAUDE.md rule 2).
   `tests/test_playbook.Playbook`: the per-profile walk.
 
 ## Steps
-- [ ] **S1**: Rule registry and `sdlc why`.
+- [x] **S1**: Rule registry and `sdlc why`.
   - Create `defaults/rules`: `<id> <class> <stage> <summary…>`, one line per rule in today's guards. Every
     `_block` call in `guards.py`, every `block` call in `hooks/*.sh`, `secret_scan.main`, `cli.hook`'s fail-closed
     path, `lib.sh` `fail_closed`/`secret_scan`, `engine.sh` and `stop-verify.sh` gets its own id.
