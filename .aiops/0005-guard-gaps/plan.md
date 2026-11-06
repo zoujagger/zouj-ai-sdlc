@@ -1,9 +1,13 @@
 ---
 id: 0005
 title: Close the shell-write guard gaps found in the 0004 reviews
-status: Draft
+status: Approved
 spec: ./spec.md
 created: 2026-11-06
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-11-06T13:52:35Z
+approved-via: cli
+approved-sha256: bccf6c53a8475d1b5b67e296db075b8e40947ad4cd6ded363b5adbe59b210f2c
 ---
 
 # Plan: Close the shell-write guard gaps found in the 0004 reviews
