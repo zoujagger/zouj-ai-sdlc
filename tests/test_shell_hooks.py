@@ -269,6 +269,14 @@ class ShellHooks(RepoCase):
 
     def test_docs_match_what_shipped(self):
         """Review 0003 round 4: the docs describe the code as it is."""
+        # 0005: the shell-write gaps are closed, so no doc may still describe them as open
+        for rel in ("README.md", "docs/architecture.md"):
+            text = (ROOT / rel).read_text()
+            self.assertNotIn("intent 0005", text, rel)
+            self.assertNotIn("only in initialized repos", text, rel)
+        arch = (ROOT / "docs" / "architecture.md").read_text()
+        for piece in ("G-FILE-05", "G-FILE-06", "git pull"):
+            self.assertIn(piece, arch, piece)
         readme = (ROOT / "README.md").read_text()
         looking = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
         for piece in ("bin/sdlc setup --profile solo --yes", "git add -A", "git commit"):

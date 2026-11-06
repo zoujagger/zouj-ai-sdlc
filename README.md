@@ -88,9 +88,9 @@ directory.
 | `team` | an SSH-signed commit, a human per signature (passphrase key out of ssh-agent) | most teams |
 | `strict` | an `sk-` key touch per signature, plus CODEOWNERS on `/.aiops/` | regulated or high-risk repos |
 
-Without `.aiops/` the plugin's **SDLC gates are dormant** until you run setup or init. Its safety guards (secret reads,
-force-push, history rewrites, production deploys, and Edit/Write of secrets, your shell startup files and the installed
-plugin) are on in every repo. Shell writes to those are checked only in initialized repos for now (intent 0005).
+Without `.aiops/` the plugin's **SDLC gates are dormant** until you run setup or init. Its safety guards are on in
+every repo: secret reads, force-push, history rewrites, production deploys, and writes (Edit/Write and shell) to
+secrets outside the repo, your shell startup files, PATH, global git config and the installed plugin.
 
 ## Lifecycle: upgrade, repair, remove
 `init` and `setup` record what they wrote in `.aiops/install-state.json`: the plugin version, the CI ref, the profile
@@ -138,7 +138,7 @@ The state is **derived** from the artifacts and git, never stored.
 | Definition of done | The Stop hook requires `make check` green. A PASS review goes stale if code changes after it |
 | Human-only final gate | Merging on main, `gh pr merge`/approve, pushing to main, and production deploys are blocked |
 | CI audit | `aiops-gates.yml` runs `sdlc validate --all --ci --base <target>`: every open gate must trace to a single-file approval commit signed by a key in the **target branch's** `allowed-signers` (or listed in its `legacy-approvals`) |
-| `.aiops/` integrity | `.aiops`, intent folders and their files can't be deleted, moved or overwritten from the shell; a git-tracked `.aiops/` counts as initialized |
+| `.aiops/` integrity | `.aiops`, intent folders and their files can't be deleted, moved or overwritten from the shell, nor can the repo, a directory above it, or a directory holding a protected path or tracked secret (`G-FILE-05`). Archives, `git stash pop`, and merges or rebases from branches other than main can't bring in `.aiops/config*`, settings or protected paths (`G-FILE-06`); `git pull` off main is refused (fetch, then an inspected merge). A git-tracked `.aiops/` counts as initialized |
 | Always-on safety | in **every** repo: secret reads and writes (Read/Grep/Glob and shell), credentials, force-push, history rewrites, production deploys |
 | SDLC-only guards | after `sdlc init`: protected paths, push-to-main, the merge gate, the `/fix` test lock, `make check` |
 

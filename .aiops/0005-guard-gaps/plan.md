@@ -139,7 +139,7 @@ Code to reuse:
   - Test first: the new walk assertions, written before any fix S8 needs. With S1-S7 correct they pass on the first
     run, and the Red evidence is a planted `_contains_protected → None` run, recorded in the commit message.
   - Covers: AC-12, AC-13
-- [ ] **S9**: Docs.
+- [x] **S9**: Docs.
   - `docs/architecture.md`: the always-on safety row, `.aiops/` integrity (parent directories, incoming changes),
     the static-parsing residuals, and the "Safety off in unrelated repos" residual removed.
   - `README.md`: always-on guards; `git pull` off main.

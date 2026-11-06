@@ -48,6 +48,8 @@ see the reason, the playbook stage the rule protects and the safe alternative. T
 | `G-GATE-*`, `G-MERGE-*`, `G-DEPLOY-*` | Only a human approves, merges or deploys to production | Ask the human; they run it themselves |
 | `G-ART-*` | Shell writes to `.aiops/` bypass the gate guard | Edit artifacts with the Edit/Write tools |
 | `G-FILE-*`, `G-TOOL-*` | Protected paths, your shell startup files, PATH, git config, the installed plugin | A human changes those |
+| `G-FILE-05` | The command deletes or moves the repo, a directory above it, or a directory holding protected or tracked secret files | Name the paths you mean (`rm -rf build/`) |
+| `G-FILE-06` | An archive, a stash, a merge or a pull would bring in `.aiops/config*`, settings or a protected path | `git fetch`, then `git merge <ref>`; a human changes human-owned config. Merging from main is always fine |
 | `G-SEC-*`, `G-ENV-01`, `G-ENV-04` | Secret files and tokens never enter the session | Use `.env.example` or the docs for names |
 
 **A false positive** (a safe command that's blocked): the static parser is strict on purpose. Run `sdlc why <id>`.
