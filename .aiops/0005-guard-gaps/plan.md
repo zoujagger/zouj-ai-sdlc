@@ -51,7 +51,7 @@ Code to reuse:
   `test_playbook.Playbook`
 
 ## Steps
-- [ ] **S1**: Environment dumps (gap 3) and the registry stages.
+- [x] **S1**: Environment dumps (gap 3) and the registry stages.
   - `re_dump_env` tests `$u` with an optional path prefix: `${S}(\S*/)?(printenv|env)${E}`.
   - New `re_environ='/proc/[^ ;&|]*/environ'` → `block G-ENV-05` (secret).
   - `defaults/rules` adds G-ENV-05. The stage of G-SEC-01, G-TOOL-02, G-TOOL-04, G-TOOL-05 and G-BASH-01 becomes

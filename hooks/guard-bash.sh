@@ -40,7 +40,8 @@ re_history="git (reset --hard|clean -[a-z]*f|filter-branch|filter-repo)"
 re_bypass="(--no-verify|core\\.hooksPath|SKIP_STOP_VERIFY=1|--dangerously-skip-permissions)"
 re_pipe_sh="(curl|wget)[^|]*\\| ?(sudo )?(ba|z)?sh${E}"
 re_cred_print="(gh auth token|gh auth status[^;&|]*(-t|--show-token)|git( -[cC] [^ ;&|]+)* credential(-[a-z]+)? (fill|get)|aws configure (get [^;&|]*(secret|token)|export-credentials)|gcloud auth [^;&|]*print-[a-z-]*token|az account get-access-token|kubectl config view[^;&|]*--raw|docker-credential-[a-z0-9-]+ get|${S}op read)"
-re_dump_env="(${S}printenv|${S}env${E})"
+re_dump_env="${S}((/usr)?(/local)?/s?bin/)?(printenv|env)${E}"   # matched unquoted ($u): e''nv, "printenv", /usr/bin/env
+re_environ="/proc/[^ ;&|]*/environ"
 re_echo_secret="echo .*\\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD)"
 re_system="${S}(sudo|mkfs|dd if=|chmod -R 777)${E}"
 re_gate="gh (pr merge|pr review [^;&|]*--approve|release delete|repo delete)"
@@ -60,7 +61,8 @@ secret_scan "$input" || exit 2
 [[ "$u" =~ $re_cred_print ]] && block G-ENV-01 "printing credentials into the session" "use the tool's own auth (gh, git, aws) without printing the token; never read real secrets."
 # the secret rule first: a command matching both reports the id that can never be allowed
 [[ "$c" =~ $re_echo_secret ]] && block G-ENV-04 "echoing a secret-named variable prints a credential" "check that it's set without printing it ([ -n \"\$VAR\" ])."
-[[ "$c" =~ $re_dump_env ]]   && heuristic G-ENV-03 "dumping the environment can print secrets" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
+[[ "$u" =~ $re_environ ]]    && block G-ENV-05 "reading a process environment prints every secret in it" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
+[[ "$u" =~ $re_dump_env ]]   && heuristic G-ENV-03 "dumping the environment can print secrets" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
 [[ "$c" =~ $re_system ]]     && heuristic G-BASH-07 "privileged or dangerous system command"
 (( enabled )) && [[ "$c" =~ $re_gate ]] && block G-MERGE-04 "merging/approving/deleting is a human gate" "a CODEOWNER approves and merges the PR (state 5 is the human's decision); the agent never approves its own work."
 

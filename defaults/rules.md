@@ -191,6 +191,10 @@ Instead: use `.env.example` or the docs for variable names.
 Why: `echo $GITHUB_TOKEN` (any variable named ...KEY, TOKEN, SECRET or PASSWORD) prints a credential into the session.
 Instead: check that it's set without printing it (`[ -n "$GITHUB_TOKEN" ]`).
 
+## G-ENV-05
+Why: `/proc/<pid>/environ` holds a process's whole environment, every token included.
+Instead: read the one variable you need by a name that isn't secret, or check that it's set (`[ -n "$VAR" ]`).
+
 ## G-ENV-01
 Why: printing a token (`gh auth token`, `git credential fill`, ...) puts the credential into the session.
 Instead: use the tool's own auth (gh, git, aws) without printing the token.

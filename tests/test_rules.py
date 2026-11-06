@@ -274,5 +274,12 @@ class Skills(unittest.TestCase):
         self.assertIn("sdlc why", status)
 
 
+class Stages0005(unittest.TestCase):
+    def test_safety_rules_every_repo(self):
+        for rid in ("G-SEC-01", "G-TOOL-02", "G-TOOL-04", "G-TOOL-05", "G-BASH-01", "G-ENV-05"):
+            self.assertIn("in every repo", why(rid).stdout, rid)
+        self.assertIn("class: secret", why("G-ENV-05").stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

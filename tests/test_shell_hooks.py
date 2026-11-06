@@ -600,5 +600,23 @@ class Allowance(RepoCase):
         self.assertBlockedBy("ls env", "G-ENV-03")
 
 
+class EnvSpellings(RepoCase):
+    """Every spelling of an environment dump is G-ENV-03; /proc/*/environ is G-ENV-05 (0005 S1, gap 3)."""
+    def bash(self, cmd):
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        return subprocess.run([str(HOOKS / "guard-bash.sh")], input=json.dumps({"tool_input": {"command": cmd}}),
+                              capture_output=True, text=True, env=env, cwd=self.root)
+
+    def test_spellings_are_dumps(self):
+        for cmd, rid in [("/usr/bin/env", "G-ENV-03"), ("e''nv", "G-ENV-03"), ('"printenv"', "G-ENV-03"),
+                         ("\\env", "G-ENV-03"), ("/usr/local/bin/printenv", "G-ENV-03"),
+                         ("cat /proc/self/environ", "G-ENV-05"), ("xargs -0 < /proc/1/environ", "G-ENV-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+        for cmd in ("cat config/env.example", "ls build/environment", "python -m venv .venv"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+
 if __name__ == "__main__":
     unittest.main()
