@@ -496,6 +496,12 @@ def cmd_init(root, args):
     if stack and "Makefile" in created:
         wired = _wire_stack(root, stack)
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
+    from . import lifecycle
+    try:
+        lifecycle.record(root, written, stack=stack)
+    except OSError as exc:
+        out(write_failure(exc, written), sys.stderr)
+        return 1
     out("Created:\n  " + ("\n  ".join(created) or "(nothing)"))
     if skipped:
         out("Kept existing (compare them with the plugin's templates/scaffold/):\n  "

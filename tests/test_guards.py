@@ -608,5 +608,24 @@ class Ids(RepoCase):
         self.assertIn("sdlc why G-SEC-03", r.stderr)
 
 
+class InstallState(RepoCase):
+    """.aiops/install-state.json is engine-written: the agent's Edit/Write and shell writes are blocked (0004 S8)."""
+    def test_agent_cannot_write_it(self):
+        import re
+        import subprocess
+        from helpers import ROOT
+        path = str(self.root / ".aiops" / "install-state.json")
+        for r in (self.hook("pre-edit", self.hook_input("Write", file_path=path, content="{}")),
+                  self.hook("pre-bash", self.hook_input("Bash", command="echo '{}' > .aiops/install-state.json")),
+                  self.hook("pre-bash", self.hook_input("Bash", command="rm .aiops/install-state.json"))):
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertRegex(r.stderr, r"\[G-(ART|FILE)-\d\d\]")
+        files = subprocess.run([str(ROOT / "hooks" / "guard-files.sh")], capture_output=True, text=True,
+                               input=json.dumps({"tool_input": {"file_path": path, "content": "{}"}}),
+                               env={**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)})
+        self.assertEqual(files.returncode, 2, files.stderr)
+        self.assertTrue(re.search(r"\[G-FILE-04\]", files.stderr), files.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

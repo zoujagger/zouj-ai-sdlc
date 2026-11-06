@@ -20,7 +20,7 @@ from .machine import (PLUGIN_ROOT, SCHEMAS, active_dir, config, current_branch, 
                       initialized, lock, phrase, project_root)
 
 ARTIFACT_RE = re.compile(r"^\.aiops/(\d{4}-[a-z0-9-]+)/(intent|spec|plan|review)\.md$")
-GUARDED_RE = re.compile(r"^\.aiops/(config(/|\.json$)|state(/|$))")
+GUARDED_RE = re.compile(r"^\.aiops/(config(/|\.json$)|state(/|$)|install-state\.json$)")
 INTENT_TREE_RE = re.compile(r"^\.aiops(/\d{4}-[a-z0-9-]+(/.*)?)?$")
 
 

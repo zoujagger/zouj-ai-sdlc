@@ -176,7 +176,7 @@ guard change is test-first (CLAUDE.md rule 2).
     `::test_validate_ci_fails_on_base_entry`. The second commits a gate-id entry on a base branch and runs
     `validate --ci --base <it>`. Both fail because neither command reads the file today.
   - Covers: AC-19
-- [ ] **S8**: Install-state written by init and setup, and guarded.
+- [x] **S8**: Install-state written by init and setup, and guarded.
   - `lib/sdlc_engine/lifecycle.py`:
     - `STATE = ".aiops/install-state.json"`
     - `load` / `save` (via `write_file`, repo-relative paths only)
@@ -419,4 +419,5 @@ guard change is test-first (CLAUDE.md rule 2).
 | 2026-11-06 | S5 | `guards.py` isn't changed: no Python rule is allowable any more (G-BASH-01 became `safety`), so S5 ships only `rules.allowed` and `rules.allowance_problems`. `allowed` also refuses a command with any control character but tab (for example `\r`), not only multi-line ones. | Follows the PR 1 class decision. A `\r` would make a different command look identical. | S5 |
 | 2026-11-06 | S6 | The `heuristic` helper doesn't parse `allowed-commands` with `grep` in bash. It calls `rules.allowed` through `python3 -I`, only on the block path. Only G-BASH-07 and G-ENV-03 go through it, after the PR 1 class decision. `sdlc why` now describes the allowance line. | One definition of an exact match, the same in the hook, doctor and CI. If python3 can't run, the command stays blocked. | S6 |
 | 2026-11-06 | S7 | `validate --ci` checks `allowed-commands` in the change itself as well as on `--base` (the spec names only the base). | A PR that adds a bad entry fails CI before it merges, not only afterwards. Stricter, no new trust. | S7 |
+| 2026-11-06 | S8 | `init` and `setup` record only the files they wrote. Kept files are claimed later by adoption (S10, R-5). `.gitignore` is never recorded. `.aiops/install-state.json` is also in `guards.GUARDED_RE`, so `check_edit` blocks it (G-ART-01) as well as `protected-paths` (G-FILE-*). Nothing is written when nothing was, so a rerun leaves the state unchanged. | R-1's matching of kept files needs S10's history; two guard layers instead of one. | S8 |
 | 2026-11-06 | S4b | PR 1 is #11, merged by zoujagger as 267f34a. Review: code PASS 93/100 after one CHANGES_REQUESTED round, security PASS 23/25 (0 decision differences from main). S5-S7 were built on the PR 1 branch while it waited, then rebased onto main. | PR 1 sat open after CI passed. | 267f34a |

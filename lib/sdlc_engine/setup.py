@@ -434,6 +434,7 @@ def apply(root, profile, actions, stack=None, review=()):
                            (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode())
         if stack and "Makefile" in created:
             wired = cli._wire_stack(root, stack)
+        from . import lifecycle
         pending = owned_changes(root, profile)
         if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it
             for rel, (_old, new, _keys) in pending.items():   # the diff was shown in the plan, before the question
@@ -441,6 +442,7 @@ def apply(root, profile, actions, stack=None, review=()):
                 written.append(rel)
                 changed.append(rel)
             pending = {}
+        lifecycle.record(root, written, profile=profile, stack=stack)
     except OSError as exc:
         print(cli.write_failure(exc, written), file=sys.stderr)
         return 1
