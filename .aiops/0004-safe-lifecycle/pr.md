@@ -67,7 +67,7 @@ safely, and give false positives an outlet that can't touch a gate:
 `make check`: 258 tests pass. `make build`: passes (warning: no icon, Phase 3).
 
 ### Deviations from plan
-The plan.md Deviation log has 25 rows. The ones that matter most:
+The plan.md Deviation log has 24 rows. The ones that matter most:
 - **Allowable set narrowed** to G-ENV-03 and G-BASH-07. G-ENV-04 (echoing secrets) was split out.
 - **The version stays 0.2.0-alpha.2** until the release.
 - **`sdlc status`** counts open questions only for gates that are still closed.

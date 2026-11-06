@@ -71,7 +71,7 @@ list of known forms. It's deferred to intent 0005 and listed in the CHANGELOG. V
   `.aiops/config`, `/usr/bin/env`) are in intent 0005.
 
 ## Plan conformance
-S1-S18 and S4b are done. The Deviation log holds 25 rows: every human decision (allowable set, G-ENV-04, version kept
+S1-S18 and S4b are done. The Deviation log holds 24 rows: every human decision (allowable set, G-ENV-04, version kept
 at 0.2.0-alpha.2, open-question counting) and both rounds of review fixes. Not built: the install-state rows in
 `doctor`, which are logged and listed as a known issue. NITs left as the author's call:
 - `classify` trusts a matching version without checking the template; this only matters before the release bump.
