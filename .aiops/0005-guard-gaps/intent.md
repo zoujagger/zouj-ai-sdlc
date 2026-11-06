@@ -47,6 +47,11 @@ Found later in the 0004 PR 2 reviews, same class (shell forms the parser misses)
    inline `SDLC_HOOK_PROFILE=` / `AIOPS_INTENT=` lifts the lock for that run (0004 closed this for
    upgrade/repair only).
 
+6. **G-ENV-03's whole-environment check (`rules.dumps_environment`) works from a list of known forms**: `bash -c env`,
+   `env env`, `xargs env`, `if …; then env; fi` and `env>/tmp/x` pass it. A human must still write the exact line
+   into `allowed-commands`. Replace the list with a rule that recognises only the safe forms, or check nested
+   commands again.
+
 **Backstop today:** the key policy (a human per signature) and the CI signer audit stop such tampering from opening a
 gate silently. Approval isolation level 1 (a separate OS user) is unaffected. The local guards are the deterrent
 that's missing.
