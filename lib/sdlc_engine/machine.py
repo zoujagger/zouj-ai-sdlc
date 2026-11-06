@@ -188,9 +188,9 @@ def evaluate(root, d):
     ident = d.name[:4]
     st = _evaluate(root, d, ident)
     st.gates = {k: gate(d, k)[0] for k in ("intent", "spec", "plan")}
-    for kind in ("intent", "spec"):
+    for kind in ("intent", "spec"):         # only where a question can still block a gate: once approved, accepted
         text = read(d, kind)
-        if text:
+        if text and not st.gates[kind]:
             st.open_questions += len([1 for s, _ in A.checkboxes(A.sections(A.parse(text).body).get("Open questions", ""))
                                       if s != "x"])
     plan = read(d, "plan")

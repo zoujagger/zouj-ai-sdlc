@@ -5,9 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-## [0.2.0-alpha.3] - 2026-11-06
-
-> **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
+Planned as **0.2.0-alpha.3**. The version stays 0.2.0-alpha.2 until that release is tagged.
 
 Roadmap Phase 2 (`docs/roadmap.md`), delivered as intent `.aiops/0004-safe-lifecycle/`: the plugin now knows what it
 installed, upgrades and repairs a repo safely, and explains every block. The playbook workflow is unchanged.
@@ -382,8 +380,7 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.3...HEAD
-[0.2.0-alpha.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.2...v0.2.0-alpha.3
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.2...HEAD
 [0.2.0-alpha.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...v0.2.0-alpha.2
 [0.2.0-alpha.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v0.2.0-alpha.1
 [0.1.0]: https://github.com/zoujagger/zouj-ai-sdlc/releases/tag/v0.1.0
