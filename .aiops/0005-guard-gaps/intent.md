@@ -38,6 +38,15 @@ shell-write check (`guards.check_bash` / `_check_command`). Both are already on 
    paths *is* blocked everywhere (`guard-files.sh`). Rules G-SEC-01, G-TOOL-02/03/05 and the shell half of G-TOOL-04
    are labelled `initialized-repo` for this reason.
 
+Found later in the 0004 PR 2 reviews, same class (shell forms the parser misses):
+3. **`re_dump_env` (G-ENV-03) doesn't match `/usr/bin/env` or a quoted `e''nv`**, so those environment dumps were
+   never blocked.
+4. **Archive extraction into the working directory, `git stash pop` and `git pull` can write `.aiops/config/*`**,
+   including `allowed-commands`, `protected-paths` and `readonly-exempt`.
+5. **`sdlc init --force` run by the agent can overwrite a modified CLAUDE.md or Makefile in states 1-3** when an
+   inline `SDLC_HOOK_PROFILE=` / `AIOPS_INTENT=` lifts the lock for that run (0004 closed this for
+   upgrade/repair only).
+
 **Backstop today:** the key policy (a human per signature) and the CI signer audit stop such tampering from opening a
 gate silently. Approval isolation level 1 (a separate OS user) is unaffected. The local guards are the deterrent
 that's missing.
