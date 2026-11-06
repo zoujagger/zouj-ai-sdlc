@@ -637,12 +637,18 @@ class Lifecycle(RepoCase):
             r = self.bash(cmd)
             self.assertEqual(r.returncode, 2, cmd)
             self.assertIn("[G-GATE-07]", r.stderr, cmd)
+        for cmd in ("sdlc uninstall --yes # --dry-run", "sdlc uninstall #--dry-run"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("[G-GATE-07]", r.stderr, cmd)
         for cmd in ("sdlc uninstall --dry-run", "sdlc uninstall --yes --dry-run", "sdlc list-installed",
                     "sdlc why G-GATE-07"):
             self.assertEqual(self.bash(cmd).returncode, 0, cmd)
 
     def test_other_repo_refused(self):
-        for cmd in ("cd ../other && sdlc upgrade --yes", "GIT_DIR=x sdlc repair", "env -C ../x sdlc repair",
+        for cmd in ("SDLC_HOOK_PROFILE=spike sdlc repair --yes", "AIOPS_INTENT=0009 sdlc upgrade --yes",
+                    "export SDLC_HOOK_PROFILE=spike; sdlc repair",
+                    "cd ../other && sdlc upgrade --yes", "GIT_DIR=x sdlc repair", "env -C ../x sdlc repair",
                     "HOME=/tmp/h sdlc upgrade"):
             r = self.bash(cmd)
             self.assertEqual(r.returncode, 2, cmd)

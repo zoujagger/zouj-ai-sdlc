@@ -575,9 +575,9 @@ class Allowance(RepoCase):
         self.assertBlockedBy("sudo systemctl stop docker", "G-BASH-07")
 
     def test_other_rules_still_run_after_an_allowance(self):
-        self.allow("G-ENV-03 printenv; gh pr merge 12", "G-BASH-07 sudo gh pr merge 12",
+        self.allow("G-ENV-03 printenv PATH; gh pr merge 12", "G-BASH-07 sudo gh pr merge 12",
                    "G-ENV-03 echo $MY_API_KEY; printenv")
-        self.assertBlockedBy("printenv; gh pr merge 12", "G-MERGE-04")
+        self.assertBlockedBy("printenv PATH; gh pr merge 12", "G-MERGE-04")
         self.assertBlockedBy("sudo gh pr merge 12", "G-MERGE-04")
         self.assertBlockedBy("echo $MY_API_KEY; printenv", "G-ENV-04")
 

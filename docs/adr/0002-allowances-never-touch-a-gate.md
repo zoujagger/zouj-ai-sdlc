@@ -14,7 +14,8 @@ switch that turns a rule off would also turn off a gate.
 - Every rule has a stable id and a class in `defaults/rules`: `gate`, `secret`, `toolchain`, `safety` or
   `heuristic`.
 - Only `heuristic` rules accept an allowance: `G-ENV-03` (env/printenv) and `G-BASH-07` (sudo, mkfs, dd if=,
-  chmod -R 777).
+  chmod -R 777). For `G-ENV-03`, a command that prints the whole environment (`env`, `printenv` with no variable)
+  is never allowed: it would put every token in the session (PR 2 security review).
 - An allowance is one line in the human-owned `.aiops/config/allowed-commands`: `<rule id> <exact command>`. It lifts
   that rule for that byte-equal, single-line command, and every other rule still runs on it.
 - Gate, secret, toolchain and safety rules call `block` directly; the allowance code is unreachable from them.

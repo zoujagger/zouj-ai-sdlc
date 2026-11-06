@@ -376,7 +376,8 @@ def _git_changed(root, staged_only):
 SCAFFOLD_RE = re.compile(r"(^|[^\w-])sdlc\s+(-\S+\s+)*(init|setup|upgrade|repair|uninstall)\b")
 # a real uninstall is human-only; its --dry-run is open to anyone (group 3: the rest of that simple command)
 UNINSTALL_RE = re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*uninstall\b([^;&|\n]*)")
-RELOCATE_RE = re.compile(r"(^|[\s;&|(])(cd|pushd|popd)(\s|$)|\b(GIT_[A-Z_]+|CLAUDE_PROJECT_DIR|HOME)="
+RELOCATE_RE = re.compile(r"(^|[\s;&|(])(cd|pushd|popd)(\s|$)"
+                         r"|\b(GIT_[A-Z_]+|CLAUDE_PROJECT_DIR|HOME|SDLC_HOOK_PROFILE|AIOPS_INTENT)="
                          r"|(^|\s)(-C\S*|--chdir\S*|-execdir|-okdir)(\s|$)")
 
 
@@ -418,7 +419,7 @@ def check_bash(data):
         return _block("G-ENV-02", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
                       "would let human-only commands run as the agent.",
                       "leave the environment alone; human-only steps are run by the human.")
-    if any("--dry-run" not in m.group(3).split() for m in UNINSTALL_RE.finditer(plain)):
+    if any("--dry-run" not in m.group(3).split("#", 1)[0].split() for m in UNINSTALL_RE.finditer(plain)):
         return _block("G-GATE-07", "`sdlc uninstall` removes the workflow's files; it is human-only.",
                       "preview it with `sdlc uninstall --dry-run`; the human runs the real uninstall in their own "
                       "terminal.")

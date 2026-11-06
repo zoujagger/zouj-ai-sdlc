@@ -109,6 +109,10 @@ pager and hooks. Setup's checks, and any git command you run in that checkout, c
 - **`upgrade` run by Claude left files for you:** human-owned files (workflows, `.claude/settings.json`,
   `.aiops/config*`, CODEOWNERS) and code under the read-only lock are yours. Run the printed
   `<python> -I <plugin>/bin/sdlc upgrade` in your own terminal, then commit.
+- **`! … ZOUJ_SDLC_REF is not a literal`:** your workflow sets the ref with an expression; upgrade leaves it
+  alone. Set it to the printed sha yourself.
+- **A file shows `declined`:** it was part of the scaffold you adopted, but you had removed it, so upgrade and repair
+  never re-create it. To get it back, copy it from the plugin's `templates/scaffold/`.
 - **`! … pinning the tag`:** upgrade couldn't find the plugin's commit sha (no `installed_plugins.json` entry, or an
   unpushed checkout). Tags can move: pin a full sha when you can.
 - **`uninstall` is refused inside Claude Code:** it's human-only. Preview with `sdlc uninstall --dry-run`, then run it

@@ -30,6 +30,9 @@ installed, upgrades and repairs a repo safely, and explains every block. The pla
   - pins every ref to the plugin's full commit sha, from `installed_plugins.json` or a pushed checkout
   - lists migrations; `legacy-approvals` is human-only and is never run for you
 - **`sdlc uninstall [--dry-run] [--yes]`.** Human-only. Removes unmodified scaffold files, never `.aiops/NNNN-*`.
+- **`upgrade` changes only the plugin's own refs:** literal `ZOUJ_SDLC_REF` values (an expression is left alone and
+  reported) and the zouj marketplace's `ref` in JSON (another marketplace is never touched). Each pin is shown as a
+  diff before you confirm. After adoption, a scaffold file you had deleted is `declined` and never re-created.
 - **Adoption.** Repos from 0.1.0, 0.2.0-alpha.1 and alpha.2 are adopted from `defaults/scaffold-history.json`, which
   `scripts/scaffold-history.py` generates from the release tags.
 - **`/zouj-ai-sdlc:configure`.** Shows the profile and installed files and previews a profile change, then hands you

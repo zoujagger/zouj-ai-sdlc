@@ -314,6 +314,18 @@ class Allowances(RepoCase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("G-BASH-02 is a safety rule", r.stdout)
 
+    def test_symlinked_file_is_not_read(self):
+        secret = self.root.parent / f"{self.root.name}.secret"
+        secret.write_text("G-NOPE-99 top-secret-line\n")
+        self.addCleanup(secret.unlink)
+        (self.root / ".aiops" / "config" / "allowed-commands").symlink_to(secret)
+        for args in (("doctor",), ("validate", "--ci", "--base", "main")):
+            r = self.run_sdlc(*args)
+            self.assertEqual(r.returncode, 1, args)
+            self.assertNotIn("top-secret-line", r.stdout + r.stderr, args)
+            self.assertNotIn("G-NOPE-99", r.stdout + r.stderr, args)
+            self.assertIn("symlink", r.stdout + r.stderr, args)
+
     def test_valid_entries_pass(self):
         self.allow("# human-owned\nG-ENV-03 ls env\nG-BASH-07 sudo systemctl status docker\n")
         r = self.run_sdlc("validate", "--ci", "--base", "main")

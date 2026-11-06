@@ -125,6 +125,23 @@ def _entries(text):
     return out
 
 
+def dumps_environment(command):
+    """True if a simple command in it prints the whole environment: `env` or `printenv` with nothing but options
+    and assignments (`printenv PATH` names one variable; `env FOO=1 make` runs a command)."""
+    import shlex
+    for part in re.split(r"[;&|\n]+", command):
+        try:
+            words = shlex.split(part)
+        except ValueError:
+            return True                                   # can't tell: treat as a dump
+        while words and re.match(r"^[A-Za-z_]\w*=", words[0]):
+            words = words[1:]
+        if words and Path(words[0]).name in ("env", "printenv") and \
+                all(w.startswith("-") or re.match(r"^[A-Za-z_]\w*=", w) for w in words[1:]):
+            return True
+    return False
+
+
 def allowed(root, rule_id, command):
     """True only if rule_id is in an allowable class and `<rule_id> <command>` is listed, byte-equal, in the repo's
     allowed-commands. The command is compared after trimming surrounding spaces, tabs and newlines, and must hold no
@@ -134,6 +151,8 @@ def allowed(root, rule_id, command):
         return False
     cmd = (command or "").strip(" \t\n")
     if not cmd or CONTROL_RE.search(cmd):
+        return False
+    if rule_id == "G-ENV-03" and dumps_environment(cmd):   # every token in the session: never allowable
         return False
     f = Path(root) / ALLOWANCES
     try:
@@ -149,7 +168,9 @@ def allowance_problems(text):
     reg, probs = load(), []
     for n, rid, cmd in _entries(text):
         r = reg.get(rid)
-        if r is None:
+        if not ID_RE.match(rid):                          # never echo text that isn't a rule id
+            probs.append(f"line {n}: doesn't start with a rule id (format: `<rule id> <exact command>`)")
+        elif r is None:
             probs.append(f"line {n}: unknown rule id {rid} (see `sdlc why`)")
         elif r.cls not in ALLOWABLE:
             probs.append(f"line {n}: {rid} is a {r.cls} rule; only heuristic rules "
@@ -158,4 +179,6 @@ def allowance_problems(text):
             probs.append(f"line {n}: {rid} has no command (format: `<rule id> <exact command>`)")
         elif CONTROL_RE.search(cmd):
             probs.append(f"line {n}: the command contains a control character")
+        elif rid == "G-ENV-03" and dumps_environment(cmd):
+            probs.append(f"line {n}: G-ENV-03 can't allow a command that prints the whole environment")
     return probs

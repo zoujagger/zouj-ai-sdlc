@@ -264,5 +264,6 @@ Instead: explain why it's needed and ask the human to run it themselves.
 
 ## G-ENV-03
 Why: dumping the environment (`env`, `printenv`) can print secrets into the session. The pattern also catches
-`env` as a plain word (`ls env`, `python -m venv env`).
+`env` as a plain word (`ls env`, `python -m venv env`). Those can be allowed; a command that prints the whole
+environment (`env`, `printenv` with no variable name) never can.
 Instead: read the one variable you need by a name that isn't secret, or check that it's set (`[ -n "$VAR" ]`).

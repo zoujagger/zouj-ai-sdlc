@@ -98,9 +98,9 @@ and a hash of every file. The engine owns that file; the agent can't edit it, an
 
 | Command | What it does |
 |---|---|
-| `sdlc list-installed` | Each installed file: `current`, `stale` (an older plugin wrote it), `modified` (yours now), `missing`, `unmanaged`, `dropped`, `new`. Read-only |
+| `sdlc list-installed` | Each installed file: `current`, `stale` (an older plugin wrote it), `modified` (yours now), `missing`, `unmanaged`, `dropped`, `new`, `declined` (you removed it before adoption: never re-created). Read-only |
 | `sdlc repair [--dry-run] [--yes]` | Restores missing files. Never touches one you modified |
-| `sdlc upgrade [--dry-run] [--yes]` | After you update the plugin with `/plugin`: replaces stale files (diff shown), creates new ones, keeps your modified files except for the CI ref, pins every `ZOUJ_SDLC_REF` to the plugin's full commit sha, and lists migrations (e.g. `legacy-approvals`, which only you run) |
+| `sdlc upgrade [--dry-run] [--yes]` | After you update the plugin with `/plugin`: replaces stale files (diff shown), creates new ones, keeps your modified files except for the CI ref, pins every literal `ZOUJ_SDLC_REF` and the zouj marketplace `ref` (nothing else, every change shown as a diff first) to the plugin's full commit sha, and lists migrations (e.g. `legacy-approvals`, which only you run) |
 | `sdlc uninstall --dry-run`, then `sdlc uninstall` | Removes the plugin's unmodified files, install-state and its `.gitignore` lines. Never `.aiops/NNNN-*`: the audit trail stays. **Human only**: refused inside Claude Code |
 
 Repos set up by 0.2.0-alpha.1 or alpha.2 have no install-state. The first `upgrade` or `repair` adopts them: files
@@ -110,7 +110,8 @@ under the read-only lock: they print your terminal command instead.
 
 **Blocked by mistake?** Every block names its rule (`BLOCKED [G-ENV-03] by guard-bash: …`); `sdlc why <id>` explains
 it. Two heuristic rules (`G-ENV-03` env/printenv, `G-BASH-07` sudo and friends) accept a human-owned exact-command
-allowance: add `<id> <exact command>` to `.aiops/config/allowed-commands`. It lifts that one rule for that one command,
+allowance: add `<id> <exact command>` to `.aiops/config/allowed-commands` (never a whole-environment dump such as a
+bare `printenv`). It lifts that one rule for that one command,
 and every other rule still runs. No rule that protects a gate, a secret or the approval toolchain can be allowed, and
 there is no per-rule disable switch (`docs/adr/0002-allowances-never-touch-a-gate.md`).
 

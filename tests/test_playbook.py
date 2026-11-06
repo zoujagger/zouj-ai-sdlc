@@ -27,11 +27,10 @@ def snapshot(d, intent):
     every file outside .aiops/ (the code the lock guards)."""
     import hashlib
     st = evaluate(d, intent)
-    code = {}
-    for p in sorted(d.rglob("*")):
-        rel = p.relative_to(d).as_posix()
-        if p.is_file() and not rel.startswith((".git/", ".aiops/")):
-            code[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
+    files = [p.relative_to(d).as_posix() for p in sorted(d.rglob("*")) if p.is_file()]
+    files = [rel for rel in files if not rel.startswith((".git/", ".aiops/"))]
+    code = {rel: hashlib.sha256((d / rel).read_bytes()).hexdigest()
+            for rel in guards._code_paths(d, files)}                  # what the read-only lock guards (not docs)
     locked = guards.check_edit({"tool_name": "Write", "cwd": str(d),
                                 "tool_input": {"file_path": str(d / "src" / "app.py"), "content": "x = 2\n"}})
     return {"state": st.state, "gates": dict(st.gates), "locked": locked is not None, "code": code,
@@ -114,14 +113,33 @@ class Playbook(SetupCase):
         return subprocess.run([str(HOOKS / hook)], input=json.dumps(payload), capture_output=True, text=True,
                               env=env, cwd=d).returncode
 
+    def make_stale(self, d):
+        """Give upgrade and repair real work: a code file and a doc written by an "older plugin", and a missing doc."""
+        import hashlib
+        f = d / ".aiops" / "install-state.json"
+        st = json.loads(f.read_text())
+        for rel in ("ops/bands.yaml", "docs/runbooks/README.md"):
+            (d / rel).write_text("old template\n")
+            st["files"][rel] = {"sha256": hashlib.sha256(b"old template\n").hexdigest(), "version": "0.1.0",
+                                "human_owned": False}
+        f.write_text(json.dumps(st))
+        (d / "docs" / "retros" / "README.md").unlink()
+
     def lifecycle_as_agent(self, d, intent, where):
-        """The agent runs upgrade and repair mid-walk: no gate, artifact, lock or locked code may change."""
+        """The agent runs upgrade and repair mid-walk, with real work to do: no gate, artifact, lock or locked code
+        may change. Locked (states 1-3), the code file is handed to the human; unlocked, it's written."""
+        self.make_stale(d)
         before = snapshot(d, intent)
         env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d), "CLAUDECODE": "1"}
         for args in (("upgrade", "--yes"), ("repair", "--yes")):
             r = subprocess.run([sys.executable, SDLC, *args], cwd=d, input="", capture_output=True, text=True, env=env)
             self.assertEqual(r.returncode, 0, f"{where} {args}: {r.stdout}{r.stderr}")
         self.assertEqual(playbook_violations(d, intent, before), [], where)
+        template = (ROOT / "templates" / "scaffold" / "docs" / "runbooks" / "README.md").read_text()
+        self.assertEqual((d / "docs" / "runbooks" / "README.md").read_text(), template, where)   # docs: always
+        self.assertTrue((d / "docs" / "retros" / "README.md").exists(), where)
+        bands = (d / "ops" / "bands.yaml").read_text()
+        self.assertEqual(bands == "old template\n", before["locked"], where)             # code: only unlocked
 
     def gate_allowances_rejected(self, d):
         """An allowed-commands entry for a gate rule lifts nothing (only heuristic rules are allowable)."""
@@ -224,15 +242,19 @@ class Mutation(Playbook):
         st_file = d / ".aiops" / "install-state.json"
         pristine = {p: p.read_bytes() for p in (intent / "intent.md", d / "src" / "app.py", st_file)}
 
-        def stamp_approval(d, intent):
+        def stamp_approval(d, intent):                                # a real stamp: the gate really opens
+            from sdlc_engine import artifacts as A
             f = intent / "intent.md"
-            f.write_text(f.read_text().replace("status: Draft", "status: Approved\napproved-sha256: " + "0" * 64))
+            text = f.read_text()
+            f.write_text(A.set_fields(text, {"status": "Approved", "approved-sha256": A.approval_hash("intent", text)}))
+            assert evaluate(d, intent).gates["intent"], "the planted approval must open the gate"
 
-        breaks = {"opens a gate": stamp_approval,
-                  "deletes an artifact": lambda d, intent: (intent / "intent.md").unlink(),
-                  "writes code under the lock": lambda d, intent: (d / "src" / "app.py").write_text("x = 99\n")}
+        breaks = {"opens a gate": (stamp_approval, "gate intent changed: False -> True"),
+                  "deletes an artifact": (lambda d, intent: (intent / "intent.md").unlink(), "artifact removed: intent.md"),
+                  "writes code under the lock": (lambda d, intent: (d / "src" / "app.py").write_text("x = 99\n"),
+                                                 "code changed under the read-only lock: src/app.py")}
         real_save = lifecycle.save
-        for name, plant in [("control", None), *breaks.items()]:
+        for name, (plant, named) in [("control", (None, None)), *breaks.items()]:
             with self.subTest(name):
                 for p, data in pristine.items():
                     p.write_bytes(data)
@@ -253,7 +275,7 @@ class Mutation(Playbook):
                 if plant is None:
                     self.assertEqual(found, [])
                 else:
-                    self.assertNotEqual(found, [], name)
+                    self.assertIn(named, found, name)                   # the checker names the break
         os.chdir(self.root)
 
 

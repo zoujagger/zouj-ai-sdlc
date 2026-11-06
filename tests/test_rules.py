@@ -168,6 +168,24 @@ class Allowance(unittest.TestCase):
         self.assertFalse(rules.allowed(self.root, "G-BASH-07", "ls env"))          # the entry names one rule
         self.assertFalse(rules.allowed(self.root, "g-env-03", "ls env"))           # ids are exact too
 
+    def test_full_environment_dump_never_allowed(self):
+        self.entries("G-ENV-03 printenv\nG-ENV-03 env\nG-ENV-03 env -0\nG-ENV-03 FOO=1 env\nG-ENV-03 printenv PATH\n"
+                     "G-ENV-03 ls env\n")
+        for cmd in ("printenv", "env", "env -0", "FOO=1 env"):
+            self.assertFalse(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
+        for cmd in ("printenv PATH", "ls env"):
+            self.assertTrue(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
+        probs = "\n".join(rules.allowance_problems(self.f.read_text()))
+        self.assertIn("line 1", probs)
+        self.assertIn("whole environment", probs)
+        self.assertNotIn("line 5", probs)
+
+    def test_problems_never_echo_unrecognised_text(self):
+        probs = "\n".join(rules.allowance_problems("-----BEGIN OPENSSH PRIVATE KEY-----\n  ssh-ed25519 AAAAsecret x\n"))
+        self.assertNotIn("OPENSSH", probs)
+        self.assertNotIn("AAAAsecret", probs)
+        self.assertIn("line 1", probs)
+
     def test_multiline_command_never_allowed(self):
         self.entries("G-ENV-03 ls env\n")
         self.assertFalse(rules.allowed(self.root, "G-ENV-03", "ls env\nrm -rf .aiops"))

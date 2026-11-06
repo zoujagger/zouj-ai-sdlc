@@ -73,7 +73,7 @@ def record(root, written, profile=None, stack=None, ref=None):
     save(root, st)
 
 
-STATUSES = ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new")
+STATUSES = ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new", "declined")
 
 
 def scaffold_paths():
@@ -97,14 +97,17 @@ def classify(root, st):
     missing   recorded, but not on disk (repair restores it)
     unmanaged a scaffold path on disk that install-state doesn't claim (never touched)
     dropped   recorded, but no longer in the plugin's scaffold
-    new       in the running plugin's scaffold, never installed here (upgrade creates it)"""
+    new       in the running plugin's scaffold, never installed here (upgrade creates it)
+    declined  part of the adopted release's scaffold, but the user had removed it: never re-created"""
     version = cli.plugin_version()
     scaffold = set(scaffold_paths())
     files = (st or {}).get("files", {})
     out = {}
     for rel, entry in files.items():
         f = root / rel
-        if rel not in scaffold:
+        if entry.get("declined") and not f.exists():
+            out[rel] = "declined"
+        elif rel not in scaffold:
             out[rel] = "dropped"
         elif not f.is_file() or f.is_symlink():
             out[rel] = "missing"
@@ -133,7 +136,8 @@ def cmd_list_installed(root, args):
     else:
         out(f"zouj-ai-sdlc: this repo has no install state ({STATE}); it was initialized before 0.2.0-alpha.3 or "
             "not at all. Below is a preview of what adoption would record (nothing is written): files equal to a "
-            "released scaffold become managed, the others are `modified` and are never touched.")
+            "released scaffold become managed, the others are `modified` and are never touched. `sdlc repair` (or "
+            "`sdlc upgrade`) records it.")
         st = adopt(root)
     out(f"  running plugin: {cli.plugin_version()}")
     rows = classify(root, st)
@@ -222,8 +226,14 @@ def adopt(root):
             if rel == ".github/workflows/aiops-gates.yml":
                 ref = pin
         files[rel] = entry
+    newest = max(versions, key=version_key) if versions else None
+    release = next((k for k in hist if (running if k == "unreleased" else k) == newest), None)
+    for rel in hist.get(release, {}):                  # in the adopted release, but not on disk: the user removed it
+        if "+" not in rel and rel not in files and not (root / rel).exists() and not (root / rel).is_symlink():
+            files[rel] = {"sha256": None, "version": None, "declined": True,
+                          "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
     return {"schema": SCHEMA, "adopted": True, "files": files, "migrations": [], "stack": stack, "ref": ref,
-            "plugin_version": max(versions, key=version_key) if versions else None,
+            "plugin_version": newest,
             "profile": config(root).get("profile", "team"),
             "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
@@ -245,10 +255,19 @@ def human_command(name):
     return f"{approvals.PYTHON} -I {shlex.quote(str(PLUGIN_ROOT / 'bin' / 'sdlc'))} {name}"
 
 
+LOCK_ENV = ("SDLC_HOOK_PROFILE", "AIOPS_INTENT")    # the agent sets these in its own command: they can't lift the lock
+
+
 def agent_may_write(root, rel):
     """Run by the agent, a lifecycle command writes only what the agent could write itself: never a human-owned
-    file (config, signers, settings, CODEOWNERS, workflows), a protected path, or code under the read-only lock."""
-    return not (cli.HUMAN_OWNED_RE.match(rel) or cli._agent_blocked(root, rel))
+    file (config, signers, settings, CODEOWNERS, workflows), a protected path, or code under the read-only lock. The
+    lock is judged without SDLC_HOOK_PROFILE / AIOPS_INTENT, which the agent's own command line could set."""
+    import os
+    saved = {k: os.environ.pop(k) for k in LOCK_ENV if k in os.environ}
+    try:
+        return not (cli.HUMAN_OWNED_RE.match(rel) or cli._agent_blocked(root, rel))
+    finally:
+        os.environ.update(saved)
 
 
 def confirm(opts, name):
@@ -394,10 +413,51 @@ def resolve_ref(plugin_root=PLUGIN_ROOT, home=None):
 MERGED_JSON = (".aiops/config.json", ".claude/settings.json")   # setup merges its keys into these: never replaced
 
 
+# Only literal values are pinned: a release tag, a full sha, or the placeholder. An expression (`${{ vars.X }}`) is
+# the user's own and is left alone (listed for the human).
+PIN_LINE_RE = re.compile(rb"(?m)(ZOUJ_SDLC_REF:[ \t]*)(v\d[\w.+-]*|[0-9a-f]{40}|__ZOUJ_SDLC_REF__)(?=[ \t]*(#|$))")
+ZOUJ_REPO_RE = re.compile(rb'"repo"[ \t]*:[ \t]*"zoujagger/zouj-ai-sdlc"')
+
+
+def _object_span(data, pos):
+    """(start, end) of the innermost JSON object around byte offset pos (strings skipped), else None."""
+    i, in_str, spans, stack = 0, False, [], []
+    while i < len(data):
+        c = data[i:i + 1]
+        if in_str:
+            if c == b"\\":
+                i += 1
+            elif c == b'"':
+                in_str = False
+        elif c == b'"':
+            in_str = True
+        elif c == b"{":
+            stack.append(i)
+        elif c == b"}" and stack:
+            s = stack.pop()
+            if s <= pos <= i:
+                spans.append((s, i))
+        i += 1
+    return min(spans, key=lambda sp: sp[1] - sp[0]) if spans else None
+
+
 def pin(data, ref):
-    """data with every pinned CI ref value set to ref (one value per line shape; the rest of the file kept)."""
-    data = REF_LINE_RE.sub(lambda m: m.group(1) + ref.encode(), data)
-    return REF_JSON_RE.sub(lambda m: m.group(1) + ref.encode() + m.group(3), data)
+    """data with the plugin's CI ref set to ref, and nothing else changed: each literal `ZOUJ_SDLC_REF:` value, and in
+    JSON only the `"ref"` of the zouj-ai-sdlc marketplace source (another marketplace's ref is never touched)."""
+    data = PIN_LINE_RE.sub(lambda m: m.group(1) + ref.encode(), data)
+    for m in ZOUJ_REPO_RE.finditer(data):
+        span = _object_span(data, m.start())
+        if not span:
+            continue
+        s, e = span
+        inner = REF_JSON_RE.sub(lambda r: r.group(1) + ref.encode() + r.group(3), data[s:e + 1])
+        data = data[:s] + inner + data[e + 1:]
+    return data
+
+
+def unpinnable(data):
+    """True if a ZOUJ_SDLC_REF line holds a value pin() leaves alone (an expression)."""
+    return len(REF_LINE_RE.findall(data)) > len(PIN_LINE_RE.findall(data))
 
 
 def plan_upgrade(root, st, ref, agent):
@@ -408,7 +468,7 @@ def plan_upgrade(root, st, ref, agent):
     stack = st.get("stack")
     for rel, status in classify(root, st).items():
         f = root / rel
-        if status == "dropped":
+        if status in ("dropped", "declined"):
             continue
         if status in ("missing", "new"):
             act = ("create", rel, expected(rel, ref, stack))
@@ -419,6 +479,8 @@ def plan_upgrade(root, st, ref, agent):
             else:
                 act = ("pin", rel, pin(disk, ref))
                 if status in ("modified", "unmanaged") and normalize(disk) != normalize(expected(rel, ref, stack)):
+                    advice.append(rel)
+                if unpinnable(disk):
                     advice.append(rel)
             if act[2] == disk:
                 continue
@@ -462,11 +524,15 @@ def cmd_upgrade(root, args):
         out(f"  No install state: adopting this repo first ({STATE}).")
     for kind, rel, data in actions:
         out(f"  {'+' if kind == 'create' else '~'} {kind} {rel}")
-        if kind == "replace":
+        if kind in ("replace", "pin"):
             show_diff(rel, (root / rel).read_bytes(), data)
-    for rel in advice:
-        out(f"  = kept {rel} (modified): it differs from the new template; compare and merge by hand:")
-        show_diff(rel, (root / rel).read_bytes(), expected(rel, ref, st.get("stack")))
+    for rel in dict.fromkeys(advice):
+        disk = (root / rel).read_bytes()
+        if unpinnable(disk):
+            out(f"  ! {rel}: ZOUJ_SDLC_REF is not a literal (an expression?), so upgrade left it; set it to {ref} by hand")
+        if normalize(disk) != normalize(expected(rel, ref, st.get("stack"))):
+            out(f"  = kept {rel} (modified): it differs from the new template; compare and merge by hand:")
+            show_diff(rel, disk, expected(rel, ref, st.get("stack")))
     if human:
         out("Human-owned or locked, not written when the agent runs upgrade (install-state keeps them at their old "
             f"version). The human runs, in their own terminal:\n  {human_command('upgrade')}\n  for: " + ", ".join(human))

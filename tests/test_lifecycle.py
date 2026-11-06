@@ -128,6 +128,7 @@ class ListInstalled(RepoCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("no install state", r.stdout)
         self.assertIn("preview", r.stdout)                              # what adoption would record (S10)
+        self.assertIn("sdlc repair", r.stdout)                          # how to adopt (R-2)
         self.assertEqual(self.rows(r.stdout)["REVIEW.md"], "modified")
         self.assertEqual(self.rows(r.stdout)["CLAUDE.md"], "current")
         self.assertFalse((self.root / STATE).exists())
@@ -193,6 +194,23 @@ class Adoption(RepoCase):
         self.assertEqual(st["files"]["Makefile"]["sha256"], sha(self.root / "Makefile"))
         self.assertEqual(st["stack"], "go")
 
+    def test_upgrade_and_repair_end_to_end_on_a_release_repo(self):
+        from helpers import git
+        self.scaffold_as_released("0.2.0-alpha.2")
+        (self.root / ".github" / "workflows" / "deploy.yml").unlink()       # the user opted out of it
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "alpha.2 scaffold")
+        r = self.run_sdlc("repair", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        touched = {ln.split(None, 1)[1] for ln in git(self.root, "status", "--porcelain", "-uall").splitlines()}
+        self.assertEqual(touched, {STATE})                                  # adoption alone writes only install-state
+        self.assertFalse((self.root / ".github" / "workflows" / "deploy.yml").exists())
+        rows = self.run_sdlc("list-installed").stdout
+        self.assertRegex(rows, r"(?m)^  declined\s+\.github/workflows/deploy\.yml$")
+        r = self.run_sdlc("upgrade", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse((self.root / ".github" / "workflows" / "deploy.yml").exists())  # never re-created
+
     def test_links_and_non_scaffold_files_are_never_claimed(self):
         from sdlc_engine import lifecycle
         self.run_sdlc("init")
@@ -252,6 +270,13 @@ class Repair(RepoCase):
         self.assertIn(".github/workflows/ci.yml", r.stdout)
         self.assertIn("ops/bands.yaml", r.stdout)
         self.assertRegex(r.stdout, r"-I \S+/bin/sdlc repair")                # the human's terminal command
+
+    def test_agent_env_cannot_lift_the_lock(self):
+        (self.root / "ops" / "bands.yaml").unlink()                         # code: locked with no active intent
+        for env in ({"SDLC_HOOK_PROFILE": "spike"}, {"AIOPS_INTENT": "0009"}):
+            r = self.run_sdlc("repair", "--yes", env={"CLAUDECODE": "1", **env})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertFalse((self.root / "ops" / "bands.yaml").exists(), env)
 
     def test_adopts_a_repo_without_state(self):
         (self.root / STATE).unlink()
@@ -332,6 +357,7 @@ class Upgrade(RepoCase):
         (self.root / STATE).write_text(json.dumps(st))
         claude = self.root / ".github" / "workflows" / "claude.yml"          # modified by the user
         claude.write_text(claude.read_text() + "# ours\n")
+        self.claude_before = claude.read_bytes()
 
     def upgrade(self, *args, env=None):
         return self.run_sdlc("upgrade", *args, env={**self.home, **(env or {})})
@@ -346,8 +372,10 @@ class Upgrade(RepoCase):
         self.assertEqual((self.root / "REVIEW.md").read_bytes(), (ROOT / "templates" / "scaffold" / "REVIEW.md").read_bytes())
         self.assertIn("-old template", r.stdout)                               # the diff was shown
         claude = (self.root / ".github" / "workflows" / "claude.yml").read_text()
-        self.assertTrue(claude.endswith("# ours\n"))
-        self.assertIn(f"ZOUJ_SDLC_REF: {self.SHA}", claude)
+        # byte-equal to the user's file but for the one ref value (AC-4, review round 1)
+        self.assertEqual(claude, self.claude_before.decode().replace(f"ZOUJ_SDLC_REF: v{VERSION}",
+                                                                     f"ZOUJ_SDLC_REF: {self.SHA}"))
+        self.assertIn("+          ZOUJ_SDLC_REF: " + self.SHA, r.stdout)             # the pin is shown before confirming
         for rel in (".github/workflows/aiops-gates.yml", ".github/workflows/claude-pr-review.yml"):
             self.assertIn(f"ZOUJ_SDLC_REF: {self.SHA}", (self.root / rel).read_text(), rel)
         self.assertIn(f'"ref": "{self.SHA}"', (self.root / ".claude" / "settings.json").read_text())
@@ -357,6 +385,37 @@ class Upgrade(RepoCase):
                                                     "human_owned": False})
         self.assertEqual(st["files"][".github/workflows/aiops-gates.yml"]["sha256"],
                          sha(self.root / ".github" / "workflows" / "aiops-gates.yml"))
+
+    def test_pin_touches_only_zouj_refs(self):
+        settings = self.root / ".claude" / "settings.json"
+        data = json.loads(settings.read_text())
+        data["extraKnownMarketplaces"]["other"] = {"source": {"source": "github", "repo": "acme/tools", "ref": "stable"}}
+        settings.write_text(json.dumps(data, indent=2) + "\n")
+        wf = self.root / ".github" / "workflows" / "ci.yml"
+        wf.write_text(wf.read_text() + "      env:\n        ZOUJ_SDLC_REF: ${{ vars.ZOUJ_REF }}   # ours\n")
+        before_wf = wf.read_text()
+        r = self.upgrade("--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        after = json.loads(settings.read_text())["extraKnownMarketplaces"]
+        self.assertEqual(after["other"]["source"]["ref"], "stable")          # another team's marketplace
+        self.assertEqual(after["zouj"]["source"]["ref"], self.SHA)
+        self.assertEqual(wf.read_text(), before_wf)                          # an expression isn't a pin: left alone
+        self.assertIn("ci.yml", r.stdout)
+        self.assertIn("not a literal", r.stdout)
+
+    def test_agent_lists_migrations_but_never_runs_them(self):
+        import os
+        from unittest import mock
+        from sdlc_engine import approvals, lifecycle
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, str(ROOT))
+        with mock.patch.object(approvals, "unsigned_approvals", return_value=[("b" * 40, "0001-x/intent.md")]), \
+                mock.patch.object(approvals, "running_under_agent", return_value=True), \
+                mock.patch.object(lifecycle, "resolve_ref", return_value=(self.SHA, None)), \
+                mock.patch("sdlc_engine.cli.out") as said:
+            self.assertEqual(lifecycle.cmd_upgrade(self.root, ["--yes"]), 0)
+        self.assertIn("legacy-approvals --write", "\n".join(str(c.args[0]) for c in said.call_args_list))
+        self.assertNotIn("legacy-approvals", json.loads((self.root / STATE).read_text())["migrations"])
 
     def test_second_run_is_noop(self):
         self.assertEqual(self.upgrade("--yes").returncode, 0)
@@ -467,7 +526,8 @@ class RoundTrip(Upgrade):
     """init -> upgrade -> uninstall --dry-run touches only managed scaffold paths and install-state (AC-14)."""
     test_replaces_stale_keeps_modified_bumps_ref = test_second_run_is_noop = None
     test_dry_run_and_no_tty_write_nothing = test_agent_never_writes_human_owned = None
-    test_legacy_approvals_listed_never_run = None
+    test_legacy_approvals_listed_never_run = test_pin_touches_only_zouj_refs = None
+    test_agent_lists_migrations_but_never_runs_them = None
 
     def test_init_upgrade_uninstall_dry_run(self):
         from helpers import git
@@ -484,7 +544,7 @@ class RoundTrip(Upgrade):
 class Compat(Adoption):
     """A repo initialized by 0.2.0-alpha.2 works unchanged without any new command (AC-21)."""
     test_alpha1_and_alpha2_repos_adopted = test_stack_wired_makefile_matches = None
-    test_links_and_non_scaffold_files_are_never_claimed = None
+    test_links_and_non_scaffold_files_are_never_claimed = test_upgrade_and_repair_end_to_end_on_a_release_repo = None
 
     def test_alpha2_repo_unchanged(self):
         self.scaffold_as_released("0.2.0-alpha.2")

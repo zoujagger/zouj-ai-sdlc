@@ -214,8 +214,11 @@ def _allowance_errors(root, base):
     """CI: refused allowed-commands entries (rules.allowance_problems), in the change itself and, with --base, on
     the target branch. The hooks ignore such entries; CI makes them visible before and after the merge."""
     from . import rules
-    sources = [(rules.ALLOWANCES, (root / rules.ALLOWANCES).read_text()
-                if (root / rules.ALLOWANCES).is_file() else None)]
+    f = root / rules.ALLOWANCES
+    if f.is_symlink():
+        out(f"✗ {rules.ALLOWANCES} is a symlink; it must be a regular file (the hooks ignore it)")
+        return 1
+    sources = [(rules.ALLOWANCES, f.read_text() if f.is_file() else None)]
     if base:
         sources.append((f"{base}:{rules.ALLOWANCES}", git(root, "show", f"{base}:{rules.ALLOWANCES}")))
     n = 0
@@ -675,7 +678,10 @@ def cmd_doctor(root, args):
                 "replace those entries with sk- keys, without no-touch-required (human-owned, via a reviewed PR)")
     if initialized(root) and config(root).get("require_signed_approvals"):
         _doctor_signing(root, row)
-    if initialized(root) and (root / ".aiops" / "config" / "allowed-commands").is_file():
+    if initialized(root) and (root / ".aiops" / "config" / "allowed-commands").is_symlink():
+        row(False, ".aiops/config/allowed-commands is a symlink (the hooks ignore it)",
+            "replace it with a regular file (human-owned)")
+    elif initialized(root) and (root / ".aiops" / "config" / "allowed-commands").is_file():
         from . import rules
         probs = rules.allowance_problems((root / rules.ALLOWANCES).read_text(errors="replace"))
         for p in probs:
