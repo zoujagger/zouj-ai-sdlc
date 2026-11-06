@@ -149,7 +149,7 @@ guard change is test-first (CLAUDE.md rule 2).
 
     They fail because `allowed` doesn't exist.
   - Covers: AC-18, AC-19
-- [ ] **S6**: The allowance in `guard-bash.sh`.
+- [x] **S6**: The allowance in `guard-bash.sh`.
   - A `heuristic <id> <regex-var> <reason> [procedure]` helper. On a match, it checks the registry class
     (`grep -F` on `$PLUGIN_ROOT/defaults/rules`), and an exact `<id> <command>` line in
     `$root/.aiops/config/allowed-commands`, compared as a fixed string with `grep -Fxq`. It's honoured only when
@@ -417,3 +417,4 @@ guard change is test-first (CLAUDE.md rule 2).
 | 2026-11-06 | — | Also recorded for intent 0005, and also already on main: in a repo *without* `.aiops/`, shell writes to the toolchain (`~/.gitconfig`, `~/.bashrc`, `git config --global gpg.ssh.program`), to the installed plugin and to secrets outside the repo (`~/.ssh/…`) aren't checked (`check_bash` returns early). G-TOOL-04's `every-repo` label is only true for Edit/Write. `docs/architecture.md` is corrected to say so. | Security re-review (pre-existing). Grouped with the `rm` gap under 0005, following zoujagger's decision. | PR 1 review fixes |
 | 2026-11-06 | S3 | G-ENV-04 is checked before G-ENV-03, so a command matching both reports the id that can't be allowed. | Security re-review LOW. | PR 1 review fixes |
 | 2026-11-06 | S5 | `guards.py` isn't changed: no Python rule is allowable any more (G-BASH-01 became `safety`), so S5 ships only `rules.allowed` and `rules.allowance_problems`. `allowed` also refuses a command with any control character but tab (for example `\r`), not only multi-line ones. | Follows the PR 1 class decision. A `\r` would make a different command look identical. | S5 |
+| 2026-11-06 | S6 | The `heuristic` helper doesn't parse `allowed-commands` with `grep` in bash. It calls `rules.allowed` through `python3 -I`, only on the block path. Only G-BASH-07 and G-ENV-03 go through it, after the PR 1 class decision. `sdlc why` now describes the allowance line. | One definition of an exact match, the same in the hook, doctor and CI. If python3 can't run, the command stays blocked. | S6 |

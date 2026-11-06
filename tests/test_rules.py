@@ -83,10 +83,16 @@ class Why(unittest.TestCase):
         self.assertIn("every repo", why("G-SEC-04").stdout)                # guard-files.sh is always on
 
     def test_no_text_ahead_of_the_code(self):
-        # PR 1 ships no allowance reader and no upgrade/repair/uninstall: nothing may promise them yet
+        # upgrade/repair/uninstall aren't built yet (S11-S15): nothing may promise them
         text = (ROOT / "defaults" / "rules.md").read_text() + why("G-ENV-03").stdout
-        for future in ("uninstall", "upgrade", "repair", "allowed-commands"):
+        for future in ("uninstall", "upgrade", "repair"):
             self.assertNotIn(future, text, future)
+
+    def test_allowable_rule_explains_the_allowance(self):
+        out = why("G-ENV-03").stdout
+        self.assertIn(".aiops/config/allowed-commands", out)
+        self.assertIn("G-ENV-03 <the exact command>", out)
+        self.assertIn("every other rule still applies", out)
 
     def test_unknown_id_near_matches(self):
         r = why("G-ENV-3")
@@ -117,12 +123,21 @@ class Coverage(unittest.TestCase):
         live = {rid for rid, r in reg.items() if r.cls != "retired"}
         self.assertEqual(sorted(live - set(emitted)), [], "registered ids that no hook emits")
 
+    def test_only_heuristic_rules_consult_allowances(self):
+        # guard-bash: `heuristic <id>` (which consults allowed-commands) is used exactly for the heuristic class
+        src = (ROOT / "hooks" / "guard-bash.sh").read_text()
+        via_helper = set(re.findall(r"&& heuristic (G-[A-Z]+-\d\d)", src))
+        heur = {rid for rid, r in rules.load().items() if r.cls == "heuristic"}
+        self.assertEqual(via_helper, heur)
+        for rid in heur:
+            self.assertNotRegex(src, rf"block {rid}\b", rid)
+
     def test_every_block_call_names_an_id(self):
         for f in (ROOT / "hooks").glob("*.sh"):
             for n, line in enumerate(f.read_text().splitlines(), 1):
                 code = line.split("#", 1)[0]
                 if re.search(r"(^|[;&|]\s*|\s)block\s+\S", code) and "block()" not in code:
-                    self.assertRegex(code, r"block\s+(G-[A-Z]+-\d\d|\"'\$v')", f"{f.name}:{n}: {line.strip()}")
+                    self.assertRegex(code, r"block\s+(G-[A-Z]+-\d\d|\"'\$v'|\"\$@\")", f"{f.name}:{n}: {line.strip()}")
         src = (ROOT / "lib" / "sdlc_engine" / "guards.py").read_text()
         for m in re.finditer(r"_block\((?!rule_id)([^,]+),", src):
             self.assertRegex(m.group(1), r'^"G-[A-Z]+-\d\d"', m.group(0))

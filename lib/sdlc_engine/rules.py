@@ -94,8 +94,9 @@ def why(rid):
         return 1, f"unknown rule id {rid!r}." + (f" Did you mean: {', '.join(near)}?" if near else
                                                   " The ids are listed in the plugin's defaults/rules.")
     if r.cls in ALLOWABLE:
-        allow = ("allowable class: from 0.2.0-alpha.3 the human can let one exact command through this rule, and "
-                 "every other rule still applies. Until then, rephrase the command or run it yourself.")
+        allow = (f"allowable class: the human can let one exact command through this rule by adding the line "
+                 f"`{r.id} <the exact command>` to .aiops/config/allowed-commands (human-owned, under CODEOWNERS). "
+                 "Only that command, and only this rule: every other rule still applies.")
     else:
         allow = f"no allowance: {r.cls} rules can't be lifted (there is no per-rule disable switch)."
     return 0, "\n".join([

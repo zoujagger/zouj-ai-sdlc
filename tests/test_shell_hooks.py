@@ -550,5 +550,55 @@ class Ids(RepoCase):
         self.assertIn("broken", r.stderr)
 
 
+class Allowance(RepoCase):
+    """guard-bash honours .aiops/config/allowed-commands for heuristic rules only, exact command only (0004 S6)."""
+    def bash(self, cmd):
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        return subprocess.run([str(HOOKS / "guard-bash.sh")], input=json.dumps({"tool_input": {"command": cmd}}),
+                              capture_output=True, text=True, env=env, cwd=self.root)
+
+    def allow(self, *lines):
+        (self.root / ".aiops" / "config" / "allowed-commands").write_text("".join(f"{ln}\n" for ln in lines))
+
+    def assertBlockedBy(self, cmd, rid):
+        r = self.bash(cmd)
+        self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+        self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_heuristic_exact_command(self):
+        self.assertBlockedBy("ls env", "G-ENV-03")
+        self.allow("G-ENV-03 ls env", "G-BASH-07 sudo systemctl status docker")
+        self.assertEqual(self.bash("ls env").returncode, 0)
+        self.assertEqual(self.bash("sudo systemctl status docker").returncode, 0)
+        self.assertBlockedBy("ls  env x", "G-ENV-03")
+        self.assertBlockedBy("ls env; git push --force", "G-BASH-03")
+        self.assertBlockedBy("sudo systemctl stop docker", "G-BASH-07")
+
+    def test_other_rules_still_run_after_an_allowance(self):
+        self.allow("G-ENV-03 printenv; gh pr merge 12", "G-BASH-07 sudo gh pr merge 12",
+                   "G-ENV-03 echo $MY_API_KEY; printenv")
+        self.assertBlockedBy("printenv; gh pr merge 12", "G-MERGE-04")
+        self.assertBlockedBy("sudo gh pr merge 12", "G-MERGE-04")
+        self.assertBlockedBy("echo $MY_API_KEY; printenv", "G-ENV-04")
+
+    def test_gate_and_secret_entries_ignored(self):
+        self.allow("G-MERGE-03 git push origin main", "G-SEC-03 cat .env", "G-BASH-03 git push --force origin x",
+                   "G-BASH-02 rm -rf /", "G-ENV-04 echo $GITHUB_TOKEN", "G-ENV-01 gh auth token")
+        for cmd, rid in [("git push origin main", "G-MERGE-03"), ("cat .env", "G-SEC-03"),
+                         ("git push --force origin x", "G-BASH-03"), ("rm -rf /", "G-BASH-02"),
+                         ("echo $GITHUB_TOKEN", "G-ENV-04"), ("gh auth token", "G-ENV-01")]:
+            self.assertBlockedBy(cmd, rid)
+
+    def test_multiline_and_link_ignored(self):
+        self.allow("G-ENV-03 ls env")
+        self.assertBlockedBy("ls env\nrm -rf src", "G-ENV-03")
+        f = self.root / ".aiops" / "config" / "allowed-commands"
+        target = self.root / "elsewhere"
+        target.write_text("G-ENV-03 ls env\n")
+        f.unlink()
+        f.symlink_to(target)
+        self.assertBlockedBy("ls env", "G-ENV-03")
+
+
 if __name__ == "__main__":
     unittest.main()

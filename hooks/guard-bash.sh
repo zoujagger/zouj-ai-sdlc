@@ -18,6 +18,14 @@ block() {
 }
 
 # Normalise whitespace for matching; u is the same with quotes and backslashes removed ('+main', "--force").
+# heuristic <rule-id> <reason> [procedure]: a heuristic rule (defaults/rules class `heuristic`) blocks unless the
+# human allowed this exact command for it in .aiops/config/allowed-commands; then only this rule is skipped and the
+# checks below still run. Only initialized repos have that file.
+heuristic() {
+  (( enabled )) && allowance "$root" "$1" "$cmd" && return 0
+  block "$@"
+}
+
 c=$(printf '%s' "$cmd" | tr -s '[:space:]' ' ')
 u=${c//\"/}; u=${u//\'/}; u=${u//\\/}
 
@@ -52,8 +60,8 @@ secret_scan "$input" || exit 2
 [[ "$u" =~ $re_cred_print ]] && block G-ENV-01 "printing credentials into the session" "use the tool's own auth (gh, git, aws) without printing the token; never read real secrets."
 # the secret rule first: a command matching both reports the id that can never be allowed
 [[ "$c" =~ $re_echo_secret ]] && block G-ENV-04 "echoing a secret-named variable prints a credential" "check that it's set without printing it ([ -n \"\$VAR\" ])."
-[[ "$c" =~ $re_dump_env ]]   && block G-ENV-03 "dumping the environment can print secrets" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
-[[ "$c" =~ $re_system ]]     && block G-BASH-07 "privileged or dangerous system command"
+[[ "$c" =~ $re_dump_env ]]   && heuristic G-ENV-03 "dumping the environment can print secrets" "read the one variable you need by a name that isn't secret, or check that it's set ([ -n \"\$VAR\" ])."
+[[ "$c" =~ $re_system ]]     && heuristic G-BASH-07 "privileged or dangerous system command"
 (( enabled )) && [[ "$c" =~ $re_gate ]] && block G-MERGE-04 "merging/approving/deleting is a human gate" "a CODEOWNER approves and merges the PR (state 5 is the human's decision); the agent never approves its own work."
 
 (( enabled )) || exit 0
