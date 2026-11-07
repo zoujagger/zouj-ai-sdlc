@@ -16,7 +16,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 from . import artifacts as A
-from .shell import segments, tokenize
+from .shell import scoped_segments, segments, tokenize
 from .machine import (PLUGIN_ROOT, SCHEMAS, active_dir, config, current_branch, evaluate, gate, git, glob_hit, globs,
                       initialized, lock, phrase, project_root)
 
@@ -1346,18 +1346,20 @@ def _contains_protected(root, target, cwd):
     return None
 
 
-def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=True, track_cd=True):
+def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=True):
     """The first block for cmd, else None. gates=False (a repo without .aiops/) runs only the safety checks: writes
     into the installed plugin, writes outside the repo to secrets or the approval toolchain, `git config --global`
     of signing keys, and nesting."""
-    if track_cd and "(" in tokenize(cmd):       # a subshell's `cd` doesn't outlive it: judge without cd tracking too
-        msg = _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates, track_cd=False)
-        if msg:
-            return msg
-    assigned = {}
+    assigned, scope = {}, []
     dirstack, links, written, refs_moved, sticky_config_env, opaque = [], {}, set(), False, False, False
     tar_env = False
-    for words, redirs in segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
+    for words, redirs in scoped_segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
+        if redirs is None:                               # a subshell's cd and pushd stay inside it
+            if words == "(":
+                scope.append((cwd, list(dirstack)))
+            elif scope:
+                cwd, dirstack = scope.pop()
+            continue
         config_env = sticky_config_env or any(GIT_CONFIG_ENV_RE.match(w) for w in words)
         words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]
                          for ws in (words, redirs))
@@ -1379,8 +1381,6 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             sticky_config_env |= any(GIT_CONFIG_ENV_RE.match(w) for w in bare)   # `export GIT_CONFIG=…; git config`
             continue
         words = _strip_prefix(words)
-        if words and words[0] in ("cd", "pushd", "popd") and not track_cd:
-            continue
         if words and words[0] in ("cd", "pushd"):
             dest = next((a for a in words[1:] if not a.startswith("-")), "~")
             if words[0] == "pushd":

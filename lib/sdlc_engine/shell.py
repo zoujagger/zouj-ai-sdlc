@@ -20,7 +20,7 @@ def _arith_end(line, i):
 
 
 def _heredoc_marks(line):
-    """[(start, end, delimiter)] of `<<WORD` markers that are real: outside quotes ('…', "…", $'…'), comments and
+    """[(start, end, delimiter, quoted)] of `<<WORD` markers that are real: outside quotes ('…', "…", $'…'), comments and
     arithmetic ($((…)), ((…)), where `<<` is a shift)."""
     marks, i, quote = [], 0, None
     while i < len(line):
@@ -48,7 +48,7 @@ def _heredoc_marks(line):
         elif c == "#" and (i == 0 or line[i - 1] in " \t;&|("):
             break                                   # the rest of the line is a comment
         elif m := HEREDOC_MARK_RE.match(line, i):
-            marks.append((m.start(), m.end(), m.group(3)))
+            marks.append((m.start(), m.end(), m.group(3), bool(m.group(2))))
             i = m.end()
             continue
         i += 1
@@ -61,11 +61,11 @@ def strip_heredocs(cmd):
     lines, out, i = cmd.split("\n"), [], 0
     while i < len(lines):
         line, marks = lines[i], _heredoc_marks(lines[i])
-        for start, end, _ in reversed(marks):
+        for start, end, _d, _q in reversed(marks):
             line = line[:start] + " " + line[end:]
         out.append(line)
         i += 1
-        for _start, _end, delim in marks:
+        for _start, _end, delim, _q in marks:
             while i < len(lines) and lines[i].strip() != delim:
                 i += 1
             i += 1   # the delimiter line itself
@@ -75,38 +75,79 @@ def strip_heredocs(cmd):
 ESCAPE_MARK = {"(": "\x01", ")": "\x02", ";": "\x03"}
 
 
-def _join_continuations(cmd):
-    r"""cmd without its unquoted backslash-newline pairs, as bash joins them before anything else (0005 review round 5:
-    `rm -rf \<newline>.aiops` is one command). Single quotes keep theirs; an escaped backslash isn't a continuation."""
-    out, i, quote = [], 0, None
-    while i < len(cmd):
-        c = cmd[i]
-        if quote in ("'",):
-            out.append(c)
-            quote = None if c == "'" else quote
-            i += 1
-            continue
-        if c == "\\" and i + 1 < len(cmd):
-            if cmd[i + 1] == "\n" and quote != "$'":
-                i += 2                                     # joined
-                continue
-            out.append(cmd[i:i + 2])
-            i += 2
-            continue
-        if quote is None and cmd.startswith("$'", i):
-            quote = "$'"
-            out.append("$'")
-            i += 2
-            continue
-        if quote == "$'" and c == "'":
-            quote = None
-        elif quote is None and c in "'\"":
-            quote = c
-        elif quote == '"' and c == '"':
-            quote = None
-        out.append(c)
+def _prescan(cmd):
+    r"""cmd as bash reads it, in one left-to-right pass: comments dropped (an unquoted `#` at the start of a word),
+    unquoted backslash-newline continuations joined, and heredoc bodies removed up to their delimiter line (in an
+    unquoted heredoc body a continuation is joined before the delimiter is compared; a quoted one is never joined).
+    Quotes ('…', "…", $'…') are tracked across lines, so an apostrophe in a comment or a heredoc body changes
+    nothing (0005 review: R1, R2 and the comment-quote residual)."""
+    lines, out, logical, quote, i = cmd.split("\n"), [], "", None, 0
+    while i < len(lines):
+        line, buf, j, cont = lines[i], [], 0, False
         i += 1
-    return "".join(out)
+        while j < len(line):
+            c = line[j]
+            if quote == "'":
+                buf.append(c)
+                quote = None if c == "'" else quote
+                j += 1
+                continue
+            if quote == "$'":
+                if c == "\\" and j + 1 < len(line):
+                    buf.append(line[j:j + 2])
+                    j += 2
+                    continue
+                buf.append(c)
+                quote = None if c == "'" else quote
+                j += 1
+                continue
+            if c == "\\":
+                if j + 1 < len(line):
+                    buf.append(line[j:j + 2])
+                    j += 2
+                    continue
+                cont = True                                # backslash-newline (unquoted or in "…"): join
+                break
+            if quote == '"':
+                buf.append(c)
+                quote = None if c == '"' else quote
+                j += 1
+                continue
+            prev = (logical + "".join(buf))[-1:]
+            if c == "#" and prev in ("", " ", "\t", ";", "&", "|", "(", ")"):
+                break                                      # a comment, to the end of the line
+            if line.startswith("$'", j):
+                quote = "$'"
+                buf.append("$'")
+                j += 2
+                continue
+            if c in "'\"":
+                quote = c
+            buf.append(c)
+            j += 1
+        logical += "".join(buf)
+        if cont:
+            continue
+        if quote is not None:                              # a quoted word spans the newline
+            logical += "\n"
+            continue
+        marks = _heredoc_marks(logical)
+        for start, end, _delim, _quoted in reversed(marks):
+            logical = logical[:start] + " " + logical[end:]
+        out.append(logical)
+        logical = ""
+        for _start, _end, delim, quoted in marks:          # skip each body, through its delimiter line
+            while i < len(lines):
+                body = lines[i]
+                i += 1
+                while not quoted and body.endswith("\\") and not body.endswith("\\\\") and i < len(lines):
+                    body = body[:-1] + lines[i]
+                    i += 1
+                if body.strip() == delim:
+                    break
+    if logical:
+        out.append(logical)
+    return "\n".join(out)
 
 
 def _ansi_c(body):
@@ -174,7 +215,12 @@ OPERATORS = (";;", "&&", "||", "|&", ";", "&", "|", "(", ")")
 def _split_punct(tok):
     """`);`, `)&&`, `)|`… (shlex merges adjacent punctuation) as their separate operators. Redirections, which
     segments() reads as one token, and `;;` stay whole."""
-    if not tok or not set(tok) <= set("();&|<>") or tok in SEPARATORS or not set(tok) & set("();") or set(tok) & set("<>"):
+    if tok and set(tok) <= set("();&|<>") and set(tok) & set("<>"):   # `)>file`: the `)` is an operator
+        k = 0
+        while k < len(tok) and tok[k] in "();|":
+            k += 1
+        return _split_punct(tok[:k]) + [tok[k:]] if 0 < k < len(tok) else [tok]
+    if not tok or not set(tok) <= set("();&|<>") or tok in SEPARATORS or not set(tok) & set("();"):
         return [tok]
     out, i = [], 0
     while i < len(tok):
@@ -185,7 +231,7 @@ def _split_punct(tok):
 
 
 def tokenize(cmd):
-    cmd = strip_heredocs(_join_continuations(cmd))
+    cmd = _prescan(cmd)
     cmd = _mark_escapes(cmd)                           # keep escaped ( ) ; as words, not separators
     lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=True)
     lex.whitespace_split = True
@@ -197,6 +243,35 @@ def tokenize(cmd):
     for mark, text in ESCAPED.items():
         toks = [t.replace(mark, text) for t in toks]
     return [p for t in toks for p in _split_punct(t)]
+
+
+def scoped_segments(tokens):
+    """segments() plus scope events: ("(", None) where a subshell or substitution opens, (")", None) where it closes,
+    so a caller can keep a subshell's `cd` inside it."""
+    out, words, redirs, i = [], [], [], 0
+    while i < len(tokens):
+        t = tokens[i]
+        command_position = not words or all(w in RESERVED for w in words) or words[-1].endswith("()") \
+            or (len(words) <= 2 and words[0] in ("coproc", "function"))
+        if t in SEPARATORS and (t not in ("!", "{", "}") or command_position):
+            if words or redirs:
+                out.append((words, redirs))
+            words, redirs = [], []
+            if t in ("(", ")"):
+                out.append((t, None))
+        elif set(t) <= set("<>&|") and ">" in t:
+            if words and words[-1].isdigit():
+                words.pop()
+            target = tokens[i + 1] if i + 1 < len(tokens) else ""
+            i += 1
+            if not (t.endswith("&") and target.lstrip("-").isdigit()) and target not in SEPARATORS:
+                redirs.append(target)
+        elif not (set(t) <= set("<")):
+            words.append(t)
+        i += 1
+    if words or redirs:
+        out.append((words, redirs))
+    return out
 
 
 def segments(tokens):

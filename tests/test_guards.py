@@ -1340,5 +1340,41 @@ class TokenizerRound5(ProtectedTree):
             self.assertEqual(r.returncode, 0, f"{cmd!r}: {r.stderr}")
 
 
+class TokenizerRecheck(ProtectedTree):
+    """Targeted re-check of b698d39: the pre-tokenizer must know comments and heredoc bodies (two regressions
+    against main, R1 and R2), split `)` off a redirection, and scope a subshell's cd exactly."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def test_regressions_against_main(self):
+        for cmd in ("cat <<'EOF'\nx \\\nEOF\nrm -rf .aiops",          # R1: a quoted heredoc body isn't joined
+                    "echo hi # $'\\'\nrm -rf .aiops"):                 # R2: $' in a comment isn't a quote
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+            self.assertIn("[G-ART-05]", r.stderr, cmd)
+
+    def test_continuation_after_heredoc_and_comment_apostrophes(self):
+        for cmd in ("cat <<EOF\nit's\nEOF\nrm -rf \\\n.aiops", "echo hi # it's\nrm -rf \\\n.aiops",
+                    "echo hi # it's\nrm -rf .aiops\necho '"):          # a quote in a comment pairs with nothing
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+            self.assertIn("[G-ART-05]", r.stderr, cmd)
+
+    def test_paren_merged_with_redirection(self):
+        for cmd in ("(echo x)>.aiops/config/allowed-commands", "(echo x)>>.aiops/config/allowed-commands",
+                    "(echo x)&>.aiops/config/allowed-commands"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+
+    def test_subshell_cd_is_scoped(self):
+        for cmd in ("(cd .github && rm -rf workflows)", "cd .github && (rm -rf workflows)", "(cd src); rm -rf .aiops"):
+            self.assertEqual(self.bash(cmd).returncode, 2, cmd)
+        for cmd in ("(cd build && rm -rf *)", "(cd /tmp/work && tar -xzf release.tgz)", "(cd /tmp/work && unzip pkg.zip)",
+                    "(cd /tmp/clone && rm -rf .git)", "(cd /tmp && rm -rf docs build)", "(cd /tmp/w && rm -rf .aiops)",
+                    "(cd /tmp/w && echo x > .aiops/config/x)", "cd $(mktemp -d) && rm -rf .git",
+                    "pushd /tmp/w && (rm -rf docs) && popd", "(cd build && make)", "(cd src && rm -rf node_modules)"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
 if __name__ == "__main__":
     unittest.main()
