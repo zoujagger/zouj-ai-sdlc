@@ -5,6 +5,8 @@ import shlex
 
 HEREDOC_MARK_RE = re.compile(r"(?<!<)<<(-?)(?!<)\s*(['\"]?)(\w+)\2")
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", ";;", "{", "}", "!", "\n"}
+RESERVED = {"if", "then", "else", "elif", "do", "while", "until", "time", "!", "{"}   # what `!`/`{` may follow
+ESCAPED = {"\x01": r"\(", "\x02": r"\)", "\x03": r"\;"}   # `find \( … \) -exec … \;`: literal words
 
 
 def _arith_end(line, i):
@@ -72,13 +74,18 @@ def strip_heredocs(cmd):
 
 def tokenize(cmd):
     cmd = strip_heredocs(cmd)
+    for mark, text in ESCAPED.items():                 # keep escaped ( ) ; as words, not separators
+        cmd = cmd.replace(text, mark)
     lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     lex.commenters = ""
     try:
-        return list(lex)
+        toks = list(lex)
     except ValueError:   # unbalanced quotes ($'…' confuses shlex): split crudely but keep command boundaries
-        return re.findall(r"[;&|]+|[^\s;&|]+", cmd.replace("\n", " ; "))
+        toks = re.findall(r"[;&|]+|[^\s;&|]+", cmd.replace("\n", " ; "))
+    for mark, text in ESCAPED.items():
+        toks = [t.replace(mark, text) for t in toks]
+    return toks
 
 
 def segments(tokens):
@@ -86,8 +93,10 @@ def segments(tokens):
     out, words, redirs, i = [], [], [], 0
     while i < len(tokens):
         t = tokens[i]
-        if t in SEPARATORS and not (t in ("!", "{", "}") and words):   # `!`/`{`/`}` only in command position:
-            out.append((words, redirs))                                   # `find . ! -name x` keeps its `!`
+        command_position = not words or all(w in RESERVED for w in words) or words[-1].endswith("()") \
+            or (len(words) <= 2 and words[0] == "coproc")
+        if t in SEPARATORS and (t not in ("!", "{", "}") or command_position):   # `!`/`{`/`}` only in command
+            out.append((words, redirs))                                           # position: `find . ! -name x`
             words, redirs = [], []
         elif set(t) <= set("<>&|") and ">" in t:
             if words and words[-1].isdigit():

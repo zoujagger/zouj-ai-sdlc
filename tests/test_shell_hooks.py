@@ -668,5 +668,16 @@ class EnvRound2(EnvSpellings):
             self.assertEqual(self.bash(cmd).returncode, 0, cmd)
 
 
+class EnvRound3(EnvSpellings):
+    test_spellings_are_dumps = None
+
+    def test_globs_in_proc_context(self):
+        for cmd in ("cd /proc/self && cat [e]nviron", "cd /proc/self && cat ?nviron", "cd /proc/self && cat *iron",
+                    "cd /pr?c/self && cat [e]nviron", "cd /dev/fd/.. && cat [e]nviron"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+        self.assertEqual(self.bash("cd /proc && ls").returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

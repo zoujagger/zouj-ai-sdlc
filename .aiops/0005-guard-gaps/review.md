@@ -1,8 +1,8 @@
 ---
 id: 0005
 verdict: CHANGES_REQUESTED
-commit: 50e79c9e4a4246821f7de1551e535fe608a05a8e
-score: 74/100
+commit: d6962208aea086f965c4adafbb9e25fcf546f0db
+score: 69/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-06
 ---
@@ -11,7 +11,9 @@ created: 2026-11-06
 
 <!-- State 5 PRE-REVIEW. Round 1 at 7f8f557: CHANGES_REQUESTED 62/100. Round 2 at 50e79c9 (this file): verifier
      VERIFIED; code review 84/100 CHANGES_REQUESTED (3 new false positives); security FAIL 17/25 (4 HIGH classes).
-     Written from the three fresh-context personas' reports. -->
+     Round 3 at d696220: verifier NOT VERIFIED (the G-ENV-05 hook change wasn't committed); code review 76/100
+     CHANGES_REQUESTED (BLOCKER: tokenizer keyword positions, a regression against main); security FAIL 14/25
+     (CRITICAL: `ln -s` destinations unchecked, a regression against main). Written from the personas' reports. -->
 
 ## Summary
 Round 2 checks the round-1 fixes (3e31fff, a252209, 50e79c9). Every round-1 form is fixed and tested, and nothing is
@@ -45,6 +47,19 @@ Verdict: **CHANGES_REQUESTED**.
 | AC-13 | ❌ not met | the suite is green, but there are new blocks on everyday commands (quoted `env`, `git merge -m`, `tar xfz`, `rm <symlink-to-dir>`) |
 
 ## Security
+Round 3 (at d696220), still open:
+- [CRITICAL] `ln -s <src> <protected>` was no longer checked (a regression against main).
+- [BLOCKER] `if ! rm -rf .aiops`, `then { … }`, `f(){ … }` got past the guard (a regression against main).
+- [HIGH] The committed tree lacked the G-ENV-05 hook change.
+- [HIGH] Escaped `\(` `\)` `\;` ended a `find` command in the tokenizer (already on main).
+- [HIGH] Directory-name tests with `-exec rm -rf`.
+- [HIGH] Nested forms: `$0`, `trap --`, `flock --command=`, `coproc NAME`, parallel's options, `script -c`, `su -c`,
+  stuck `-x`.
+- [HIGH] Hard links to protected files (already on main).
+- MEDIUM and LOW: chained or relative links and `ln -t`; tar abbreviations; more same-command time-of-check forms;
+  `-nm2`; git editor, pager, `bisect run` and `submodule foreach`; clone value options; `GIT_WORK_TREE`; downloads
+  into the current directory; `/proc` globs; `PWD`/`CONN`/`PROXY` names; `--remove-sent-files`.
+
 Round 2 (at 50e79c9), still open:
 - [HIGH] More wrapper and nested forms: `trap`, `coproc`, `watch`, `parallel`, `flock -c`, `find -exec sh -c` and
   wrapped `-exec`, `git rebase --exec`/`-x`, and `git -c alias.*='!…'`.

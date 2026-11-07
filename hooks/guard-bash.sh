@@ -47,7 +47,7 @@ re_proc_cd="(^|[;&|(]) ?(cd|pushd) +/proc"
 re_environ_word="(^|[ /])environ${E}"
 re_environ_path="/environ${E}"                                     # any path ending in /environ: /dev/fd/../environ
 re_proc_ctx="(/proc|(^|[ ])proc/|/p[^ /]*[*?[][^ /]*/|/dev/(fd|std))"   # /proc, proc/ after cd /, /p*/, /dev/fd
-re_env_glob="(^|[ /])e[^ ;&|/]*[*?[]"                              # env*, e?viron, envir?n
+re_env_glob="(^|[ /])[^ ;&|/]*[*?[]"                              # any glob in a /proc context: env*, [e]nviron, *iron
 re_echo_secret="echo .*\\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD)"
 re_system="${S}(sudo|mkfs|dd if=|chmod -R 777)${E}"
 re_gate="gh (pr merge|pr review [^;&|]*--approve|release delete|repo delete)"
