@@ -1,8 +1,8 @@
 ---
 id: 0005
 verdict: CHANGES_REQUESTED
-commit: d6962208aea086f965c4adafbb9e25fcf546f0db
-score: 69/100
+commit: 32fc40256d7d9b3e8ae4efdecb6957c910b5d620
+score: 72/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-06
 ---
@@ -13,7 +13,9 @@ created: 2026-11-06
      VERIFIED; code review 84/100 CHANGES_REQUESTED (3 new false positives); security FAIL 17/25 (4 HIGH classes).
      Round 3 at d696220: verifier NOT VERIFIED (the G-ENV-05 hook change wasn't committed); code review 76/100
      CHANGES_REQUESTED (BLOCKER: tokenizer keyword positions, a regression against main); security FAIL 14/25
-     (CRITICAL: `ln -s` destinations unchecked, a regression against main). Written from the personas' reports. -->
+     (CRITICAL: `ln -s` destinations unchecked, a regression against main). Round 4 at 32fc402: verifier VERIFIED (one
+     MEDIUM false positive); code review 80/100 CHANGES_REQUESTED (BLOCKER: `\\;`, a regression against main); security
+     FAIL 15/25 (CRITICAL `\\;`, HIGH `function f {`, both regressions; four HIGH classes). Written from the reports. -->
 
 ## Summary
 Round 2 checks the round-1 fixes (3e31fff, a252209, 50e79c9). Every round-1 form is fixed and tested, and nothing is
@@ -47,6 +49,14 @@ Verdict: **CHANGES_REQUESTED**.
 | AC-13 | ❌ not met | the suite is green, but there are new blocks on everyday commands (quoted `env`, `git merge -m`, `tar xfz`, `rm <symlink-to-dir>`) |
 
 ## Security
+Round 4 (at 32fc402), still open:
+- [CRITICAL] `\\;` (an escaped backslash, then `;`) hid the rest of the line (a regression against main).
+- [HIGH] `function f { … }` bodies were hidden (a regression against main).
+- [MEDIUM] G-ENV-05 false positives on `/processing/` and `/dev/stdout`.
+- [HIGH] git keys and variables that run commands; remote-name downloads; `cp -al` of a directory and `link`.
+- [MEDIUM] `find -exec` writers; `${@}`/`for`/`shift`; `runuser`; `--`; `TAR_OPTIONS`; `~` in links; arbitrary earlier
+  commands; braces and `$'…'` in `/proc`.
+
 Round 3 (at d696220), still open:
 - [CRITICAL] `ln -s <src> <protected>` was no longer checked (a regression against main).
 - [BLOCKER] `if ! rm -rf .aiops`, `then { … }`, `f(){ … }` got past the guard (a regression against main).

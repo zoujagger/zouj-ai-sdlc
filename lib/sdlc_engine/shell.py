@@ -72,10 +72,37 @@ def strip_heredocs(cmd):
     return "\n".join(out)
 
 
+ESCAPE_MARK = {"(": "\x01", ")": "\x02", ";": "\x03"}
+
+
+def _mark_escapes(cmd):
+    r"""cmd with each unquoted, unescaped `\(`, `\)` or `\;` replaced by its mark. A backslash escapes exactly one
+    character, so `\\;` is a literal backslash and a real separator (0005 review round 4); quotes are honoured."""
+    out, i, quote = [], 0, None
+    while i < len(cmd):
+        c = cmd[i]
+        if quote == "'":
+            out.append(c)
+            quote = None if c == "'" else quote
+            i += 1
+            continue
+        if c == "\\" and i + 1 < len(cmd):
+            nxt = cmd[i + 1]
+            out.append(ESCAPE_MARK[nxt] if quote is None and nxt in ESCAPE_MARK else c + nxt)
+            i += 2
+            continue
+        if c == '"':
+            quote = None if quote == '"' else ('"' if quote is None else quote)
+        elif c == "'" and quote is None:
+            quote = "'"
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def tokenize(cmd):
     cmd = strip_heredocs(cmd)
-    for mark, text in ESCAPED.items():                 # keep escaped ( ) ; as words, not separators
-        cmd = cmd.replace(text, mark)
+    cmd = _mark_escapes(cmd)                           # keep escaped ( ) ; as words, not separators
     lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     lex.commenters = ""
@@ -94,7 +121,7 @@ def segments(tokens):
     while i < len(tokens):
         t = tokens[i]
         command_position = not words or all(w in RESERVED for w in words) or words[-1].endswith("()") \
-            or (len(words) <= 2 and words[0] == "coproc")
+            or (len(words) <= 2 and words[0] in ("coproc", "function"))
         if t in SEPARATORS and (t not in ("!", "{", "}") or command_position):   # `!`/`{`/`}` only in command
             out.append((words, redirs))                                           # position: `find . ! -name x`
             words, redirs = [], []

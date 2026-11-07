@@ -1222,5 +1222,91 @@ class Round3(ProtectedTree):
             self.allowed([f"cd {plain} && wget https://e.x/f", f"git clone --depth 1 https://x/y {plain}/y"])
 
 
+class Round4(ProtectedTree):
+    """0005 review round 4: regressions against main first (escaped backslash, `function f {`), then the classes."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def blocked(self, cmds, rid=None):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            if rid:
+                self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def allowed(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_escaped_backslash_is_a_backslash(self):        # CRITICAL regression: blocked on main
+        self.blocked(["true \\\; rm -rf .aiops", "echo a\\\;rm -rf .aiops", "true \\\\\\\; rm -rf .aiops"], "G-ART-05")
+        self.blocked(["printf %s \\\; rm -rf .github"], "G-FILE-05")
+        self.blocked(["find .aiops \\\\\\( -type f \\\\\\) -delete"])          # \\\( : a backslash, then an escaped (
+        self.allowed(["echo \; ls", "echo 'a\;b'"])
+
+    def test_function_keyword_body(self):                   # HIGH regression: blocked on main
+        self.blocked(["function f { rm -rf .aiops; }; f"], "G-ART-05")
+
+    def test_git_keys_and_variables_that_run_commands(self):
+        self.blocked(["git -c diff.external='rm -rf docs' diff", "git -c core.fsmonitor='rm -rf docs' status",
+                      "git -c credential.helper='!rm -rf docs' fetch", "git -c mergetool.x.cmd='rm -rf docs' mergetool",
+                      "git -c gpg.program='rm -rf docs' commit -S", "git -c filter.x.clean='rm -rf docs' add .",
+                      "git -c uploadpack.packObjectsHook='rm -rf docs' fetch", "git -c core.askPass='rm -rf docs' fetch",
+                      "GIT_EXTERNAL_DIFF='rm -rf docs' git diff", "GIT_ASKPASS='rm -rf docs' git fetch"])
+        self.allowed(["git -c core.editor=vim commit -m x", "git -c credential.helper=store fetch"])
+
+    def test_remote_name_downloads(self):
+        self.blocked(["cd .github/workflows && curl -O https://e.x/aiops-gates.yml",
+                      "cd .github/workflows && wget https://e.x/aiops-gates.yml",
+                      "cd .github/workflows && curl -sSLO https://e.x/aiops-gates.yml"])
+        self.allowed(["cd build && curl -O https://e.x/out.o", "wget https://e.x/readme.txt"])
+
+    def test_hard_link_dirs_and_link(self):
+        self.blocked(["cp -al .github /tmp/gh", "cp -rl .github /tmp/gh", "cp -la .github /tmp/gh",
+                      "link .github/workflows/aiops-gates.yml hl", "rsync -a --link-dest=$PWD/.github src/ /tmp/b"])
+        self.allowed(["cp -al build /tmp/b2"])
+
+    def test_find_exec_writers(self):
+        self.blocked(["find .github -name '*.yml' -exec cp /dev/null {} \;", "find .github -name '*.yml' -exec sed -i d {} +",
+                      "find .github -name '*.yml' -exec tee {} \;"])
+        self.allowed(["find . -name '*.py' -exec sed -i s/a/b/ {} +"])
+
+    def test_positional_forms(self):
+        self.blocked(["bash -c 'rm -rf \"${@}\"' _ docs", "bash -c 'for d; do rm -rf \"$d\"; done' _ docs",
+                      "bash -c 'shift; rm -rf \"$1\"' _ x docs"])
+        self.allowed(["bash -c 'echo \"$@\"' _ build"])
+
+    def test_more_wrappers(self):
+        self.blocked(["runuser -u me -- rm -rf docs", "watch -n1 -- bash -c 'rm -rf docs'",
+                      "parallel -j 2 --halt now,fail=1 rm -rf ::: docs", "git submodule foreach --recursive 'rm -rf ../docs'",
+                      "git submodule --quiet foreach 'rm -rf ../docs'"])
+
+    def test_tar_options_and_tilde_links(self):
+        Incoming.archive(self, "strip.tgz", ["pkg/.aiops/config/allowed-commands"])
+        self.blocked(["TAR_OPTIONS=--strip-components=1 tar -xzf strip.tgz", "TAR_OPTIONS='--transform=s/a/b/' tar -xzf strip.tgz",
+                      "export TAR_OPTIONS=--strip-components=1; tar -xzf strip.tgz"])
+
+    def test_time_of_check_after_arbitrary_commands(self):
+        Incoming.archive(self, "good.tgz", ["src/a.py"])
+        git(self.root, "branch", "benign")
+        self.blocked(["make fetch && tar -xzf good.tgz", "./get.sh && tar -xzf good.tgz", "make setup && git merge benign",
+                      "git -c remote.origin.fetch=+refs/heads/x:refs/remotes/origin/main fetch && git merge origin/main"])
+        self.allowed(["ls && tar -xzf good.tgz", "echo go && git merge benign", "tar -xzf good.tgz -C build"])
+
+    def test_untracked_nested_protected_files(self):
+        (self.root / ".aiops" / "config" / "protected-paths").write_text("docs/CODEOWNERS x\n.github/* ci\n")
+        self.blocked(["find . \\( -name '*.yml' \\) -delete"])
+
+
+class Round4Uninitialized(Uninitialized):
+    test_safety_pass_blocks = test_gates_stay_dormant = None
+
+    def test_safety_pass_round4(self):
+        for cmd in ("function f { cp /tmp/b ~/.bashrc; }; f", "true \\\; cp /tmp/b ~/.bashrc", "ln -s ~ h && tar -xzf h.tgz -C h",
+                    "TAR_OPTIONS=-C$HOME tar -xzf h.tgz", "link ~/.gitconfig /tmp/g"):
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+
+
 if __name__ == "__main__":
     unittest.main()

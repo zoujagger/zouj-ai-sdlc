@@ -234,7 +234,7 @@ def _dynamic_engine_call(cmd, plain):
     return False
 
 
-PARALLEL_VALUE_OPTS = {"-j", "--jobs", "-N", "-n", "--max-args", "-S", "--sshlogin", "-a", "--arg-file", "--colsep",
+PARALLEL_VALUE_OPTS = {"-j", "--jobs", "--halt", "--halt-on-error", "--retries", "--memfree", "--load", "-X", "-N", "-n", "--max-args", "-S", "--sshlogin", "-a", "--arg-file", "--colsep",
                       "-d", "--delimiter", "-E", "--eof", "--timeout", "--delay", "--joblog", "--results", "--tmpdir",
                       "-P", "--max-procs", "-L", "--max-lines", "-s", "--max-chars"}
 
@@ -257,7 +257,9 @@ def _nested_command(words):
                     pat = r'"?\$' + str(k) + r'\b"?|"?\$\{' + str(k) + r'\}"?'      # "$1", $1, ${1}
                     script = re.sub(pat, lambda _m, v=v: shlex.quote(v), script)
                 if pos:
-                    script = re.sub(r'"?\$[@*]"?', " ".join(shlex.quote(p) for p in pos), script)
+                    script = re.sub(r'"?\$\{?[@*]\}?"?', " ".join(shlex.quote(p) for p in pos), script)
+                    if re.search(r"\bshift\b|\bfor +\w+ *(;|\n| do\b)|\$\{?[0-9]", script):   # args read indirectly
+                        script += " ; rm -rf -- " + " ".join(shlex.quote(p) for p in pos)   # judge each as a target
                 return script
     if name == "trap":
         rest = [w for w in words[1:] if w != "--"]
@@ -273,9 +275,11 @@ def _nested_command(words):
     if name == "watch":
         i = 1
         while i < len(words) and words[i].startswith("-"):
-            i += 2 if words[i] in ("-n", "--interval", "-d", "--differences") and "=" not in words[i] \
-                and words[i] not in ("-d", "--differences") else 1
-        return " ".join(words[i:]) or None
+            if words[i] == "--":
+                i += 1
+                break
+            i += 2 if words[i] in ("-n", "--interval") and "=" not in words[i] else 1
+        return shlex.join(words[i:]) or None
     if name == "parallel" and ":::" in words:
         k, i = words.index(":::"), 1
         while i < k and words[i].startswith("-"):           # parallel's own options
@@ -304,6 +308,7 @@ WRAPPER_OPTS = {
     "exec": {"-a"}, "xargs": {"-n", "-I", "-P", "-L", "-d", "-a", "-E", "-s", "--max-args", "--max-procs",
                               "--delimiter", "--arg-file", "--max-lines", "--max-chars", "--replace"},
     "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}, "busybox": set(),
+    "runuser": {"-u", "-g", "-G", "--user", "--group", "--supp-group", "-w", "--whitelist-environment"},
     "strace": {"-o", "-e", "-p", "-s", "-u", "-P", "-E"}, "ltrace": {"-o", "-e", "-p", "-s", "-u"},
 }
 WRAPPER_OPERANDS = {"timeout": 1, "chrt": 1, "taskset": 1, "flock": 1}
@@ -320,6 +325,9 @@ def _strip_prefix(words):
         if name in WRAPPER_OPTS:
             i += 1
             while i < len(words) and words[i].startswith("-") and words[i] != "-":
+                if words[i] == "--":
+                    i += 1
+                    break
                 takes = words[i] in WRAPPER_OPTS[name]
                 i += 2 if takes and "=" not in words[i] else 1
             i += WRAPPER_OPERANDS.get(name, 0)
@@ -404,6 +412,8 @@ def write_targets(words, cwd):
         return nonopt[1:]
     if name == "mv":
         return nonopt + target_dir
+    if name == "link":
+        return nonopt[:2]
     if name == "ln" and not any(re.match(r"^-[a-zA-Z]*s", a) or a == "--symbolic" for a in args):
         return nonopt + target_dir                       # a hard link makes its source writable through the new name
     if name == "cp" and any(a in ("-l", "--link") or re.match(r"^-[a-zA-Z]*l", a) for a in args):
@@ -448,8 +458,10 @@ def _download_targets(name, args):
                 for a in args)
     remote_name = name == "wget" or any(a in ("-O", "--remote-name", "-J", "--remote-name-all") or
                                         (re.match(r"^-[a-zA-Z]+$", a) and "O" in a) for a in args)
-    if remote_name and not named:
-        out.append("./")                                 # saved under its remote name, in the current directory
+    if remote_name and not named:                       # saved under its remote name, in the current directory
+        out.append("./")
+        out += ["./" + posixpath.basename(a.split("?", 1)[0].rstrip("/")) for a in args
+                if "://" in a and posixpath.basename(a.split("?", 1)[0].rstrip("/"))]
     for i, a in enumerate(args):
         if a.startswith(dir_long + "="):
             out.append(a.split("=", 1)[1] + "/")
@@ -932,6 +944,16 @@ def _git_paths(root, *args):
     return None if out is None else [p for p in out.split("\0") if p]
 
 
+GIT_RUNS_RE = re.compile(   # git -c keys whose value git runs as a command (0005 review rounds 3-4)
+    r"^(core\.(editor|pager|sshcommand|fsmonitor|askpass|hookspath)|sequence\.editor|pager\.[^=]+|"
+    r"diff\.[^=]*(external|textconv|command)|credential\.[^=]*helper|(merge|diff)tool\.[^=]+|gpg\.[^=]*program|"
+    r"filter\.[^=]+\.(clean|smudge|process)|uploadpack\.packobjectshook|alias\.[^=]+|merge\.[^=]+\.driver)=(?P<cmd>.+)$",
+    re.I)
+SAFE_READ_COMMANDS = {"ls", "cat", "echo", "printf", "true", "false", "test", "[", "[[", "pwd", "grep", "rg", "head",
+                      "tail", "wc", "sleep", ":", "which", "type", "stat", "file", "du", "df", "date", "env", "mkdir",
+                      "cd", "pushd", "popd", "find", "tree", "sort", "uniq", "diff", "cmp", "sha256sum", "md5sum"}
+
+
 GIT_READONLY_SUBS = {"status", "log", "diff", "show", "rev-parse", "ls-files", "ls-tree", "cat-file", "describe",
                      "shortlog", "blame", "grep", "fetch", "rev-list", "name-rev", "for-each-ref", "show-ref",
                      "merge-base", "remote", "help", "version", "config", "", "add", "commit", "restore", "rm", "mv",
@@ -1130,12 +1152,19 @@ def delete_targets(words):
             after = True
     if name in DELETERS:
         return ops
+    if name == "link":                                   # hard link: the source becomes writable through the new name
+        return ops[:1]
+    if (name == "cp" and any(a in ("-l", "--link") or re.match(r"^-[a-zA-Z]*l", a) for a in args)) or \
+            (name == "ln" and not any(re.match(r"^-[a-zA-Z]*s", a) or a == "--symbolic" for a in args)):
+        return ops[:-1] if not _target_directory(args) else ops
     if name == "mv":
         return ops if _target_directory(args) else ops[:-1]
     if name == "rsync":
         rops = _rsync_operands(args)
+        linkdest = [a.split("=", 1)[1] for a in args if a.startswith("--link-dest=")] + \
+            [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--link-dest"]
         out = rops[-1:] if any(a.startswith("--del") for a in args) else []   # --del, --delete*: the destination
-        return out + (rops[:-1] if {"--remove-source-files", "--remove-sent-files"} & set(args) else [])
+        return out + linkdest + (rops[:-1] if {"--remove-source-files", "--remove-sent-files"} & set(args) else [])
     if name == "find" and _find_deletes(args) and not _find_only_empty_dirs(args) \
             and (not _find_name_filters(args) or _find_negated(args)):   # unfiltered or negated: the whole tree
         return _find_roots(args)
@@ -1162,7 +1191,8 @@ def _rsync_operands(args):
     return ops
 
 
-FIND_DELETING = {"rm", "rmdir", "unlink", "shred", "mv", "truncate"}
+FIND_DELETING = {"rm", "rmdir", "unlink", "shred", "mv", "truncate",
+                 "cp", "sed", "tee", "dd", "install", "perl", "ln", "link"}   # -exec writers count too (round 4)
 
 
 def _find_roots(args):
@@ -1227,10 +1257,21 @@ def _protected_files_under(root, rel):
     prefix = "" if rel in ("", ".") else rel.rstrip("/") + "/"
     pglobs, sglobs = globs(root, "protected-paths"), globs(root, "secret-paths")
     found = set()
-    for g, _ in pglobs:
-        if g.startswith(prefix) or not prefix:
-            for f in _glob(str(Path(root) / g), recursive=True):
-                found.add(Path(f).relative_to(root).as_posix())
+    for g, why in pglobs:
+        if not (g.startswith(prefix) or not prefix):
+            continue
+        for f in _glob(str(Path(root) / g), recursive=True):
+            found.add(Path(f).relative_to(root).as_posix())
+        lit = re.split(r"[*?\[]", g, 1)[0].rsplit("/", 1)[0] if re.search(r"[*?\[]", g) else ""
+        base = Path(root) / lit
+        if lit and base.is_dir():                        # a bash-style * crosses /: walk the literal prefix
+            for n, (dirpath, _dirs, fnames) in enumerate(os.walk(base)):
+                if n > 2000:
+                    break
+                for fn in fnames:
+                    rel_f = (Path(dirpath) / fn).relative_to(root).as_posix()
+                    if glob_hit(rel_f, [(g, why)]):
+                        found.add(rel_f)
     for f in filter(None, (git(root, "ls-files", "-z", "--", rel or ".") or "").split("\0")):
         if glob_hit(f, pglobs) or (not _secret_template(f) and glob_hit(f, sglobs)):
             found.add(f)
@@ -1311,13 +1352,16 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
     of signing keys, and nesting."""
     assigned = {}
     dirstack, links, written, refs_moved, sticky_config_env, opaque = [], {}, set(), False, False, False
+    tar_env = False
     for words, redirs in segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
         config_env = sticky_config_env or any(GIT_CONFIG_ENV_RE.match(w) for w in words)
         words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]
                          for ws in (words, redirs))
         extra_targets, prior_written = [], set(written)   # only earlier segments count for time of check
+        seg_tar_env = any(w.startswith("TAR_OPTIONS=") for w in words)
         for w in words:                                  # GIT_EDITOR=… git commit: the variable runs a command
-            m = re.match(r"^(GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PAGER|GIT_SSH_COMMAND|EDITOR|VISUAL|PAGER)=(.+)$", w)
+            m = re.match(r"^(GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PAGER|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_ASKPASS|"
+                         r"SSH_ASKPASS|GIT_SSH|GIT_PROXY_COMMAND|EDITOR|VISUAL|PAGER)=(.+)$", w)
             if m:
                 msg = _check_command(m.group(2), cwd, root, locked, reason, st, on_main, depth + 1, gates)
                 if msg:
@@ -1327,6 +1371,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
         bare = [w for w in (words[1:] if words[:1] and words[0] in DECLARERS else words) if not w.startswith("-")]
         if bare and not redirs and all(ASSIGN_RE.match(w) for w in bare):   # `d=.aiops; rm -rf $d`
             assigned.update(w.split("=", 1) for w in bare)
+            tar_env |= any(w.startswith("TAR_OPTIONS=") for w in bare)
             sticky_config_env |= any(GIT_CONFIG_ENV_RE.match(w) for w in bare)   # `export GIT_CONFIG=…; git config`
             continue
         words = _strip_prefix(words)
@@ -1348,6 +1393,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
                 ([(lops[0], lops[-1] if len(lops) > 1 else Path(lops[0]).name)] if lops else [])
             for src, name in pairs:                      # registered after this segment's own write checks
                 link = os.path.normpath(str(cwd / name))
+                src = os.path.expanduser(src)
                 dest = src if os.path.isabs(src) else os.path.join(os.path.dirname(link), src)   # relative to the link
                 pending_links[link] = _via_links(os.path.normpath(dest), cwd, links).rstrip("/")   # chains
         if words and Path(words[0]).name == "git":     # a ref moved here makes a later merge's check stale
@@ -1355,16 +1401,18 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             inspected = gsub in ("merge", "rebase", "cherry-pick", "pull") or (gsub == "stash" and grest[:1] in
                                                                              (["pop"], ["apply"], ["branch"]))
             if not inspected:   # any git command outside the read-only set may move a ref a later merge relies on
-                refs_moved |= gsub not in GIT_READONLY_SUBS or (gsub == "fetch" and any(":" in a for a in grest))
+                    refs_moved |= gsub not in GIT_READONLY_SUBS or (gsub == "fetch" and any(":" in a for a in grest)) \
+                    or any(re.match(r"^remote\.[^=]+\.fetch=", words[i + 1]) for i, a in enumerate(words[:-1]) if a == "-c")
             for i, a in enumerate(words[:-1]):      # -c core.editor/pager/sequence.editor=…: run as a command
-                m = re.match(r"^(core\.editor|core\.pager|sequence\.editor|core\.sshcommand|pager\.[^=]+)=(.+)$",
-                             words[i + 1], re.I) if a == "-c" else None
+                m = GIT_RUNS_RE.match(words[i + 1]) if a == "-c" else None
                 if m:
-                    msg = _check_command(m.group(2), cwd, root, locked, reason, st, on_main, depth + 1, gates)
+                    msg = _check_command(m.group("cmd").lstrip("!"), cwd, root, locked, reason, st, on_main,
+                                         depth + 1, gates)
                     if msg:
                         return msg
             run = grest[1:] if gsub == "bisect" and grest[:1] == ["run"] else \
-                grest[1:] if gsub == "submodule" and grest[:1] == ["foreach"] else None
+                [w for w in grest[grest.index("foreach") + 1:] if not w.startswith("-")] \
+                if gsub == "submodule" and "foreach" in grest else None
             if run:                                  # foreach runs inside each submodule: judge it one level down
                 msg = _check_command(" ".join(run) if gsub == "submodule" else shlex.join(run),
                                      Path(cwd) / "_submodule_" if gsub == "submodule" else cwd, root, locked,
@@ -1419,7 +1467,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
                                   f"judged, so the whole tree counts, and {hit}.",
                                   "name the files, or use only positive -name/-path tests.")
                 if hit:
-                    return _block("G-FILE-05", f"`{' '.join(words)[:80]}` deletes or moves {hit}.",
+                    return _block("G-FILE-05", f"`{' '.join(words)[:80]}` deletes, moves or hard-links {hit}.",
                                   "name the paths you mean, outside .aiops/, .git/ and protected paths; a human "
                                   "removes protected files.")
         targets = [e for t in redirs + write_targets(words, cwd) + extra_targets
@@ -1428,7 +1476,7 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             return _block("G-ART-04", "this `find` would delete or rewrite part of the .aiops tree.",
                           "narrow it (e.g. `-not -path './.aiops/*'`), or ask the human to remove artifacts.")
         if words:
-            targets += _extract_dirs(Path(words[0]).name, words[1:])
+            targets += [_via_links(d, cwd, links) for d in _extract_dirs(Path(words[0]).name, words[1:])]
         for t in targets:
             if t.startswith("/dev/"):
                 continue
@@ -1476,9 +1524,14 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
         written |= {os.path.normpath(str(t if Path(t).is_absolute() else Path(cwd) / t)) for t in targets}
         written |= set(pending_links)
         links.update(pending_links)                      # after this segment's own checks (review round 3)
+        if words and Path(words[0]).name not in SAFE_READ_COMMANDS | {"git", "tar", "unzip"}:
+            opaque = True                                # an arbitrary command may have rewritten an archive or a ref
         if not words:
             continue
         name, args = Path(words[0]).name, words[1:]
+        if name == "tar" and (tar_env or seg_tar_env) and _extract_dirs(name, args):
+            return _block("G-FILE-06" if gates else "G-TOOL-04", "TAR_OPTIONS changes how tar extracts, so the archive "
+                          "can't be inspected.", "unset TAR_OPTIONS and pass the options on the command line.")
         if gates and name in ("tar", "unzip"):
             why = _incoming_archive(name, args, cwd, root, links, prior_written, opaque)
             if why:

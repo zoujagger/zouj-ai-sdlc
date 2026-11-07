@@ -679,5 +679,19 @@ class EnvRound3(EnvSpellings):
         self.assertEqual(self.bash("cd /proc && ls").returncode, 0)
 
 
+class EnvRound4(EnvSpellings):
+    test_spellings_are_dumps = None
+
+    def test_no_false_positives_outside_proc(self):
+        for cmd in ("ls src/processing/*.py", "rm -f build/*.o 2>/dev/stderr", "pytest tests/test_?.py > /dev/stdout",
+                    "ls /procedures/*.md"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+    def test_more_proc_spellings(self):
+        for cmd in ("cat /proc/self/e{n,x}viron", "cd /proc/self && cat {e,x}nviron", "cd /proc/self && cat $'\\x65nviron'",
+                    "cd /proc/self && grep -r . .", "cd /proc/self && tar -cf - . | tar -xOf -", "cd /proc/self && ls | xargs cat"):
+            self.assertEqual(self.bash(cmd).returncode, 2, cmd)
+
+
 if __name__ == "__main__":
     unittest.main()
