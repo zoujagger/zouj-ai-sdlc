@@ -1308,5 +1308,37 @@ class Round4Uninitialized(Uninitialized):
             self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
 
 
+class TokenizerRound5(ProtectedTree):
+    """Promoted from review round 5 (zoujagger): three tokenizer holes already on main that hid a whole command."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def test_merged_punctuation(self):
+        for cmd, rid in [("echo $(date); rm -rf .github", "G-FILE-05"), ("(cd src); rm -rf .aiops", "G-ART-05"),
+                         ("(echo a);rm -rf .aiops", "G-ART-05"), ("echo $(echo a); rm -rf .aiops", "G-ART-05"),
+                         ("(ls)&&rm -rf .aiops", "G-ART-05"), ("(ls)|rm -rf .aiops", "G-ART-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_line_continuation(self):
+        for cmd, rid in [("rm -rf \\\n.aiops", "G-ART-05"), ("echo x > \\\n.aiops/config/allowed-commands", "G-ART-05"),
+                         ("rm -rf \\\n.github", "G-FILE-05"), ('echo "a" && rm \\\n-rf .aiops', "G-ART-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_ansi_c_quotes(self):
+        for cmd in ("echo $'\\'' ; rm -rf .aiops ; echo $'\\'' #'", "echo $'a\\'b' ; rm -rf .aiops"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn("[G-ART-05]", r.stderr, cmd)
+
+    def test_ordinary_syntax_still_allowed(self):
+        for cmd in ("case x in a) echo a;; b) echo b;; esac", "echo $(date)", "echo 'a\\\nb'", "printf $'a\\tb\\n'",
+                    "if true; then (cd src && ls); fi", "ls \\\n  -la", "x=$(ls); echo $x", "echo $'it\\'s'"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd!r}: {r.stderr}")
+
+
 if __name__ == "__main__":
     unittest.main()

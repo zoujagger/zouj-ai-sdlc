@@ -1346,10 +1346,14 @@ def _contains_protected(root, target, cwd):
     return None
 
 
-def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=True):
+def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=True, track_cd=True):
     """The first block for cmd, else None. gates=False (a repo without .aiops/) runs only the safety checks: writes
     into the installed plugin, writes outside the repo to secrets or the approval toolchain, `git config --global`
     of signing keys, and nesting."""
+    if track_cd and "(" in tokenize(cmd):       # a subshell's `cd` doesn't outlive it: judge without cd tracking too
+        msg = _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates, track_cd=False)
+        if msg:
+            return msg
     assigned = {}
     dirstack, links, written, refs_moved, sticky_config_env, opaque = [], {}, set(), False, False, False
     tar_env = False
@@ -1375,6 +1379,8 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             sticky_config_env |= any(GIT_CONFIG_ENV_RE.match(w) for w in bare)   # `export GIT_CONFIG=…; git config`
             continue
         words = _strip_prefix(words)
+        if words and words[0] in ("cd", "pushd", "popd") and not track_cd:
+            continue
         if words and words[0] in ("cd", "pushd"):
             dest = next((a for a in words[1:] if not a.startswith("-")), "~")
             if words[0] == "pushd":
