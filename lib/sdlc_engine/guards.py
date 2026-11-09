@@ -428,7 +428,7 @@ def write_targets(words, cwd):
         wt = [a.split("=", 1)[1] for a in args if a.startswith("--work-tree=")] + \
             [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--work-tree"]
         if "clone" in args:
-            rest, j, after = [], args.index("clone") + 1, args[args.index("clone") + 1:]
+            rest, after = [], args[args.index("clone") + 1:]
             k = 0
             while k < len(after):
                 if after[k] in CLONE_VALUE_OPTS:
