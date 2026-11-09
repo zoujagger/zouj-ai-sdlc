@@ -1376,5 +1376,68 @@ class TokenizerRecheck(ProtectedTree):
             self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
 
 
+class ReviewRound6(ProtectedTree):
+    """0005 review round 6: three regressions against main in the 4e18711 tokenizer (`#` after `)` read as a comment,
+    `time -p` losing command position, a `case` pattern `)` closing the subshell scope) and the heredoc delimiter
+    read as `\\w+` (already on main)."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def blocked(self, cmds, rule="G-ART-05"):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+            self.assertIn(f"[{rule}]", r.stderr, cmd)
+
+    def allowed(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd!r}: {r.stderr}")
+
+    def test_hash_that_is_not_a_comment(self):
+        self.blocked(f"{pre}; rm -rf .aiops" for pre in (
+            "echo $(true)#", "echo $((1))#", "cat <(true)#", "x=(a)#", "echo `true #`", 'echo "$(echo " #")"',
+            'echo "${x:-" #"}"', "echo $(true)\\\n#"))
+        self.allowed(("make check  # run the tests", "echo hi # it's\nls", "(true)# a plain subshell"))
+        # defence in depth: once a comment is dropped, the line is also judged with it kept (a false positive on a
+        # comment that names a dangerous command is the accepted price)
+        self.blocked(("(true)# rm -rf .aiops",))
+
+    def test_time_keeps_command_position(self):
+        self.blocked(("time -p { rm -rf .aiops; }", "! time -p { rm -rf .aiops; }", "time -- { rm -rf .aiops; }",
+                      "time -p ! rm -rf .aiops"))
+        self.allowed(("find . ! -name x -print", "time -p make check"))
+
+    def test_case_pattern_paren_is_not_a_scope(self):
+        self.blocked((f"cd /tmp; ( cd {self.root}; case a in a) ;; esac; rm -rf .aiops )",
+                      f"cd {self.root}/.aiops; ( case x in x) ;; esac; cd /tmp ); rm -rf 0001-csv-export",
+                      "case a in (a) ;; esac; rm -rf .aiops"))
+        self.blocked(("( cd .github && case a in a) true;; esac && rm -rf workflows )",
+                      "cd .github; ( case x in x) ;; esac; cd /tmp ); rm -rf workflows"), rule="G-FILE-05")
+        self.allowed(("(cd build && case a in a) true;; esac && rm -rf *)", "(cd /tmp/w); case a in a) ;; esac; ls"))
+
+    def test_heredoc_delimiters_as_bash_words(self):
+        self.blocked(("cat <<E-O\nx\nE-O\nrm -rf .aiops", "cat <<'E'OF\nx\nEOF\nrm -rf .aiops",
+                      'cat <<EOF"x"\nx\nEOFx\nrm -rf .aiops', "cat <<EOF.x\nx\nEOF.x\nrm -rf .aiops",
+                      'echo "$(echo "<<EOF")"\nrm -rf .aiops', "echo $[1<<EOF]\nrm -rf .aiops",
+                      "cat <<NEVER\nx\nrm -rf .aiops"))                 # no delimiter line: the rest is still read
+        self.allowed(("cat <<'EOF' > notes.md\nrm -rf .aiops\nEOF", "cat <<-E-O\n\trm -rf .aiops\n\tE-O"))
+
+
+class IncomingRound6(Incoming):
+    """0005 review round 6 (MINOR): a commit already on main is trusted like main itself, so `git cherry-pick main~1`
+    isn't refused for the config it carries; a commit only on another branch still is."""
+    test_archives = test_stash = test_merge_rebase_cherry_pick = test_pull = None
+
+    def test_cherry_pick_of_a_main_commit(self):
+        bad = self.commit_on("x", ".aiops/config.json", '{"approval_key_policy": "any"}\n')
+        main_change = self.commit_on("tmp-main", ".aiops/config.json", "{}\n", base="main")
+        git(self.root, "branch", "-qf", "main", main_change)
+        for cmd in (f"git cherry-pick {main_change}", "git cherry-pick main", f"git cherry-pick {main_change}^..main"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+        for cmd in (f"git cherry-pick {bad}", f"git cherry-pick {main_change} {bad}", "git cherry-pick main..x"):
+            self.assertBlocked(cmd)
+
+
 if __name__ == "__main__":
     unittest.main()

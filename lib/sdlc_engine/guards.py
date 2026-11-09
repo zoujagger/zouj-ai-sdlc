@@ -16,7 +16,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 from . import artifacts as A
-from .shell import scoped_segments, segments, tokenize
+from .shell import RESET, scoped_segments, segments, tokenize
 from .machine import (PLUGIN_ROOT, SCHEMAS, active_dir, config, current_branch, evaluate, gate, git, glob_hit, globs,
                       initialized, lock, phrase, project_root)
 
@@ -141,7 +141,7 @@ def check_artifact(d, kind, new_text):
 # ---------------------------------------------------------------- Bash
 
 PREFIXES = {"sudo", "command", "env", "nohup", "time", "exec", "builtin", "xargs", "then", "do", "else", "if",
-            "while", "until"}
+            "while", "until", "!", "{"}   # a stray `!`/`{` is stripped, never the command word (0005 review round 6)
 ALL_TARGETS = {"rm", "rmdir", "touch", "mkdir", "truncate", "tee", "shred", "unlink"}
 DEST_TARGET = {"cp", "ln", "install", "rsync", "scp"}
 INPLACE = {"sed", "perl", "ruby", "gsed"}
@@ -1023,6 +1023,8 @@ def _incoming_git(sub, rest, root, on_main, args=(), refs_moved=False):
         if commits is None:
             return "`git cherry-pick` can't be inspected (unknown commit: fetch it first)"
         for c in commits:
+            if any(git(root, "merge-base", "--is-ancestor", c, t) is not None for t in (main, f"origin/{main}")):
+                continue                                 # already on main: trusted like main itself (review round 6)
             parents = (git(root, "rev-list", "--parents", "-n", "1", c) or "").split()[1:]
             if parents:
                 base = f"{c}^{mainline}" if len(parents) > 1 else f"{c}^"
@@ -1353,9 +1355,12 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
     assigned, scope = {}, []
     dirstack, links, written, refs_moved, sticky_config_env, opaque = [], {}, set(), False, False, False
     tar_env = False
+    start_cwd = cwd
     for words, redirs in scoped_segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
         if redirs is None:                               # a subshell's cd and pushd stay inside it
-            if words == "(":
+            if words == RESET:                           # the second reading (comments kept) starts afresh
+                cwd, dirstack, scope, assigned = start_cwd, [], [], {}
+            elif words == "(":
                 scope.append((cwd, list(dirstack)))
             elif scope:
                 cwd, dirstack = scope.pop()

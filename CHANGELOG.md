@@ -6,7 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ## [Unreleased]
 
 Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 known issues, delivered as intent
-`.aiops/0005-guard-gaps/`. Every change adds blocks; no gate behaves differently.
+`.aiops/0005-guard-gaps/`. Almost every change adds blocks. Two exceptions loosen a check: `find . -type d -delete`
+(removes only empty directories) and `git cherry-pick` of a commit already on main are allowed.
 
 ### Security
 - **Deleting a protected tree is blocked in every state (`G-FILE-05`).** This covers the repo itself, a directory
@@ -22,11 +23,18 @@ Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 
 - **Every spelling of an environment dump.** `/usr/bin/env`, `e''nv`, `"printenv"` and `\env` are G-ENV-03. Reading
   `/proc/*/environ` is the new secret rule `G-ENV-05`.
 - **G-ENV-03 allowances accept only safe forms:** `printenv NAME…`, or a command that doesn't run env/printenv
-  (`ls env`, `python -m venv env`, `source env/bin/activate`). The list of known dumps is gone.
+  (`ls env`, `python -m venv env`). `source`/`.` run their argument and are refused. The list of known dumps is gone.
 - **The agent's `sdlc init --force`** judges the read-only lock without `SDLC_HOOK_PROFILE` / `AIOPS_INTENT`.
 - **Wrappers no longer hide a write.** `nice`, `timeout 5`, `stdbuf`, `setsid`, `ionice`, `sudo -u x`,
   `command -p`, `flock f`, `xargs`, `busybox` and the like are seen through by every shell rule, including the
   read-only lock. This hole predates 0005.
+- **The shell parser reads commands as bash does.** It is shared by the guards and the always-on secret scan.
+  Comments and heredoc bodies are dropped exactly; a heredoc delimiter is a bash word (`<<E-O`, `<<'E'OF`), and a
+  missing delimiter line hides nothing. Backslash-newline continuations are joined and `$'…'` is decoded.
+  `)>file`, `!`/`{` after keywords, `time -p`, `function f {` and `\\;` split commands correctly, while `find`'s `\;` stays a word. A subshell's
+  `cd` stays inside it, and a `case` pattern's `)` isn't a subshell end. When a comment is dropped, the line is also
+  judged with the comment's text read as a command, so a misread comment can't hide one. The cost: a comment that
+  names a blocked command is blocked too.
 - Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
   `.aiops/`, and G-ENV-03's list of known dumps.
 

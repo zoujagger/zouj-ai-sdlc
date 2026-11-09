@@ -82,6 +82,22 @@ class ShellHooks(RepoCase):
                 self.assertEqual(grep(pattern=".", path=path), 2, (repo_state, path))
             self.assertEqual(grep(pattern=".", path="src"), 0)
 
+    def test_secret_reads_after_a_misread_comment(self):
+        """0005 review round 6 (CRITICAL, regression against main): `#` after the `)` of `$(…)`, `$((…))`, `<(…)` or
+        `a=(…)`, or inside backticks or quotes nested in "$(…)", is not a comment in bash. The always-on secret scan
+        must still see the command after it, in every repo."""
+        home = self.root.parent / f"{self.root.name}.home"
+        (home / ".aws").mkdir(parents=True, exist_ok=True)
+        (home / ".aws" / "credentials").write_text("secret\n")
+        self.env["HOME"] = str(home)
+        for pre in ("echo $(true)#", "echo $((1))#", "cat <(true)#", "x=(a)#", "echo `true #`",
+                    'echo "$(echo " #")"', 'echo "${x:-" #"}"'):
+            cmd = f"{pre}; cat ~/.aws/credentials"
+            self.assertEqual(self.bash(cmd), 2, cmd)
+        self.assertEqual(self.bash("cd sub; echo `true #`; cat ../.env"), 2)    # a reading starts from the session cwd
+        for cmd in ("make check  # run the tests", "echo hi # it's\nls"):
+            self.assertEqual(self.bash(cmd), 0, cmd)
+
     def test_secret_reads_through_globs_and_substitutions(self):
         import time
         home = self.root.parent / f"{self.root.name}.home"

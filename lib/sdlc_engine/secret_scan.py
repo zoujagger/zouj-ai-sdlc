@@ -13,7 +13,7 @@ import sys
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-from .shell import segments, tokenize
+from .shell import RESET, scoped_segments, tokenize
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[2]
 GLOB_CHARS = re.compile(r"[*?\[]")
@@ -118,10 +118,14 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
         if depth < 3 and (why := check_shell(inner, cwd, root, pats, depth + 1)):
             return why
     try:
-        segs = segments(tokenize(cmd))
+        segs = scoped_segments(tokenize(cmd))
     except Exception:  # noqa: BLE001: unparsable input: fall back to whitespace words
         segs = [(cmd.split(), [])]
+    start_cwd = cwd
     for words, _redirs in segs:
+        if _redirs is None:                                # the second reading (comments kept) starts afresh
+            cwd = start_cwd if words == RESET else cwd
+            continue
         while words and re.match(r"^[A-Za-z_]\w*=", words[0]):
             words = words[1:]
         if not words:

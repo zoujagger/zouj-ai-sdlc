@@ -159,9 +159,17 @@ class Playbook(SetupCase):
                       "find .github -type f -delete", "nice rm -rf .github")
 
     def protected_tree_blocked(self, d, where):
-        """0005 AC-12: in every state, the repo, .aiops, .git and protected trees can't be deleted or moved."""
-        for cmd in (c.format(d=d) for c in self.PROTECTED_TREE):
-            self.assertIsNotNone(guards.check_bash({"tool_input": {"command": cmd}, "cwd": str(d)}), f"{where}: {cmd}")
+        """0005 AC-12: in every state, the repo, .aiops, .git and protected trees can't be deleted or moved. AC-1's
+        `rm -rf docs` needs a protected path under docs/: added for the check, then restored (review round 6)."""
+        pp = d / ".aiops" / "config" / "protected-paths"
+        before = pp.read_text()
+        pp.write_text(before + "docs/CODEOWNERS ownership is human-owned\n")
+        try:
+            for cmd in (c.format(d=d) for c in self.PROTECTED_TREE + ("rm -rf docs",)):
+                self.assertIsNotNone(guards.check_bash({"tool_input": {"command": cmd}, "cwd": str(d)}),
+                                     f"{where}: {cmd}")
+        finally:
+            pp.write_text(before)
 
     def walk(self, profile):
         d, intent = self.repo(profile)
