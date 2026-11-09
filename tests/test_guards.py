@@ -1467,6 +1467,13 @@ class ReviewRound6(ProtectedTree):
         # accepted false positive: the scoped reading still ends the scope at the inner `)`, so a delete outside the
         # repo after one is judged from the outer cwd too (fails safe)
         self.blocked(("(cd /tmp/w && echo `)` && rm -rf .aiops)",))
+        # round-9 re-check (HIGH, regression against main): a link recorded in one reading must not carry over into
+        # the next, where it would redirect an earlier target through a link bash hasn't made yet
+        parent = self.root.parent
+        self.blocked(f"cd /var && (cd {self.root} && {i} && rm -rf .aiops); ln -sfn /x/safe {link}"
+                     for i in inner[:3] for link in (self.root, parent))
+        self.blocked((f"cd /var && (cd {self.root}/.aiops && echo `)` && echo x > config/allowed-commands); "
+                      f"ln -s /x/safe {parent}",))
         # security review round 9 (HIGH, regression against main): `(…)#` comments holding `(`/`)` fake a subshell
         self.blocked(("(true)# (\ncd .aiops\n(true)# )\nrm -rf config/protected-paths",
                       "(true)# (\ncd .aiops\n(true)# )\necho x > config/allowed-commands"))
@@ -1488,7 +1495,8 @@ class CommentsWhenLocked(RepoCase):
             r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
             self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
         for cmd in ("ls # x\ntouch src/app.py", f"cd /tmp && (cd {self.root} && echo `)` && touch src/app.py)",
-                    f"cd /tmp && (cd {self.root} && echo ${{x/)/}} > src/app.py)"):   # round 9: scope desync
+                    f"cd /tmp && (cd {self.root} && echo ${{x/)/}} > src/app.py)",    # round 9: scope desync
+                    f"cd /var && (cd {self.root} && echo `)` && touch src/app.py); ln -sfn /x/safe {self.root}"):
             r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
             self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")    # the lock itself still holds
             self.assertIn("[G-LOCK-02]", r.stderr, cmd)

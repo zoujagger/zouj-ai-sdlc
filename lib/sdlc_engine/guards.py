@@ -1358,8 +1358,9 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
     start_cwd = cwd
     for words, redirs in scoped_segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
         if redirs is None:                               # a subshell's cd and pushd stay inside it
-            if words == RESET:                           # the second reading (comments kept) starts afresh
-                cwd, dirstack, scope, assigned = start_cwd, [], [], {}
+            if words == RESET:                           # another reading starts afresh: state that weakens a check
+                cwd, dirstack, scope, assigned, links = start_cwd, [], [], {}, {}   # (links redirect targets) is
+                #                                          reset; state that only adds blocks persists (round-9 re-check)
             elif words == "(":
                 scope.append((cwd, list(dirstack)))
             elif scope:
