@@ -332,13 +332,15 @@ def scoped_segments(tokens, cases=True):
     pattern, or that pairs with no reported `(`, is no scope event (0005 review round 6). Only the real keywords
     (KEYWORD_MARK) drive the case state, and a `$(…)` in a pattern is segmented like any other (round 7)."""
     out, words, redirs, i, opened = [], [], [], 0, []   # opened: "(", "case-word", "pat" (in a pattern) or "case"
-    unfinished = False
+    saw_case = False
+
+    redirected = False                                 # any redirection in this command, fd duplications included
 
     def flush():
-        nonlocal words, redirs
+        nonlocal words, redirs, redirected
         if words or redirs:
             out.append((words, redirs))
-        words, redirs = [], []
+        words, redirs, redirected = [], [], False
 
     def word(t):
         return KEYWORD.get(t, t)
@@ -350,24 +352,24 @@ def scoped_segments(tokens, cases=True):
         if t == RESET:
             flush()
             out.append((RESET, None))
-            unfinished = unfinished or any(o != "(" for o in opened)
             opened = []
         elif not cases and t in KEYWORD:
             words.append(word(t))
-        elif top == "pat" and t == ")":                  # the end of a case pattern list (pattern words aren't run)
-            opened[-1] = "case"
-            words, redirs = [], []
+        elif top == "pat" and t == ")":                  # the end of a case pattern list: its words are judged
+            opened[-1] = "case"                          # anyway, so a misread case hides nothing (round 8)
+            flush()
         elif top == "pat" and t == "(" and not (i and tokens[i - 1].endswith(("$", "<", ">"))):
             pass                                         # the optional `(` before a pattern
         elif top == "pat" and t == "|":
-            words, redirs = [], []                       # between alternative patterns
-        elif t == "\x04" and command_position and not redirs:
+            flush()                                      # between alternative patterns
+        elif t == "\x04" and command_position and not redirected:   # `>&2 case` is a command (round 8)
+            saw_case = True
             words.append("case")
             opened.append("case-word")
         elif t == "\x06" and top == "case-word":       # the case word may span lines and substitutions
             words, redirs = [], []
             opened[-1] = "pat"
-        elif t == "\x05" and command_position and top in ("case", "pat"):
+        elif t == "\x05" and command_position and not redirected and top in ("case", "pat"):
             flush()
             opened.pop()
         elif t in (";;", ";&", ";;&") and top == "case":
@@ -382,6 +384,7 @@ def scoped_segments(tokens, cases=True):
                 opened.pop()
                 out.append((")", None))
         elif set(t) <= set("<>&|") and ">" in t:
+            redirected = True
             if words and words[-1].isdigit():
                 words.pop()            # the "2" in 2>file
             target = word(tokens[i + 1]) if i + 1 < len(tokens) else ""
@@ -392,8 +395,8 @@ def scoped_segments(tokens, cases=True):
             words.append(word(t))
         i += 1
     flush()
-    if cases and (unfinished or any(o != "(" for o in opened)):   # an unfinished case: fail closed, judging
-        return out + [(RESET, None)] + scoped_segments(tokens, cases=False)  # every `)` as a scope end too
+    if cases and saw_case:              # case tracking reads dequoted words (`'a()' case`), so a line with a case is
+        return out + [(RESET, None)] + scoped_segments(tokens, cases=False)  # also judged with every `)` a scope end
     return out
 
 

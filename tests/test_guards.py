@@ -1413,7 +1413,10 @@ class ReviewRound6(ProtectedTree):
                       "case a in (a) ;; esac; rm -rf .aiops"))
         self.blocked(("( cd .github && case a in a) true;; esac && rm -rf workflows )",
                       "cd .github; ( case x in x) ;; esac; cd /tmp ); rm -rf workflows"), rule="G-FILE-05")
-        self.allowed(("(cd build && case a in a) true;; esac && rm -rf *)", "(cd /tmp/w); case a in a) ;; esac; ls"))
+        self.allowed(("(cd /tmp/w); case a in a) ;; esac; ls",))
+        # accepted false positive (round 8): a line with a case is also judged without case tracking, where a pattern's
+        # `)` ends the subshell, so a relative delete after a case inside a subshell is judged from the outer cwd
+        self.blocked(("(cd build && case a in a) true;; esac && rm -rf *)",), rule="G-FILE-05")
 
     def test_only_the_case_keyword_starts_a_case(self):
         """Review round 7 (CRITICAL, regression against main): a quoted, escaped or redirected `case` is an ordinary
@@ -1429,6 +1432,30 @@ class ReviewRound6(ProtectedTree):
                       "( cd .github && if :; then case a in a) :;; esac; fi && rm -rf workflows )"), rule="G-FILE-05")
         self.allowed(("case $1 in -h|--help) echo usage;; *) make check;; esac", "echo case in point",
                       "case x in (a) ls;; esac"))
+
+    def test_quoted_words_cannot_fake_a_case(self):
+        """Review round 8 (CRITICAL, regression against main): a quoted `'a()'`, `'if'` or `"time"` put a real `case`
+        in command position; the subshell read as its pattern was dropped. Pattern words are now judged, and any line
+        with a case is judged again without case tracking."""
+        self.blocked((f"{pre} case x in ; ( rm -rf .aiops ) ; {pre} esac"
+                      for pre in ("echo 'a()'", "'if'", '"time"', 'echo "f()"')))
+        self.blocked(("echo 'a()' case x in ; (cd /tmp) ; echo 'a()' esac; rm -rf .aiops",
+                      "echo \"f()\" case x in\n( rm -rf .aiops )\necho \"f()\" esac"))
+        self.blocked(("echo 'a()' case x in ; ( rm -rf .github ) ; echo 'a()' esac",), rule="G-FILE-05")
+
+    def test_case_desync_matrix(self):
+        """Review round 8 (code review): the class, not the spellings. Prefixes that bash doesn't read as putting
+        `case` in command position, crossed with quoted operators inside a real case body, each wrapping a subshell
+        that deletes `.aiops`."""
+        prefixes = ("\\case x in ;", '"case" x in ;', ">&2 case x in ;", "2>&1 case x in ;", ">/dev/null case x in ;",
+                    "echo 'a()' case x in ;", "'if' case x in ;", '"time" case x in ;', "ca''se x in ;")
+        closers = ("", "; >&2 esac", "; 2>&1 esac", "; echo 'a()' esac", "; 'if' esac")
+        cmds = [f"{p} ( rm -rf .aiops ) {c}" for p in prefixes for c in closers]
+        cmds += [f"case x in x) echo {q} ; ( rm -rf .aiops ) ;; esac" for q in ("';;'", "')'", "'|'", "'('", '";;"')]
+        cmds += [f"( cd .github; case a in a) ;; esac; {p} ( rm -rf workflows ) ; >&2 esac )" for p in prefixes[:4]]
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
 
     def test_heredoc_delimiters_as_bash_words(self):
         self.blocked(("cat <<E-O\nx\nE-O\nrm -rf .aiops", "cat <<'E'OF\nx\nEOF\nrm -rf .aiops",

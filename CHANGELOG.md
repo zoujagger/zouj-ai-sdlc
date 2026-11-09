@@ -34,7 +34,9 @@ Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 
   `)>file`, `!`/`{` after keywords, `time -p`, `function f {` and `\\;` split commands correctly, while `find`'s `\;` stays a word. A subshell's
   `cd` stays inside it, and a `case` pattern's `)` isn't a subshell end. When a comment is dropped, the line is also
   judged with every `#` kept as a word (as before), so a separator that a misread comment hid still splits. Only the
-  unquoted, unescaped `case`/`in`/`esac` keywords drive case parsing; an unfinished `case` is judged both ways.
+  unquoted, unescaped `case`/`in`/`esac` keywords, not after a redirection, drive case parsing; pattern words are
+  judged too, and a line with a `case` is also judged without case tracking. The cost: a relative delete after a
+  `case` inside a subshell is judged from the outer directory as well.
 - Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
   `.aiops/`, and G-ENV-03's list of known dumps.
 
