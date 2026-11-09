@@ -1352,20 +1352,15 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
     """The first block for cmd, else None. gates=False (a repo without .aiops/) runs only the safety checks: writes
     into the installed plugin, writes outside the repo to secrets or the approval toolchain, `git config --global`
     of signing keys, and nesting."""
-    assigned, scope = {}, []
+    assigned = {}
     dirstack, links, written, refs_moved, sticky_config_env, opaque = [], {}, set(), False, False, False
     tar_env = False
     start_cwd = cwd
     for words, redirs in scoped_segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
-        if redirs is None:                               # a subshell's cd and pushd stay inside it
-            if words == RESET:                           # another reading starts afresh: state that weakens a check
-                cwd, dirstack, scope, assigned, links = start_cwd, [], [], {}, {}   # (links redirect targets) is
-                #                                          reset; state that only adds blocks persists (round-9 re-check)
-            elif words == "(":                           # a subshell's assignments stay inside it too
-                scope.append((cwd, list(dirstack), dict(assigned)))
-            elif scope:
-                cwd, dirstack, assigned = scope.pop()
-            continue
+        if redirs is None:            # subshell scopes are not applied: cd and assignments persist, as on main (a `)`
+            if words == RESET:        # bash keeps inside a word fooled every scoped reading; 0005 review round 9).
+                cwd, dirstack, assigned, links = start_cwd, [], {}, {}   # A new reading starts afresh: state that
+            continue                  # weakens a check is reset, state that only adds blocks persists
         config_env = sticky_config_env or any(GIT_CONFIG_ENV_RE.match(w) for w in words)
         words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]
                          for ws in (words, redirs))

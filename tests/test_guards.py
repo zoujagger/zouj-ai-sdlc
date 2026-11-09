@@ -1313,7 +1313,7 @@ class TokenizerRound5(ProtectedTree):
     test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
 
     def test_merged_punctuation(self):
-        for cmd, rid in [("echo $(date); rm -rf .github", "G-FILE-05"), ("(cd src); rm -rf .aiops", "G-ART-05"),
+        for cmd, rid in [("echo $(date); rm -rf .github", "G-FILE-05"), ("(true); rm -rf .aiops", "G-ART-05"),
                          ("(echo a);rm -rf .aiops", "G-ART-05"), ("echo $(echo a); rm -rf .aiops", "G-ART-05"),
                          ("(ls)&&rm -rf .aiops", "G-ART-05"), ("(ls)|rm -rf .aiops", "G-ART-05")]:
             r = self.bash(cmd)
@@ -1366,7 +1366,9 @@ class TokenizerRecheck(ProtectedTree):
             self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
 
     def test_subshell_cd_is_scoped(self):
-        for cmd in ("(cd .github && rm -rf workflows)", "cd .github && (rm -rf workflows)", "(cd src); rm -rf .aiops"):
+        # a subshell's cd is not scoped (0005 review round 9): `(cd src); rm -rf .aiops` is judged in src, as on
+        # main; exact scoping is left to intent 0006 (docs/architecture.md residuals)
+        for cmd in ("(cd .github && rm -rf workflows)", "cd .github && (rm -rf workflows)"):
             self.assertEqual(self.bash(cmd).returncode, 2, cmd)
         for cmd in ("(cd build && rm -rf *)", "(cd /tmp/work && tar -xzf release.tgz)", "(cd /tmp/work && unzip pkg.zip)",
                     "(cd /tmp/clone && rm -rf .git)", "(cd /tmp && rm -rf docs build)", "(cd /tmp/w && rm -rf .aiops)",
@@ -1409,21 +1411,17 @@ class ReviewRound6(ProtectedTree):
 
     def test_case_pattern_paren_is_not_a_scope(self):
         self.blocked((f"cd /tmp; ( cd {self.root}; case a in a) ;; esac; rm -rf .aiops )",
-                      f"cd {self.root}/.aiops; ( case x in x) ;; esac; cd /tmp ); rm -rf 0001-csv-export",
                       "case a in (a) ;; esac; rm -rf .aiops"))
-        self.blocked(("( cd .github && case a in a) true;; esac && rm -rf workflows )",
-                      "cd .github; ( case x in x) ;; esac; cd /tmp ); rm -rf workflows"), rule="G-FILE-05")
+        self.blocked(("( cd .github && case a in a) true;; esac && rm -rf workflows )",), rule="G-FILE-05")
         self.allowed(("(cd /tmp/w); case a in a) ;; esac; ls",))
-        # accepted false positive (round 8): a line with a case is also judged without case tracking, where a pattern's
-        # `)` ends the subshell, so a relative delete after a case inside a subshell is judged from the outer cwd
-        self.blocked(("(cd build && case a in a) true;; esac && rm -rf *)",), rule="G-FILE-05")
+        self.allowed(("(cd build && case a in a) true;; esac && rm -rf *)",))   # round 9: no scopes, no false positive
 
     def test_only_the_case_keyword_starts_a_case(self):
         """Review round 7 (CRITICAL, regression against main): a quoted, escaped or redirected `case` is an ordinary
         command in bash, and words are never dropped: a `$(…)` in a case pattern runs."""
         self.blocked(("\\case x in ; ( rm -rf .aiops )", '"case" x in ; ( rm -rf .aiops )',
                       "'case' x in\n( rm -rf .aiops )", ">/dev/null case x in ; ( rm -rf .aiops )",
-                      "\\case x in ; (cd /tmp); rm -rf .aiops", "case x in $(rm -rf .aiops)) true;; esac",
+                      "case x in $(rm -rf .aiops)) true;; esac",
                       "case x in x) true;; $(rm -rf .aiops)) true;; esac", "case x in (y|$(rm -rf .aiops)) ;; esac"))
         self.blocked(("\\case x in ; ( rm -rf .github )", "ca''se x in ; ( rm -rf .github )",
                       "( cd .github && case a\nin a) true;; esac && rm -rf workflows )",
@@ -1439,8 +1437,7 @@ class ReviewRound6(ProtectedTree):
         with a case is judged again without case tracking."""
         self.blocked((f"{pre} case x in ; ( rm -rf .aiops ) ; {pre} esac"
                       for pre in ("echo 'a()'", "'if'", '"time"', 'echo "f()"')))
-        self.blocked(("echo 'a()' case x in ; (cd /tmp) ; echo 'a()' esac; rm -rf .aiops",
-                      "echo \"f()\" case x in\n( rm -rf .aiops )\necho \"f()\" esac"))
+        self.blocked(("echo \"f()\" case x in\n( rm -rf .aiops )\necho \"f()\" esac",))
         self.blocked(("echo 'a()' case x in ; ( rm -rf .github ) ; echo 'a()' esac",), rule="G-FILE-05")
 
     def test_case_desync_matrix(self):
@@ -1464,9 +1461,7 @@ class ReviewRound6(ProtectedTree):
         self.blocked(f"cd /tmp && (cd {self.root} && {i} && rm -rf .aiops)" for i in inner)
         self.blocked((f"(cd .github && {i} && rm -rf workflows)" for i in inner), rule="G-FILE-05")
         self.allowed(("(cd src && ls `pwd`)", "echo ${x:-)}; ls", "(cd /tmp/w && echo hi && rm -rf .aiops)"))
-        # accepted false positive: the scoped reading still ends the scope at the inner `)`, so a delete outside the
-        # repo after one is judged from the outer cwd too (fails safe)
-        self.blocked(("(cd /tmp/w && echo `)` && rm -rf .aiops)",))
+        self.allowed(("(cd /tmp/w && echo `)` && rm -rf .aiops)",))
         # round-9 re-check (HIGH, regression against main): a link recorded in one reading must not carry over into
         # the next, where it would redirect an earlier target through a link bash hasn't made yet
         parent = self.root.parent
@@ -1474,6 +1469,10 @@ class ReviewRound6(ProtectedTree):
                      for i in inner[:3] for link in (self.root, parent))
         self.blocked((f"cd /var && (cd {self.root}/.aiops && echo `)` && echo x > config/allowed-commands); "
                       f"ln -s /x/safe {parent}",))
+        # round-9 re-check 3 (HIGH, regression against main), unlocked: an assignment before a `)` that bash keeps
+        # inside a word must still be substituted
+        self.blocked(f"(d=.aiops e={e}; rm -rf $d)" for e in ("${x/)/}", "${x:-)}", "`)`"))
+        self.blocked(("(d=.aiops/config/protected-paths e=${x/)/}; echo hi > $d)",))
         # security review round 9 (HIGH, regression against main): `(…)#` comments holding `(`/`)` fake a subshell
         self.blocked(("(true)# (\ncd .aiops\n(true)# )\nrm -rf config/protected-paths",
                       "(true)# (\ncd .aiops\n(true)# )\necho x > config/allowed-commands"))

@@ -31,13 +31,12 @@ Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 
 - **The shell parser reads commands as bash does.** It is shared by the guards and the always-on secret scan.
   Comments and heredoc bodies are dropped exactly; a heredoc delimiter is a bash word (`<<E-O`, `<<'E'OF`), and a
   missing delimiter line hides nothing. Backslash-newline continuations are joined and `$'…'` is decoded.
-  `)>file`, `!`/`{` after keywords, `time -p`, `function f {` and `\\;` split commands correctly, while `find`'s `\;` stays a word. A subshell's
-  `cd` stays inside it, and a `case` pattern's `)` isn't a subshell end. When a comment is dropped, the line is also
-  judged with every `#` kept as a word (as before), so a separator that a misread comment hid still splits. Only the
-  unquoted, unescaped `case`/`in`/`esac` keywords, not after a redirection, drive case parsing; pattern words are
-  judged too, and a line with a `case` is also judged without case tracking. A line with a subshell is also judged as
-  before, with every `cd` persisting, so scope tracking can only add blocks. The cost: a relative delete after a
-  `case` or a quoted `)` inside a subshell is judged from the outer directory as well.
+  `)>file`, `!`/`{` after keywords, `time -p`, `function f {` and `\\;` split commands correctly, while `find`'s `\;`
+  stays a word. When a comment is dropped, the line is also judged with every `#` kept as a word (as before), so a
+  separator that a misread comment hid still splits. Only the unquoted, unescaped `case`/`in`/`esac` keywords, not
+  after a redirection, drive case parsing; pattern words are judged too, and a line with a `case` is also judged
+  without case tracking. A subshell's `cd` and assignments still persist past its `)`, as before: every attempt to
+  scope them exactly was fooled by a `)` that bash keeps inside a word, so exact scoping moves to intent 0006.
 - Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
   `.aiops/`, and G-ENV-03's list of known dumps.
 

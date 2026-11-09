@@ -343,9 +343,10 @@ def scoped_segments(tokens, cases=True, flat=False):
     pattern, or that pairs with no reported `(`, is no scope event (0005 review round 6). Only the real keywords
     (KEYWORD_MARK) drive the case state, and a `$(…)` in a pattern is segmented like any other (round 7).
 
-    Invariant (rounds 8-9): every refinement over main's reading (case tracking, subshell scopes) is an extra
-    reading after a RESET, never a replacement. Callers judge every reading and block if any blocks, so the union
-    is at least as strict as main's flat, cwd-persisting reading by construction."""
+    Invariant (rounds 8-9): every refinement over main's reading is an extra reading after a RESET, never a
+    replacement, and callers judge every reading. The guard doesn't apply scope events (cd and assignments persist,
+    as on main). For a line with a `)`, a second flat reading drops an assignment-only command ended by `)`, which
+    main's tokenizer did for `d=x);`; the first records it, as main did for `d=x )`."""
     out, words, redirs, i, opened = [], [], [], 0, []   # opened: "(", "case-word", "pat" (in a pattern) or "case"
     saw_case = False
 
@@ -418,9 +419,9 @@ def scoped_segments(tokens, cases=True, flat=False):
         return out
     if saw_case:                        # case tracking reads dequoted words (`'a()' case`), so a line with a case is
         out = out + [(RESET, None)] + scoped_segments(tokens, cases=False)  # also judged with every `)` a scope end
-    if any(r is None and w in ("(", ")") for w, r in out):   # scope tracking can't see a `)` bash reads inside a word
-        out = out + [(RESET, None)] + scoped_segments(tokens, cases=False, flat=True)   # (`)`, ${x/)/}):
-    return out                          # also judged as main read it, every cd persisting (review round 9)
+    if any(r is None and w in ("(", ")") for w, r in out):   # main both recorded (`d=x )`) and dropped (`d=x);`)
+        out = out + [(RESET, None)] + scoped_segments(tokens, cases=False, flat=True)   # an assignment before `)`
+    return out
 
 
 def segments(tokens):
