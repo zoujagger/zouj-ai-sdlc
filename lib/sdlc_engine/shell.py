@@ -330,7 +330,11 @@ def scoped_segments(tokens, cases=True):
     """segments() plus scope events: ("(", None) where a subshell, group or substitution opens, (")", None) where the
     matching `)` closes it, and (RESET, None) where tokenize()'s second reading starts. A `)` that ends a `case`
     pattern, or that pairs with no reported `(`, is no scope event (0005 review round 6). Only the real keywords
-    (KEYWORD_MARK) drive the case state, and a `$(…)` in a pattern is segmented like any other (round 7)."""
+    (KEYWORD_MARK) drive the case state, and a `$(…)` in a pattern is segmented like any other (round 7).
+
+    Invariant (rounds 8-9): every refinement over main's reading (case tracking, subshell scopes) is an extra
+    reading after a RESET, never a replacement. Callers judge every reading and block if any blocks, so the union
+    is at least as strict as main's flat, cwd-persisting reading by construction."""
     out, words, redirs, i, opened = [], [], [], 0, []   # opened: "(", "case-word", "pat" (in a pattern) or "case"
     saw_case = False
 
@@ -395,9 +399,13 @@ def scoped_segments(tokens, cases=True):
             words.append(word(t))
         i += 1
     flush()
-    if cases and saw_case:              # case tracking reads dequoted words (`'a()' case`), so a line with a case is
-        return out + [(RESET, None)] + scoped_segments(tokens, cases=False)  # also judged with every `)` a scope end
-    return out
+    if not cases:
+        return out
+    if saw_case:                        # case tracking reads dequoted words (`'a()' case`), so a line with a case is
+        out = out + [(RESET, None)] + scoped_segments(tokens, cases=False)  # also judged with every `)` a scope end
+    if any(r is None and w in ("(", ")") for w, r in out):   # scope tracking can't see a `)` bash reads inside a word
+        out = out + [(RESET, None)] + [(w, r) for w, r in out if r is not None or w == RESET]   # (`)`, ${x/)/}):
+    return out                          # also judged as main read it, every cd persisting (review round 9)
 
 
 def segments(tokens):

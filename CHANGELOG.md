@@ -35,8 +35,9 @@ Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 
   `cd` stays inside it, and a `case` pattern's `)` isn't a subshell end. When a comment is dropped, the line is also
   judged with every `#` kept as a word (as before), so a separator that a misread comment hid still splits. Only the
   unquoted, unescaped `case`/`in`/`esac` keywords, not after a redirection, drive case parsing; pattern words are
-  judged too, and a line with a `case` is also judged without case tracking. The cost: a relative delete after a
-  `case` inside a subshell is judged from the outer directory as well.
+  judged too, and a line with a `case` is also judged without case tracking. A line with a subshell is also judged as
+  before, with every `cd` persisting, so scope tracking can only add blocks. The cost: a relative delete after a
+  `case` or a quoted `)` inside a subshell is judged from the outer directory as well.
 - Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
   `.aiops/`, and G-ENV-03's list of known dumps.
 

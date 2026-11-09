@@ -1457,6 +1457,20 @@ class ReviewRound6(ProtectedTree):
             r = self.bash(cmd)
             self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
 
+    def test_scope_desync_matrix(self):
+        """Review round 9 (BLOCKER, regression against main): a `)` that bash reads inside a word (backticks, `${…}`)
+        ended the subshell scope early. A line with scopes is also judged as main read it (every cd persists)."""
+        inner = ("echo `)`", "echo `(`", "echo ${x/)/}", "echo ${x:-)}", "echo `case x in x) echo hi;; esac`")
+        self.blocked(f"cd /tmp && (cd {self.root} && {i} && rm -rf .aiops)" for i in inner)
+        self.blocked((f"(cd .github && {i} && rm -rf workflows)" for i in inner), rule="G-FILE-05")
+        self.allowed(("(cd src && ls `pwd`)", "echo ${x:-)}; ls", "(cd /tmp/w && echo hi && rm -rf .aiops)"))
+        # accepted false positive: the scoped reading still ends the scope at the inner `)`, so a delete outside the
+        # repo after one is judged from the outer cwd too (fails safe)
+        self.blocked(("(cd /tmp/w && echo `)` && rm -rf .aiops)",))
+        # security review round 9 (HIGH, regression against main): `(…)#` comments holding `(`/`)` fake a subshell
+        self.blocked(("(true)# (\ncd .aiops\n(true)# )\nrm -rf config/protected-paths",
+                      "(true)# (\ncd .aiops\n(true)# )\necho x > config/allowed-commands"))
+
     def test_heredoc_delimiters_as_bash_words(self):
         self.blocked(("cat <<E-O\nx\nE-O\nrm -rf .aiops", "cat <<'E'OF\nx\nEOF\nrm -rf .aiops",
                       'cat <<EOF"x"\nx\nEOFx\nrm -rf .aiops', "cat <<EOF.x\nx\nEOF.x\nrm -rf .aiops",
@@ -1473,10 +1487,11 @@ class CommentsWhenLocked(RepoCase):
                     "make check  # install deps first if this fails"):
             r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
             self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
-        r = self.hook("pre-bash", self.hook_input("Bash", command="ls # x\ntouch src/app.py"),
-                      env={"CLAUDE_PROJECT_DIR": str(self.root)})
-        self.assertEqual(r.returncode, 2, r.stderr)                    # the lock itself still holds
-        self.assertIn("[G-LOCK-02]", r.stderr)
+        for cmd in ("ls # x\ntouch src/app.py", f"cd /tmp && (cd {self.root} && echo `)` && touch src/app.py)",
+                    f"cd /tmp && (cd {self.root} && echo ${{x/)/}} > src/app.py)"):   # round 9: scope desync
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")    # the lock itself still holds
+            self.assertIn("[G-LOCK-02]", r.stderr, cmd)
 
 class IncomingRound6(Incoming):
     """0005 review round 6 (MINOR): a commit already on main is trusted like main itself, so `git cherry-pick main~1`
