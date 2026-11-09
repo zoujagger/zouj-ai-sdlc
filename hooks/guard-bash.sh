@@ -43,7 +43,6 @@ re_cred_print="(gh auth token|gh auth status[^;&|]*(-t|--show-token)|git( -[cC] 
 re_dump_env="(${S}printenv|${S}env${E})"                         # as a word, quotes kept: `grep "env" f` isn't one
 re_dump_env_cmd="(^|[;&|(\`]) ?([^ ;&|]*/)?(printenv|env)${E}"   # in command position, quotes stripped: e''nv, ./env
 re_environ="/proc/[^ ;&|]*/(env|e[^ ;&|/]*[*?[]|[*?[])"           # /proc/<pid>/environ, also as a glob
-re_proc_cd="(^|[;&|(]) ?(cd|pushd) +/proc"
 re_environ_word="(^|[ /])environ${E}"
 re_environ_path="/environ${E}"                                     # any path ending in /environ: /dev/fd/../environ
 re_proc_ctx="(/proc(/|$|[ ;&|])|(^|[ ])proc/|/p[^ /]*[*?[{][^ /]*/|/dev/fd(/|$|[ ;&|]))"   # a /proc or /dev/fd path
