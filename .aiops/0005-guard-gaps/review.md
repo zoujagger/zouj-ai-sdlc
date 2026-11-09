@@ -1,8 +1,8 @@
 ---
 id: 0005
-verdict: CHANGES_REQUESTED
-commit: 6ecc5e7bff47fa6c6b4b163f11e4023c12155821
-score: 70/100
+verdict: PASS
+commit: eea62688b7b12d7061b159fb8821a0f7b5063522
+score: 82/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-06
 ---
@@ -17,60 +17,66 @@ created: 2026-11-06
      (1 CRITICAL, 2 HIGH). Round 7 at 24c3ca8: verifier VERIFIED; code CHANGES_REQUESTED (BLOCKER: quoted `case`);
      security FAIL 12/25 (CRITICAL, the same). Round 8 at 6ecc5e7 (this file): verifier VERIFIED; code
      CHANGES_REQUESTED (2 BLOCKERs: quoted `';;'`, `>&2 case`); security FAIL 12/25 (CRITICAL: quoted `'a()'`/`'if'`
-     before `case`). All three rounds: regressions against main from the round-6/7 case tracking. Written from the
+     before `case`). Round 9 at 8eaebc7 under zoujagger's stop rule (only a regression against main or a CRITICAL
+     blocks; other holes go to intent 0006), then three targeted security re-checks (9af94b2, 46f42fd, 7ae94cd), each
+     finding one regression from subshell scoping; zoujagger chose to revert the scoping (eea6268). Written from the
      reports. -->
 
 ## Summary
-Round 8 checks 6ecc5e7 (the round-6 fixes d0984a7 and the round-7 fixes ed828de). `make check` (338 tests) and
-`make build` pass, `sdlc validate 0005` is clean, and the verifier proved every AC (VERIFIED in rounds 7 and 8).
-Every round-6 finding is fixed and confirmed by both reviewers. But the `case` tracking added in round 6 to scope a
-subshell's `cd` exactly reads dequoted words, and each round found a new spelling that desyncs it and drops the
-subshell that follows from every check, the always-on secret scan included (regressions against main):
-- round 7: a quoted or escaped `case` (`\case x in ; ( cat ~/.aws/credentials )`)
-- round 8: a quoted `'a()'`, `'if'` or `"time"` before `case`; `>&2 case … >&2 esac`; a quoted `';;'` inside a real
-  case body
+Round 9 under zoujagger's stop rule: only a regression against main or a CRITICAL finding blocks the PR; every other
+new hole goes to intent 0006 and is listed in docs/architecture.md.
 
-Round 7 also found new false positives (comment text read as a command in the locked states) and missed case
-forms (newline before `in`, substitution case words). Verdict: **CHANGES_REQUESTED**.
+- **Verifier:** VERIFIED at 8eaebc7. Every AC is proved by a passing test; `make check`, `make build` and
+  `sdlc validate 0005` pass.
+- **Code review:** one regression against main (a `)` inside backticks or `${…}` closed the subshell scope early).
+- **Security:** one regression against main (a `(…)#` comment faked a subshell); two HIGH holes that main shares.
+- **Three targeted re-checks** of the fixes each found one more regression from the same root, exact subshell
+  scoping: symlinks carried across readings (fixed, 46f42fd), assignments leaking out of a subshell (fixed,
+  7ae94cd), and an assignment lost at a `)` that bash keeps inside a word (the fourth).
+- **Decision (zoujagger): revert the scoping.** Since eea6268 the guard reads subshells exactly as main did: `cd`,
+  `pushd` and assignments persist past `)`. An assignment right before `)` is judged both recorded and dropped,
+  because main did both. HEAD can't be weaker than main there by construction.
 
-## Required fixes (round 8)
-1. Close the class, not the spellings: never drop pattern words, and judge every line with a `case` again with case
-   tracking off; treat any redirection before `case`/`esac` as making them commands. Test by a generated matrix.
-2. Write rounds 7 and 8 into review.md (done here).
+No known regression against main remains. The comment, case and keyword fixes from rounds 6-8 stay, each built as
+an extra reading that only adds blocks. The scoping revert itself wasn't independently re-reviewed: it removes code,
+so the guard matches main's reading, and `make check` (342 tests) is green.
 
-## Required fixes (round 6)
-1. `shell.py:117`: drop `)` from the comment-start set (or count `)#` only after a plain `(…)` group); track
-   `$(`/`${`/backtick nesting inside `"…"`; defence in depth: when a comment was dropped, also judge the line with
-   it kept and block if either blocks. Tests for `$(…)#`, `$((…))#`, `<(…)#`, `` `…#` ``, `"$(echo " #")"`, through
-   both the gate guard and `secret_scan`.
-2. `shell.py:8,254,282`: keep command position after `time` and `-p`/`--`; add `!` and `{` to `guards.PREFIXES`.
-3. `guards.py:1356-1362`, `shell.scoped_segments`: pop a scope only for a `)` paired with a reported `(`; ignore
-   `case` pattern `)`; fall back conservatively if unbalanced.
-4. `shell.py:6`: parse the heredoc delimiter as a bash word with quote removal, add `$[` as arithmetic, and fail
-   closed when the delimiter line is never found (or log as a residual for 0006).
-5. MINOR: have `segments()` call `scoped_segments()`; fill the Deviation log's placeholder commit references
-   (d696220, 123c2d1, f33c90f, b698d39, 4e18711); fix the CHANGELOG `[Unreleased]` Security bullet that still lists
-   `source env/bin/activate` as safe, and add entries for the r5/re-check tokenizer changes; add `rm -rf docs` to the
-   AC-12 playbook walk; decide on `git cherry-pick main~1` (G-FILE-06 false positive for a main ancestor).
+Verdict: **PASS** under the stop rule.
+
+## Deferred to intent 0006 (not regressions; documented in docs/architecture.md)
+- Exact subshell scoping: `(cd src); rm -rf .aiops` is judged in `src`, as on main.
+- `)#<<EOF` skips the following lines; `true&&>/dev/null cmd` merges `cmd` into the previous command; `$'…'` in a
+  heredoc delimiter.
+- Assignments in pipeline members, `&` jobs and conditional branches.
+- A `#` and a quote both nested inside `"$(…)"`.
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
 |---|---|---|
-| AC-1 | ⚠️ partial | `tests/test_guards.py:710` `ProtectedTree::test_blocks_in_unlocked_state` (exact id and `Procedure:`). Bypassed by the round-8 `';;'` and `>&2 case` forms wrapping `( rm -rf .github )` |
+| AC-1 | ✅ met | `tests/test_guards.py:710` `ProtectedTree::test_blocks_in_unlocked_state` (exact id and `Procedure:`); `ReviewRound6` matrices. A `cd` inside a subshell persisting past `)` is main's reading, deferred to 0006 |
 | AC-2 | ✅ met | `tests/test_guards.py:720` (in-process check under 0.2 s; whole hook under 2 s, logged) |
-| AC-3 | ⚠️ partial | `tests/test_guards.py:677`, `:689`, `:1090`. `>&2 case … ( git config --global gpg.ssh.program … ) … >&2 esac` passes in a repo without `.aiops/` |
-| AC-4 | ✅ met | `tests/test_shell_hooks.py:643` `EnvSpellings::test_spellings_are_dumps` |
-| AC-5 | ✅ met | `tests/test_guards.py:782` `Incoming::test_archives` |
-| AC-6 | ✅ met | `tests/test_guards.py:806`, `:1067` |
+| AC-3 | ✅ met | `tests/test_guards.py:677`, `:689`, `:1090` `SafetyPassFuzz` |
+| AC-4 | ✅ met | `tests/test_shell_hooks.py:647` `EnvSpellings::test_spellings_are_dumps` |
+| AC-5 | ✅ met | `tests/test_guards.py:782` `Incoming::test_archives` (into the repo root, logged) |
+| AC-6 | ✅ met | `tests/test_guards.py:806` |
 | AC-7 | ✅ met | `tests/test_guards.py:819`; cherry-pick of a main commit `IncomingRound6` |
 | AC-8 | ✅ met | `tests/test_guards.py:833`, `:1034` |
 | AC-9 | ✅ met | `tests/test_cli.py:141` `Init::test_agent_force_ignores_lock_env` |
-| AC-10 | ✅ met | `tests/test_rules.py:190`, `tests/test_shell_hooks.py:611` (`source` refused, logged deviation) |
-| AC-11 | ✅ met | `tests/test_rules.py:301` `Stages0005`, `:106` `Coverage` |
-| AC-12 | ✅ met | `tests/test_playbook.py:161` walk in states 1, 4, 5 for solo/team/strict, `rm -rf docs` included |
-| AC-13 | ❌ not met | suite green, but the case tracking hides commands from the gate guard and the always-on G-SEC-03 secret scan (regressions against main) |
+| AC-10 | ✅ met | `tests/test_rules.py:190`, `tests/test_shell_hooks.py:615` (`source` refused, logged deviation) |
+| AC-11 | ✅ met | `tests/test_rules.py:302` `Stages0005`, `:106` `Coverage` |
+| AC-12 | ✅ met | `tests/test_playbook.py:162` walk in states 1, 4, 5 for solo/team/strict, `rm -rf docs` included |
+| AC-13 | ✅ met | full suite green (342); no known regression against main after eea6268; new blocks on everyday commands checked against main in rounds 7-9 (none found after the round-7 comment fix) |
 
 ## Security
+Round 9 (at 8eaebc7) and its re-checks, all resolved or deferred:
+- [HIGH, regression] `(…)#` comments faked a subshell; [BLOCKER, regression] a `)` inside backticks or `${…}`
+  closed a scope early; [HIGH, regression] links carried across readings; [HIGH, regression] subshell assignments
+  leaked out; [HIGH, regression] an assignment was lost at a `)` kept inside a word. The first four were fixed, and
+  the fifth is resolved by reverting subshell scoping to main's reading (eea6268).
+- [LOW, regression] `$'\UFFFFFFFF'` crashed the tokenizer and the secret scan's fallback skipped the line: fixed
+  (7ae94cd).
+- [HIGH, not regressions] `)#<<EOF`, `&&>`: deferred to 0006.
+
 Round 8 (at 6ecc5e7):
 - [CRITICAL] A quoted `'a()'`, `'if'` or `"time"` puts a real `case` in command position; the subshell read as its
   pattern is dropped from every check, the secret scan and the AC-3 safety pass included (regression against main).
@@ -166,20 +172,22 @@ Round 1 (at 7f8f557):
   (misleading message). Git output is split on spaces.
 
 ## Plan conformance
-S1-S9 are implemented, and review rounds 1-7 are logged in the Deviation log with commit SHAs (r6 d0984a7, r7
-ed828de). No unlogged out-of-scope change. Round 7 and 8 findings were missing from review.md until this file.
+S1-S9 are implemented. Every review round and re-check is logged in the Deviation log with commit SHAs, including
+zoujagger's stop rule and the scoping revert. The accepted false positives from rounds 8-9 are gone with the revert.
+No out-of-scope change.
 
 ## Test-first evidence
-Every step and fix commit (`d97b32e` … `ed828de`) carries `Red:`/`Green:` lines (05f0a2c, 32fc402 and 50e79c9 are
-hook/tests/docs-only). S8's red evidence is the planted break, as the plan decided. Weakness found twice in a row:
-each round's tests enumerated the reported spellings instead of the class.
+Every step and fix commit (`d97b32e` … `eea6268`) carries `Red:`/`Green:` lines (05f0a2c, 32fc402 and 50e79c9 are
+hook/tests/docs-only). S8's red evidence is the planted break, as the plan decided. From round 8 on, the tests cover
+the class with generated matrices (`test_case_desync_matrix`, `test_scope_desync_matrix`), and the re-check-3 forms
+are tested with the repo unlocked.
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 30 | AC-13 not met; AC-1 and AC-3 partial |
-| Security | 25 | 12 | one CRITICAL regression class (case tracking) in rounds 7 and 8 |
-| Test quality & test-first | 20 | 16 | Red/Green throughout; tests per spelling missed the class |
-| Plan conformance | 10 | 9 | thorough Deviation log; review.md lagged two rounds |
-| Maintainability | 5 | 3 | `scoped_segments` juggles case states, keyword marks, RESET readings and a fallback |
-| **Total** | 100 | **70 (round 8)** | round 1: 62; 2: 74; 4: 72; 6: 71; 8: 70. CHANGES_REQUESTED |
+| Spec conformance | 40 | 37 | every AC met; subshell scoping deferred to 0006 |
+| Security | 25 | 18 | no known regression against main; two HIGH holes main shares deferred |
+| Test quality & test-first | 20 | 16 | Red/Green throughout; class matrices only from round 8 |
+| Plan conformance | 10 | 9 | thorough Deviation log; review.md lagged in rounds 7-8 |
+| Maintainability | 5 | 2 | `shell.py` has several overlapping quote scanners and stacked readings |
+| **Total** | 100 | **82 (round 9)** | round 1: 62; 2: 74; 4: 72; 6: 71; 8: 70. PASS under the stop rule |
