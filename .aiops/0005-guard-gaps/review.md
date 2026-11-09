@@ -1,54 +1,83 @@
 ---
 id: 0005
 verdict: CHANGES_REQUESTED
-commit: 32fc40256d7d9b3e8ae4efdecb6957c910b5d620
-score: 72/100
+commit: 4e18711a165a211a46f8ab0b7f89a2dfa2385ec9
+score: 71/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-06
 ---
 
 # Review: Close the shell-write guard gaps found in the 0004 reviews
 
-<!-- State 5 PRE-REVIEW. Round 1 at 7f8f557: CHANGES_REQUESTED 62/100. Round 2 at 50e79c9 (this file): verifier
-     VERIFIED; code review 84/100 CHANGES_REQUESTED (3 new false positives); security FAIL 17/25 (4 HIGH classes).
-     Round 3 at d696220: verifier NOT VERIFIED (the G-ENV-05 hook change wasn't committed); code review 76/100
-     CHANGES_REQUESTED (BLOCKER: tokenizer keyword positions, a regression against main); security FAIL 14/25
-     (CRITICAL: `ln -s` destinations unchecked, a regression against main). Round 4 at 32fc402: verifier VERIFIED (one
-     MEDIUM false positive); code review 80/100 CHANGES_REQUESTED (BLOCKER: `\\;`, a regression against main); security
-     FAIL 15/25 (CRITICAL `\\;`, HIGH `function f {`, both regressions; four HIGH classes). Written from the reports. -->
+<!-- State 5 PRE-REVIEW. Round 1 at 7f8f557: CHANGES_REQUESTED 62/100. Round 2 at 50e79c9: verifier VERIFIED; code
+     review 84/100 CHANGES_REQUESTED; security FAIL 17/25. Round 3 at d696220: code review 76/100 (BLOCKER, regression);
+     security FAIL 14/25 (CRITICAL `ln -s`, regression). Round 4 at 32fc402: code review 80/100 (BLOCKER `\\;`);
+     security FAIL 15/25. Round 6 at 4e18711 (this file; rounds 5 and the re-check were fixed without a review.md):
+     verifier VERIFIED; code review CHANGES_REQUESTED (2 BLOCKERs, both regressions against main); security FAIL 11/25
+     (1 CRITICAL, 2 HIGH). Written from the reports. -->
 
 ## Summary
-Round 2 checks the round-1 fixes (3e31fff, a252209, 50e79c9). Every round-1 form is fixed and tested, and nothing is
-weaker than main: the security reviewer compared about 140 probes across main, round 1 and HEAD. But the fixes
-closed the reported forms, not their classes. Four HIGH classes still have simple bypasses:
-- **wrapper and nested forms:** `trap`, `coproc`, `watch`, `parallel`, `flock -c`, `find -exec sh -c`, rebase
-  `--exec`, git aliases
-- **negated `find` tests**
-- **symlinks made in the same command:** any path under the link
-- **`git config --fil` / `-f<path>`, and `/proc` spellings** (`/dev/fd/../environ`, `/p*`, `cd /proc && cat env*`)
+Round 6 checks 4e18711 (the comment- and heredoc-aware pre-pass, the `)>` split and the scoped subshell `cd`).
+`make check` (330 tests) and `make build` pass, `sdlc validate 0005` is clean, and the verifier found every AC
+proved by a test. But both other reviewers, comparing HEAD against main through the real hooks, found that the
+newest tokenizer code reopens regressions against main:
+- **`shell._prescan` reads `#` after `)` as a comment.** In bash, `#` after `$(…)`, `$((…))`, `<(…)` or `a=(…)` is
+  literal, and inside backticks or quotes nested in `"$(…)"` it is quoted. The rest of the line is dropped from every
+  tokenizer consumer, including the always-on secret scan: `echo $(true)#; cat ~/.aws/credentials` is allowed in
+  every repo (main: G-SEC-03). Gate, lock and toolchain checks are hidden the same way. Confirmed independently.
+- **`time -p` loses command position**, so `time -p { rm -rf .aiops; }` and `time -p ! git config --global
+  gpg.ssh.program …` are allowed (main blocks them).
+- **A `case` pattern's `)` pops the subshell scope**, so a `cd` inside the subshell leaks or is lost:
+  `( cd .github && case a in a) true;; esac && rm -rf workflows )` bypasses G-FILE-05 (AC-1).
+- An undocumented hole already on main: heredoc delimiters other than `\w+` (`<<E-O`, `<<'E'OF`, `<<EOF"x"`) or a
+  `<<` inside `$[…]` / nested quotes hide every following line.
 
-The round-1 fixes also introduced three false positives on everyday commands: `find . -type d -empty -delete`, copies
-into the repo root while a venv is on PATH, and archives with symlink members extracted into subdirectories.
 Verdict: **CHANGES_REQUESTED**.
+
+## Required fixes (round 6)
+1. `shell.py:117`: drop `)` from the comment-start set (or count `)#` only after a plain `(…)` group); track
+   `$(`/`${`/backtick nesting inside `"…"`; defence in depth: when a comment was dropped, also judge the line with
+   it kept and block if either blocks. Tests for `$(…)#`, `$((…))#`, `<(…)#`, `` `…#` ``, `"$(echo " #")"`, through
+   both the gate guard and `secret_scan`.
+2. `shell.py:8,254,282`: keep command position after `time` and `-p`/`--`; add `!` and `{` to `guards.PREFIXES`.
+3. `guards.py:1356-1362`, `shell.scoped_segments`: pop a scope only for a `)` paired with a reported `(`; ignore
+   `case` pattern `)`; fall back conservatively if unbalanced.
+4. `shell.py:6`: parse the heredoc delimiter as a bash word with quote removal, add `$[` as arithmetic, and fail
+   closed when the delimiter line is never found (or log as a residual for 0006).
+5. MINOR: have `segments()` call `scoped_segments()`; fill the Deviation log's placeholder commit references
+   (d696220, 123c2d1, f33c90f, b698d39, 4e18711); fix the CHANGELOG `[Unreleased]` Security bullet that still lists
+   `source env/bin/activate` as safe, and add entries for the r5/re-check tokenizer changes; add `rm -rf docs` to the
+   AC-12 playbook walk; decide on `git cherry-pick main~1` (G-FILE-06 false positive for a main ancestor).
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
 |---|---|---|
-| AC-1 | ⚠️ partial | `tests/test_guards.py::ProtectedTree::test_blocks_in_unlocked_state` (the id isn't asserted). Bypasses: a filtered `find .github -type f -delete`, `ln -s .github q && rm -rf q/`, `pushd .github && rm -rf workflows`, `rsync --delete`, wrapper prefixes (`nice rm -rf .github`) |
-| AC-2 | ✅ met | `::test_allows_ordinary_deletes` (the check is timed under 0.2 s; the whole hook call under 2 s) |
-| AC-3 | ❌ not met | `tests/test_guards.py::Uninitialized::*` pass. But with the session at `$HOME`, `~/.bashrc` counts as inside the repo and is allowed. `git config -f ~/.gitconfig …`, `--glob` and `GIT_CONFIG=` are allowed. So are `cp -r x/. ~/` and `tar -C ~` |
-| AC-4 | ❌ not met | `tests/test_shell_hooks.py::EnvSpellings`. False positives on quoted `env` (`grep "env" f`). Bypasses: `/proc/self/env*`, `cd /proc/self && cat environ`, `/opt/homebrew/bin/env`, `` `which printenv` `` |
-| AC-5 | ⚠️ partial | `::Incoming::test_archives`. Bypasses: `--strip-components`, `--transform`, symlink members, an existing in-repo symlink, `busybox tar` |
-| AC-6 | ✅ met | `::Incoming::test_stash` (`git stash branch` not inspected) |
-| AC-7 | ❌ not met | `::Incoming::test_merge_rebase_cherry_pick`. Bypasses: octopus `git merge main x`, `git rebase main x`, `git rebase --onto main x`, `git cherry-pick ^HEAD x`. False positives: `git merge -m msg x`, `-X`, `-s`, `cherry-pick -m 1` |
-| AC-8 | ⚠️ partial | `::Incoming::test_pull`. On main, any `git pull <remote> <ref>` is exempt (the spec exempts only a pull of main) |
-| AC-9 | ✅ met | `tests/test_cli.py::Init::test_agent_force_ignores_lock_env` |
-| AC-10 | ⚠️ partial | `tests/test_rules.py::Allowance::test_only_safe_env_forms`. `source env` runs its argument; `ls env; export -p` and `printenv GITHUB_TOKEN` are accepted |
-| AC-11 | ✅ met | `tests/test_rules.py::Stages0005`, `::Coverage` |
-| AC-12 | ⚠️ partial | `tests/test_playbook.py` walks 8 of the 12 AC-1 commands |
-| AC-13 | ❌ not met | the suite is green, but there are new blocks on everyday commands (quoted `env`, `git merge -m`, `tar xfz`, `rm <symlink-to-dir>`) |
+| AC-1 | ⚠️ partial | `tests/test_guards.py:710` `ProtectedTree::test_blocks_in_unlocked_state` (asserts id and `Procedure:`). Bypassed by the `case`-in-subshell and `$(…)#` forms |
+| AC-2 | ✅ met | `tests/test_guards.py:720` (in-process check under 0.2 s; whole hook under 2 s, logged) |
+| AC-3 | ✅ met | `tests/test_guards.py:677` `Uninitialized::test_safety_pass_blocks`, `:689`, `:1090` `SafetyPassFuzz` |
+| AC-4 | ✅ met | `tests/test_shell_hooks.py:624` `EnvSpellings::test_spellings_are_dumps` |
+| AC-5 | ✅ met | `tests/test_guards.py:782` `Incoming::test_archives` |
+| AC-6 | ✅ met | `tests/test_guards.py:806`, `:1067` |
+| AC-7 | ✅ met | `tests/test_guards.py:819` `Incoming::test_merge_rebase_cherry_pick` |
+| AC-8 | ✅ met | `tests/test_guards.py:833`, `:1034` |
+| AC-9 | ✅ met | `tests/test_cli.py:141` `Init::test_agent_force_ignores_lock_env` |
+| AC-10 | ✅ met | `tests/test_rules.py:190`, `tests/test_shell_hooks.py:592` (`source` refused, logged deviation) |
+| AC-11 | ✅ met | `tests/test_rules.py:301` `Stages0005`, `:106` `Coverage` |
+| AC-12 | ⚠️ partial | `tests/test_playbook.py:161` walk in states 1, 4, 5 for solo/team/strict; omits `rm -rf docs` |
+| AC-13 | ❌ not met | suite green, but regressions against main: `$(…)#`/backtick `#` hide the gate checks and the always-on G-SEC-03 secret scan; `time -p {`/`!`; `case` `)` pops the subshell scope |
 
 ## Security
+Round 6 (at 4e18711):
+- [CRITICAL] `shell._prescan` comment handling hides the rest of the line, secret reads included, in every repo
+  (regression against main). `echo $(true)#; cat ~/.aws/credentials`, `echo $((1))#; sed -i … src/app.py`,
+  `echo "$(echo " #")"; rm -rf .aiops`, `cat <(true)#; …`, `x=(a)#; …`.
+- [HIGH] `time -p` drops command position for `!`/`{` (regression against main).
+- [HIGH] Heredoc delimiter regex `\w+` and `$[…]` arithmetic hide every following line (already on main,
+  undocumented).
+- [MEDIUM] `case` pattern `)` closes the subshell scope early (the new scoping is incomplete; code review rates the
+  AC-1 bypass a BLOCKER).
+- Spec flag "static parsing stays incomplete": **not mitigated** — HEAD opens parse holes main doesn't have.
+
 Round 4 (at 32fc402), still open:
 - [CRITICAL] `\\;` (an escaped backslash, then `;`) hid the rest of the line (a regression against main).
 - [HIGH] `function f { … }` bodies were hidden (a regression against main).
@@ -120,24 +149,24 @@ Round 1 (at 7f8f557):
   (misleading message). Git output is split on spaces.
 
 ## Plan conformance
-S1-S9 match the plan. Logged deviations: S5 (home, unfiltered find) and S6 (unreadable archive). Not logged:
-- the `-f <outside>` part of S4
-- `.aiops/install-state.json` in the incoming guard
-- the test renamed to `Stages0005`
-- the changed `env FOO=1 make` expectation
-- R-3's prefix narrowed to bin directories
-- the 0.2.0-alpha.3 known issues not marked fixed in the CHANGELOG
+Round 6: S1-S9 are implemented, and review rounds 1-5 and the re-check are logged in the Deviation log with their
+reasons (scope widened by the human's decision). No unlogged out-of-scope change. Gap: the r2-r5 and re-check rows
+name their commits by description ("tokenizer commit") instead of SHA.
+
+Round 1 (historical): S5 and S6 deviations were logged; six other changes were not (all logged since).
 
 ## Test-first evidence
-Every step commit (`d97b32e` … `7f8f557`) carries a `Red:` line naming the failing test and a `Green:` line. S8's red
-evidence is the planted `_contains_protected → None` run, as the plan decided.
+Every step and fix commit (`d97b32e` … `4e18711`) carries a `Red:` line naming the failing test and a `Green:` line.
+S8's red evidence is the planted `_contains_protected → None` run, as the plan decided. The round-6 tests
+(`TokenizerRecheck`) don't cover `#` after a substitution, backticks, `time -p`, or `case` inside a subshell, which is
+how the regressions passed green.
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 26 | AC-3, AC-4, AC-7, AC-13 not met; AC-1, AC-5, AC-8, AC-10, AC-12 partial |
-| Security | 25 | 13 | six HIGH bypasses (one already on main) |
-| Test quality & test-first | 20 | 14 | Red/Green present; tests cover only the simplest forms |
-| Plan conformance | 10 | 6 | six changes not logged |
-| Maintainability | 5 | 3 | `out.split()`, dead `is_symlink`, garbled docstring |
-| **Total** | 100 | **62 (round 1)** | round 2: 74 (code 84, security 17/25), CHANGES_REQUESTED |
+| Spec conformance | 40 | 32 | AC-13 not met; AC-1 and AC-12 partial |
+| Security | 25 | 11 | 1 CRITICAL and 1 HIGH regression against main; 1 HIGH already on main |
+| Test quality & test-first | 20 | 16 | Red/Green throughout; new prescan/scope tests miss the bash-divergent cases |
+| Plan conformance | 10 | 9 | placeholder commit references in the Deviation log |
+| Maintainability | 5 | 3 | `scoped_segments` duplicates `segments`; `guards.py` is 1644 lines |
+| **Total** | 100 | **71 (round 6)** | round 1: 62; round 2: 74; round 3: 76 code / 14 sec; round 4: 72. CHANGES_REQUESTED |
