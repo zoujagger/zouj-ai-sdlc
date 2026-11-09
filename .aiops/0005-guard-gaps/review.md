@@ -1,7 +1,7 @@
 ---
 id: 0005
 verdict: PASS
-commit: eea62688b7b12d7061b159fb8821a0f7b5063522
+commit: c25e113f94549a744ad0e1712ee9431fcd1ea539
 score: 82/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-06
@@ -42,6 +42,10 @@ an extra reading that only adds blocks. The scoping revert itself wasn't indepen
 so the guard matches main's reading, and `make check` (342 tests) is green.
 
 Verdict: **PASS** under the stop rule.
+
+Re-pinned from eea6268 to c25e113 after the PR's CI lint failed: c25e113 only deletes `re_proc_cd`, an unused
+variable in `hooks/guard-bash.sh` (shellcheck SC2034). The rule doesn't change, `make check` is green, and no
+reviewer re-ran.
 
 ## Deferred to intent 0006 (not regressions; documented in docs/architecture.md)
 - Exact subshell scoping: `(cd src); rm -rf .aiops` is judged in `src`, as on main.
