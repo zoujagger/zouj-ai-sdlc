@@ -18,8 +18,8 @@ plugin's five enforced states plus optional Deploy and Maintain skills that feed
 | 6 Maintain | `/zouj-ai-sdlc:triage`, `:incident`, `:postmortem`, `:retro`, `ops/bands.yaml` | diagnosis → a **new intent.md** | the service owner triages | read-only diagnosis |
 
 ## Principles kept from the playbook
-- Every stage commits an artifact the next stage reads, so git holds the full chain:
-  **intent → spec → plan → diff → tests → review → approval commits → merge**.
+- Every stage commits an artifact the next stage reads, so git holds the full chain
+  ([audit trail](governance.md#audit-trail)).
 - "The agent does everything up to the production gate and nothing past it." Here that gate also covers merging.
 - Skills make violations rare. Hooks make the absolute rules close to impossible.
 - Every production incident becomes a regression eval (`evals/`).

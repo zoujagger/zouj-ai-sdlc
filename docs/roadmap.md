@@ -47,72 +47,18 @@ ceremony comes with it. They never change *whether* a gate exists or *who* decid
 
 ## Roadmap
 
-### Phase 1: 0.2.0-alpha.2, "first approved plan in 10 minutes"
-**Status:** built as intent `.aiops/0003-guided-setup/` (in review); ships as 0.2.0-alpha.2. Not shipped from this
-list: an install-scope choice, and a confirmation inside `init` (setup has it; `init` stays a direct command).
-1. **Guided setup: `sdlc setup`.** Stdlib Python, shipped in the plugin, rerunnable, with `--dry-run` and `--yes`.
-   - **Preflight:** git, make, python ≥ 3.9, `claude` ≥ 2.1, optional `gh` (auth plus `workflow` scope), and a git
-     credential helper.
-   - **Inventory:** is the plugin enabled for this user, or offered by the project? Is the repo initialized?
-   - **Choose:**
-     - a **profile**, which only sets how a human approval is proven. All profiles run the full playbook
-       workflow:
-       - `solo`: the typed phrase plus a single-file approval commit, no signing
-       - `team`: signed approvals with a passphrase key, plus the CI audit
-       - `strict`: an `sk-` key only, plus the CI audit
-   - **Preview, then one confirmation.** After that, run `sdlc init` and the guided signing steps the human must
-     run themselves, then `sdlc doctor`.
-   - Reuse `cmd_init` / `cmd_doctor` (`lib/sdlc_engine/cli.py`) and `approve_command()` / `SIGNING_HELP`
-     (`lib/sdlc_engine/approvals.py`).
-2. **Team auto-install.** `init` writes the declarative snippet into the scaffolded `.claude/settings.json`
-   (`templates/scaffold/.claude/settings.json`): `extraKnownMarketplaces.zouj` (github `zoujagger/zouj-ai-sdlc`) and
-   `enabledPlugins["zouj-ai-sdlc@zouj"]`. Teammates who open the repo are offered the plugin. The README documents
-   it as ECC does.
-3. **Explicit consent, ECC-style, without a gateless mode.**
-   - Before writing anything, `setup` shows what the gates will enforce: the lock in states 1-3, the human
-     approvals, the merge and deploy guards.
-   - It asks once to confirm. There is no "advisory" or "no-hooks" profile, because the hooks *are* the playbook
-     gates.
-   - To try it out, the README shows a throwaway-repo recipe (`git init`, then `sdlc setup --profile solo --yes`).
-     There is no sandbox command: building a repo as the human, next to a same-user agent, proved unsafe in review.
-4. **A task-first README that follows the playbook.** Put a "Start using" table first:
+### Phase 1: 0.2.0-alpha.2, "first approved plan in 10 minutes" (shipped)
+Built as intent `.aiops/0003-guided-setup/`: guided `sdlc setup` with profiles, preview and one confirmation; the
+team auto-install snippet; a task-first README; TROUBLESHOOTING.md, COMMANDS-QUICK-REF.md, issue templates and
+`sdlc feedback`. Not shipped from this phase: an install-scope choice, and a confirmation inside `init` (setup has it;
+`init` stays a direct command). Details: the intent folder and CHANGELOG.md.
 
-   | Task | Route |
-   |---|---|
-   | New feature | `/zouj-ai-sdlc:intent` |
-   | Bug or alert | `/zouj-ai-sdlc:triage` → a **new intent** |
-   | Failing test | `/zouj-ai-sdlc:fix` (test lock) |
-   | Ready for review | `/zouj-ai-sdlc:review` |
-   | Where am I? | `/zouj-ai-sdlc:status` |
-
-   Each row names the playbook stage it belongs to. Install comes next, with **pinned** commands. The state machine
-   and threat model move to docs.
-5. **Support surfaces:**
-   - `TROUBLESHOOTING.md`: approval refused, signing, push scope, false-positive blocks
-   - `COMMANDS-QUICK-REF.md`
-   - `.github/ISSUE_TEMPLATE/install-problem.yml` and `quick-feedback.yml`
-   - `sdlc feedback`, which prints the links and sends nothing
-
-### Phase 2: 0.2.0-alpha.3, a safe lifecycle
-**Status:** built as intent `.aiops/0004-safe-lifecycle/` (PR 1, rule ids, #11; PR 2, the lifecycle, #12); ships as 0.2.0-alpha.3. Changed
-at review: only `G-ENV-03` and `G-BASH-07` are allowable. Not shipped from this list: install-state rows in `doctor`.
-The guard gaps found on the way are closed by intent 0005 (planned as 0.2.0-alpha.4).
-6. **Install state.** `.aiops/install-state.json` records the plugin version, profile, `ZOUJ_SDLC_REF` and a hash of
-   every scaffold file `init` wrote.
-7. **`sdlc list-installed | repair | upgrade | uninstall --dry-run`.**
-   - `upgrade` diffs the scaffold against the new version, bumps `ZOUJ_SDLC_REF` to a full sha, and runs migrations
-     such as `legacy-approvals`.
-   - `uninstall` removes only the files that install-state records, never `.aiops/NNNN-*` artifacts.
-8. **Rule ids, explanations, and false-positive allowances that can't touch a gate.**
-   - Every block message carries an id (`G-ENV-03`), and `sdlc why <id>` explains the reason, the playbook stage it
-     protects, and the safe alternative.
-   - False positives are handled by a human-owned **exact-command allowance**: `.aiops/config/allowed-commands`,
-     under CODEOWNERS. An allowance is refused for any rule that protects a playbook gate: engine calls, approval
-     trailers, artifacts and `.aiops/`, the read-only lock, merge and push-to-main, deploy, the test lock, the Stop
-     hook.
-   - There is no per-rule disable switch.
-9. **`/zouj-ai-sdlc:configure`.** An in-plugin skill that runs `sdlc setup` again to change the profile, scope or
-   key policy.
+### Phase 2: 0.2.0-alpha.3, a safe lifecycle (shipped)
+Built as intent `.aiops/0004-safe-lifecycle/` (#11 rule ids, #12 the lifecycle): install-state;
+`sdlc list-installed | repair | upgrade | uninstall`; rule ids, `sdlc why` and exact-command allowances that can't touch
+a gate (only `G-ENV-03` and `G-BASH-07` are allowable); `/zouj-ai-sdlc:configure`. Not shipped from this phase:
+install-state rows in `doctor`. The guard gaps found on the way were closed by intent `.aiops/0005-guard-gaps/`
+(0.2.0-alpha.4); the rest is intent 0006.
 
 ### Phase 3: beta, reach
 10. **Pinned distribution without npm.**
