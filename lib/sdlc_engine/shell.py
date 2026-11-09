@@ -131,6 +131,11 @@ def strip_heredocs(cmd):
 
 
 ESCAPE_MARK = {"(": "\x01", ")": "\x02", ";": "\x03"}
+# the `case` keywords as bash sees them: unquoted, unescaped, whole words. shlex removes quotes, so `\case` or
+# `"case"` (an ordinary command in bash) must not start a case (0005 review round 7)
+KEYWORD_MARK = {"case": "\x04", "esac": "\x05", "in": "\x06"}
+KEYWORD = {v: k for k, v in KEYWORD_MARK.items()}
+KEYWORD_RE = re.compile(r"(case|esac|in)(?=[\s;&|()]|$)")
 
 
 def _prescan(cmd, comments=True):
@@ -139,8 +144,9 @@ def _prescan(cmd, comments=True):
     unquoted heredoc body a continuation is joined before the delimiter is compared; a quoted one is never joined).
     Quotes ('…', "…", $'…') are tracked across lines, so an apostrophe in a comment or a heredoc body changes
     nothing (0005 review: R1, R2 and the comment-quote residual). `#` right after `)` is no comment: in `$(…)#`,
-    `$((…))#`, `<(…)#` and `a=(…)#` it continues the word (review round 6). comments=False reads a comment's text
-    as a command instead: the second reading tokenize() judges whenever this one dropped a comment."""
+    `$((…))#`, `<(…)#` and `a=(…)#` it continues the word (review round 6). comments=False keeps every `#` as an
+    ordinary word character, as main read it: the second reading tokenize() judges whenever this one dropped a
+    comment, so a real separator that a misread comment hid still splits (review round 7)."""
     lines, out, logical, quote, i = cmd.split("\n"), [], "", None, 0
     while i < len(lines):
         line, buf, j, cont = lines[i], [], 0, False
@@ -174,12 +180,9 @@ def _prescan(cmd, comments=True):
                 j += 1
                 continue
             prev = (logical + "".join(buf))[-1:]
-            if c == "#" and prev in ("", " ", "\t", ";", "&", "|", "(", ")") and (prev != ")" or not comments):
+            if comments and c == "#" and prev in ("", " ", "\t", ";", "&", "|", "("):
                 if comments:
                     break                                  # a comment, to the end of the line
-                buf.append(";")                            # second reading: the comment's text is a command
-                j += 1
-                continue
             if line.startswith("$'", j):
                 quote = "$'"
                 buf.append("$'")
@@ -262,6 +265,10 @@ def _mark_escapes(cmd):
             out.append(shlex.quote(_ansi_c("".join(body))))
             i = j + 1
             continue
+        if quote is None and (i == 0 or cmd[i - 1] in " \t\n;&|()") and (m := KEYWORD_RE.match(cmd, i)):
+            out.append(KEYWORD_MARK[m.group(1)])
+            i = m.end()
+            continue
         if c == "\\" and i + 1 < len(cmd):
             nxt = cmd[i + 1]
             out.append(ESCAPE_MARK[nxt] if quote is None and nxt in ESCAPE_MARK else c + nxt)
@@ -299,7 +306,8 @@ def _split_punct(tok):
 
 def tokenize(cmd):
     """The tokens of cmd as bash reads it. When a comment was dropped, the tokens of a second reading that keeps
-    every `#` follow a RESET token, so a misjudged comment can never hide a command (0005 review round 6)."""
+    every `#` as a word follow a RESET token, so a separator a misjudged comment hid still splits (0005 review
+    rounds 6-7). Quotes nested in "$(…)" aren't followed by the pre-pass: see docs/architecture.md residuals."""
     first, second = _prescan(cmd), _prescan(cmd, comments=False)
     return _tokens(first) + ([RESET] + _tokens(second) if second != first else [])
 
@@ -318,11 +326,13 @@ def _tokens(cmd):
     return [p for t in toks for p in _split_punct(t)]
 
 
-def scoped_segments(tokens):
+def scoped_segments(tokens, cases=True):
     """segments() plus scope events: ("(", None) where a subshell, group or substitution opens, (")", None) where the
     matching `)` closes it, and (RESET, None) where tokenize()'s second reading starts. A `)` that ends a `case`
-    pattern, or that pairs with no reported `(`, is no scope event (0005 review round 6)."""
-    out, words, redirs, i, opened = [], [], [], 0, []   # opened: "(" or "case" (a case waiting for a pattern: "pat")
+    pattern, or that pairs with no reported `(`, is no scope event (0005 review round 6). Only the real keywords
+    (KEYWORD_MARK) drive the case state, and a `$(…)` in a pattern is segmented like any other (round 7)."""
+    out, words, redirs, i, opened = [], [], [], 0, []   # opened: "(", "case-word", "pat" (in a pattern) or "case"
+    unfinished = False
 
     def flush():
         nonlocal words, redirs
@@ -330,33 +340,41 @@ def scoped_segments(tokens):
             out.append((words, redirs))
         words, redirs = [], []
 
+    def word(t):
+        return KEYWORD.get(t, t)
+
     while i < len(tokens):
         t = tokens[i]
         command_position = _command_position(words)
+        top = opened[-1] if opened else None
         if t == RESET:
             flush()
             out.append((RESET, None))
+            unfinished = unfinished or any(o != "(" for o in opened)
             opened = []
-        elif opened and opened[-1] == "pat" and t in ("(", ")"):
-            if t == ")":                                   # the end of a case pattern list
-                opened[-1] = "case"
-                words, redirs = [], []
-        elif t == "case" and not words:
-            words.append(t)
+        elif not cases and t in KEYWORD:
+            words.append(word(t))
+        elif top == "pat" and t == ")":                  # the end of a case pattern list (pattern words aren't run)
+            opened[-1] = "case"
+            words, redirs = [], []
+        elif top == "pat" and t == "(" and not (i and tokens[i - 1].endswith(("$", "<", ">"))):
+            pass                                         # the optional `(` before a pattern
+        elif top == "pat" and t == "|":
+            words, redirs = [], []                       # between alternative patterns
+        elif t == "\x04" and command_position and not redirs:
+            words.append("case")
             opened.append("case-word")
-        elif t == "in" and opened and opened[-1] == "case-word" and len(words) == 2 and words[0] == "case":
+        elif t == "\x06" and top == "case-word":       # the case word may span lines and substitutions
             words, redirs = [], []
             opened[-1] = "pat"
-        elif t == "esac" and command_position and opened and opened[-1] in ("case", "pat"):
+        elif t == "\x05" and command_position and top in ("case", "pat"):
             flush()
             opened.pop()
-        elif t in (";;", ";&", ";;&") and opened and opened[-1] == "case":
+        elif t in (";;", ";&", ";;&") and top == "case":
             flush()
             opened[-1] = "pat"
         elif t in SEPARATORS and (t not in ("!", "{", "}") or command_position):   # `!`/`{`/`}` only in command
             flush()                                                                  # position: `find . ! -name x`
-            if opened and opened[-1] == "case-word":     # `case` that never reached `in`: not a case
-                opened.pop()
             if t == "(":
                 opened.append("(")
                 out.append(("(", None))
@@ -366,14 +384,16 @@ def scoped_segments(tokens):
         elif set(t) <= set("<>&|") and ">" in t:
             if words and words[-1].isdigit():
                 words.pop()            # the "2" in 2>file
-            target = tokens[i + 1] if i + 1 < len(tokens) else ""
+            target = word(tokens[i + 1]) if i + 1 < len(tokens) else ""
             i += 1
             if not (t.endswith("&") and target.lstrip("-").isdigit()) and target not in SEPARATORS:
                 redirs.append(target)
         elif not (set(t) <= set("<")):
-            words.append(t)
+            words.append(word(t))
         i += 1
     flush()
+    if cases and (unfinished or any(o != "(" for o in opened)):   # an unfinished case: fail closed, judging
+        return out + [(RESET, None)] + scoped_segments(tokens, cases=False)  # every `)` as a scope end too
     return out
 
 

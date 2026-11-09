@@ -33,8 +33,8 @@ Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 
   missing delimiter line hides nothing. Backslash-newline continuations are joined and `$'…'` is decoded.
   `)>file`, `!`/`{` after keywords, `time -p`, `function f {` and `\\;` split commands correctly, while `find`'s `\;` stays a word. A subshell's
   `cd` stays inside it, and a `case` pattern's `)` isn't a subshell end. When a comment is dropped, the line is also
-  judged with the comment's text read as a command, so a misread comment can't hide one. The cost: a comment that
-  names a blocked command is blocked too.
+  judged with every `#` kept as a word (as before), so a separator that a misread comment hid still splits. Only the
+  unquoted, unescaped `case`/`in`/`esac` keywords drive case parsing; an unfinished `case` is judged both ways.
 - Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
   `.aiops/`, and G-ENV-03's list of known dumps.
 

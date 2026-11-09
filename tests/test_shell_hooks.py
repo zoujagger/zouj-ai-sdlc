@@ -95,6 +95,9 @@ class ShellHooks(RepoCase):
             cmd = f"{pre}; cat ~/.aws/credentials"
             self.assertEqual(self.bash(cmd), 2, cmd)
         self.assertEqual(self.bash("cd sub; echo `true #`; cat ../.env"), 2)    # a reading starts from the session cwd
+        for cmd in ("\\case x in ; ( cat ~/.aws/credentials )", "\\case x in\n( cat ~/.aws/credentials )",
+                    '"case" x in ; ( cat ~/.aws/credentials )'):       # round 7: a non-keyword `case` hides nothing
+            self.assertEqual(self.bash(cmd), 2, cmd)
         for cmd in ("make check  # run the tests", "echo hi # it's\nls"):
             self.assertEqual(self.bash(cmd), 0, cmd)
 

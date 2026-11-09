@@ -1398,9 +1398,9 @@ class ReviewRound6(ProtectedTree):
             "echo $(true)#", "echo $((1))#", "cat <(true)#", "x=(a)#", "echo `true #`", 'echo "$(echo " #")"',
             'echo "${x:-" #"}"', "echo $(true)\\\n#"))
         self.allowed(("make check  # run the tests", "echo hi # it's\nls", "(true)# a plain subshell"))
-        # defence in depth: once a comment is dropped, the line is also judged with it kept (a false positive on a
-        # comment that names a dangerous command is the accepted price)
-        self.blocked(("(true)# rm -rf .aiops",))
+        # defence in depth: once a comment is dropped, the line is also judged with every `#` kept as a word, as main
+        # read it: a real separator a misread comment hid shows, and a comment's text stays an argument (round 7)
+        self.allowed(("(true)# rm -rf .aiops", "ls src  # touch nothing yet"))
 
     def test_time_keeps_command_position(self):
         self.blocked(("time -p { rm -rf .aiops; }", "! time -p { rm -rf .aiops; }", "time -- { rm -rf .aiops; }",
@@ -1415,6 +1415,21 @@ class ReviewRound6(ProtectedTree):
                       "cd .github; ( case x in x) ;; esac; cd /tmp ); rm -rf workflows"), rule="G-FILE-05")
         self.allowed(("(cd build && case a in a) true;; esac && rm -rf *)", "(cd /tmp/w); case a in a) ;; esac; ls"))
 
+    def test_only_the_case_keyword_starts_a_case(self):
+        """Review round 7 (CRITICAL, regression against main): a quoted, escaped or redirected `case` is an ordinary
+        command in bash, and words are never dropped: a `$(…)` in a case pattern runs."""
+        self.blocked(("\\case x in ; ( rm -rf .aiops )", '"case" x in ; ( rm -rf .aiops )',
+                      "'case' x in\n( rm -rf .aiops )", ">/dev/null case x in ; ( rm -rf .aiops )",
+                      "\\case x in ; (cd /tmp); rm -rf .aiops", "case x in $(rm -rf .aiops)) true;; esac",
+                      "case x in x) true;; $(rm -rf .aiops)) true;; esac", "case x in (y|$(rm -rf .aiops)) ;; esac"))
+        self.blocked(("\\case x in ; ( rm -rf .github )", "ca''se x in ; ( rm -rf .github )",
+                      "( cd .github && case a\nin a) true;; esac && rm -rf workflows )",
+                      "( cd .github && case $(echo a) in a) true;; esac && rm -rf workflows )",
+                      "( cd .github && case `echo a` in a) true;; esac && rm -rf workflows )",
+                      "( cd .github && if :; then case a in a) :;; esac; fi && rm -rf workflows )"), rule="G-FILE-05")
+        self.allowed(("case $1 in -h|--help) echo usage;; *) make check;; esac", "echo case in point",
+                      "case x in (a) ls;; esac"))
+
     def test_heredoc_delimiters_as_bash_words(self):
         self.blocked(("cat <<E-O\nx\nE-O\nrm -rf .aiops", "cat <<'E'OF\nx\nEOF\nrm -rf .aiops",
                       'cat <<EOF"x"\nx\nEOFx\nrm -rf .aiops', "cat <<EOF.x\nx\nEOF.x\nrm -rf .aiops",
@@ -1422,6 +1437,19 @@ class ReviewRound6(ProtectedTree):
                       "cat <<NEVER\nx\nrm -rf .aiops"))                 # no delimiter line: the rest is still read
         self.allowed(("cat <<'EOF' > notes.md\nrm -rf .aiops\nEOF", "cat <<-E-O\n\trm -rf .aiops\n\tE-O"))
 
+
+class CommentsWhenLocked(RepoCase):
+    """Review round 7 (MAJOR): in the locked states main allows a comment that names a write; the second reading
+    (comments kept) must not turn the comment's text into a command."""
+    def test_comment_text_is_no_command(self):
+        for cmd in ("ls src  # touch nothing yet", "git log --oneline -5 # mv these into the changelog later",
+                    "make check  # install deps first if this fails"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+        r = self.hook("pre-bash", self.hook_input("Bash", command="ls # x\ntouch src/app.py"),
+                      env={"CLAUDE_PROJECT_DIR": str(self.root)})
+        self.assertEqual(r.returncode, 2, r.stderr)                    # the lock itself still holds
+        self.assertIn("[G-LOCK-02]", r.stderr)
 
 class IncomingRound6(Incoming):
     """0005 review round 6 (MINOR): a commit already on main is trusted like main itself, so `git cherry-pick main~1`
