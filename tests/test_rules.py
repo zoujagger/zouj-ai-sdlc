@@ -178,7 +178,7 @@ class Allowance(unittest.TestCase):
                     "time printenv", "nohup env", "timeout 5 env", "(env)", "{ env; }", "env > /tmp/x",
                     "echo $(env)", "cat <(env)", "echo `printenv`", "printenv -0", "/usr/bin/env", "printenv | cat"):
             self.assertTrue(rules.dumps_environment(cmd), cmd)
-        for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "env FOO=1 make", "python -m venv env"):
+        for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "python -m venv env"):
             self.assertFalse(rules.dumps_environment(cmd), cmd)
         for cmd in ("printenv PATH", "ls env"):
             self.assertTrue(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
@@ -186,6 +186,30 @@ class Allowance(unittest.TestCase):
         self.assertIn("line 1", probs)
         self.assertIn("whole environment", probs)
         self.assertNotIn("line 5", probs)
+
+    def test_only_safe_env_forms(self):
+        """0005 S2 (gap 6): only `printenv NAME…` or commands that never run env/printenv are allowable."""
+        for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "cd env", "python -m venv env",
+                    "python3 -m venv env", "virtualenv env", "cat env/pyvenv.cfg", "ls env && cd env"):
+            self.assertTrue(rules.safe_env_command(cmd), cmd)
+        # review round 1: source runs its argument; every simple command must be safe; no secret-named printenv
+        for cmd in ("source env/bin/activate", ". env/bin/activate", "source env", "cat env | sh",
+                    "ls env && export -p", "ls env; set", "printenv GITHUB_TOKEN", "printenv AWS_SECRET_ACCESS_KEY",
+                    "ls env && make", "printenv DATABASE_URL", "printenv SENTRY_DSN", "LD_PRELOAD=/tmp/x.so ls env",
+                    "BASH_ENV=env cat env", "printenv MYSQL_PWD", "printenv DB_CONN", "printenv HTTPS_PROXY"):
+            self.assertFalse(rules.safe_env_command(cmd), cmd)
+        for cmd in ("env", "printenv", "env FOO=1 make", "bash -c env", "env env", "xargs env",
+                    "if true; then env; fi", "env>/tmp/x", "echo $(printenv)", "nice env", "printenv -0",
+                    "cat <(env)", "watch env", "sh -c printenv", "eval env", "ls env; env", "find . -exec env \\;",
+                    "ls env > /tmp/x", "python -c 'import os; print(os.environ)' env"):
+            self.assertFalse(rules.safe_env_command(cmd), cmd)
+        self.entries("G-ENV-03 ls env\nG-ENV-03 bash -c env\nG-ENV-03 env FOO=1 make\n")
+        self.assertTrue(rules.allowed(self.root, "G-ENV-03", "ls env"))
+        self.assertFalse(rules.allowed(self.root, "G-ENV-03", "bash -c env"))
+        probs = "\n".join(rules.allowance_problems(self.f.read_text()))
+        self.assertIn("line 2", probs)
+        self.assertIn("line 3", probs)
+        self.assertNotIn("line 1", probs)
 
     def test_problems_never_echo_unrecognised_text(self):
         probs = "\n".join(rules.allowance_problems("-----BEGIN OPENSSH PRIVATE KEY-----\n  ssh-ed25519 AAAAsecret x\n"))
@@ -272,6 +296,13 @@ class Skills(unittest.TestCase):
         for cmd in ("sdlc list-installed", "sdlc upgrade"):
             self.assertIn(cmd, setup, cmd)
         self.assertIn("sdlc why", status)
+
+
+class Stages0005(unittest.TestCase):
+    def test_safety_rules_every_repo(self):
+        for rid in ("G-SEC-01", "G-TOOL-02", "G-TOOL-04", "G-TOOL-05", "G-BASH-01", "G-ENV-05"):
+            self.assertIn("in every repo", why(rid).stdout, rid)
+        self.assertIn("class: secret", why("G-ENV-05").stdout)
 
 
 if __name__ == "__main__":

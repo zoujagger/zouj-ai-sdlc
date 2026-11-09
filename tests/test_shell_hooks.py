@@ -82,6 +82,30 @@ class ShellHooks(RepoCase):
                 self.assertEqual(grep(pattern=".", path=path), 2, (repo_state, path))
             self.assertEqual(grep(pattern=".", path="src"), 0)
 
+    def test_secret_reads_after_a_misread_comment(self):
+        """0005 review round 6 (CRITICAL, regression against main): `#` after the `)` of `$(…)`, `$((…))`, `<(…)` or
+        `a=(…)`, or inside backticks or quotes nested in "$(…)", is not a comment in bash. The always-on secret scan
+        must still see the command after it, in every repo."""
+        home = self.root.parent / f"{self.root.name}.home"
+        (home / ".aws").mkdir(parents=True, exist_ok=True)
+        (home / ".aws" / "credentials").write_text("secret\n")
+        self.env["HOME"] = str(home)
+        for pre in ("echo $(true)#", "echo $((1))#", "cat <(true)#", "x=(a)#", "echo `true #`",
+                    'echo "$(echo " #")"', 'echo "${x:-" #"}"'):
+            cmd = f"{pre}; cat ~/.aws/credentials"
+            self.assertEqual(self.bash(cmd), 2, cmd)
+        self.assertEqual(self.bash("cd sub; echo `true #`; cat ../.env"), 2)    # a reading starts from the session cwd
+        for cmd in ("\\case x in ; ( cat ~/.aws/credentials )", "\\case x in\n( cat ~/.aws/credentials )",
+                    '"case" x in ; ( cat ~/.aws/credentials )',        # round 7: a non-keyword `case` hides nothing
+                    "echo 'a()' case x in ; ( cat ~/.aws/credentials ) ; echo 'a()' esac",   # round 8
+                    "'if' case x in ; ( cat ~/.aws/credentials ) ; 'if' esac",
+                    ">&2 case x in ; ( cat ~/.aws/credentials ) ; >&2 esac",
+                    "case x in x) echo ';;' ; ( cat ~/.aws/credentials ) ;; esac",
+                    "echo $'\\UFFFFFFFF'; cat ~/.aws/credentials"):     # round-9 re-check: no tokenizer crash
+            self.assertEqual(self.bash(cmd), 2, cmd)
+        for cmd in ("make check  # run the tests", "echo hi # it's\nls"):
+            self.assertEqual(self.bash(cmd), 0, cmd)
+
     def test_secret_reads_through_globs_and_substitutions(self):
         import time
         home = self.root.parent / f"{self.root.name}.home"
@@ -269,6 +293,14 @@ class ShellHooks(RepoCase):
 
     def test_docs_match_what_shipped(self):
         """Review 0003 round 4: the docs describe the code as it is."""
+        # 0005: the shell-write gaps are closed, so no doc may still describe them as open
+        for rel in ("README.md", "docs/architecture.md"):
+            text = (ROOT / rel).read_text()
+            self.assertNotIn("intent 0005", text, rel)
+            self.assertNotIn("only in initialized repos", text, rel)
+        arch = (ROOT / "docs" / "architecture.md").read_text()
+        for piece in ("G-FILE-05", "G-FILE-06", "git pull"):
+            self.assertIn(piece, arch, piece)
         readme = (ROOT / "README.md").read_text()
         looking = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
         for piece in ("bin/sdlc setup --profile solo --yes", "git add -A", "git commit"):
@@ -577,9 +609,15 @@ class Allowance(RepoCase):
     def test_other_rules_still_run_after_an_allowance(self):
         self.allow("G-ENV-03 printenv PATH; gh pr merge 12", "G-BASH-07 sudo gh pr merge 12",
                    "G-ENV-03 echo $MY_API_KEY; printenv")
-        self.assertBlockedBy("printenv PATH; gh pr merge 12", "G-MERGE-04")
+        self.assertBlockedBy("printenv PATH; gh pr merge 12", "G-ENV-03")   # an unsafe command voids it (round 1)
         self.assertBlockedBy("sudo gh pr merge 12", "G-MERGE-04")
         self.assertBlockedBy("echo $MY_API_KEY; printenv", "G-ENV-04")
+
+    def test_safe_env_forms_through_the_hook(self):
+        self.allow("G-ENV-03 ls env", "G-ENV-03 bash -c env", "G-ENV-03 env env")
+        self.assertEqual(self.bash("ls env").returncode, 0)
+        self.assertBlockedBy("bash -c env", "G-ENV-03")
+        self.assertBlockedBy("env env", "G-ENV-03")
 
     def test_gate_and_secret_entries_ignored(self):
         self.allow("G-MERGE-03 git push origin main", "G-SEC-03 cat .env", "G-BASH-03 git push --force origin x",
@@ -598,6 +636,85 @@ class Allowance(RepoCase):
         f.unlink()
         f.symlink_to(target)
         self.assertBlockedBy("ls env", "G-ENV-03")
+
+
+class EnvSpellings(RepoCase):
+    """Every spelling of an environment dump is G-ENV-03; /proc/*/environ is G-ENV-05 (0005 S1, gap 3)."""
+    def bash(self, cmd):
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        return subprocess.run([str(HOOKS / "guard-bash.sh")], input=json.dumps({"tool_input": {"command": cmd}}),
+                              capture_output=True, text=True, env=env, cwd=self.root)
+
+    def test_spellings_are_dumps(self):
+        for cmd, rid in [("/usr/bin/env", "G-ENV-03"), ("e''nv", "G-ENV-03"), ('"printenv"', "G-ENV-03"),
+                         ("\\env", "G-ENV-03"), ("/usr/local/bin/printenv", "G-ENV-03"),
+                         ("cat /proc/self/environ", "G-ENV-05"), ("xargs -0 < /proc/1/environ", "G-ENV-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+        for cmd in ("cat config/env.example", "ls build/environment", "python -m venv .venv"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+        for cmd in ("ls env", "python -m venv env", "env FOO=1 make"):        # AC-4: still blocked, unchanged
+            self.assertIn("[G-ENV-03]", self.bash(cmd).stderr, cmd)
+
+
+class EnvRound1(EnvSpellings):
+    """0005 review round 1: quoted `env` isn't a dump (no false positives); /proc globs and any path prefix are."""
+    test_spellings_are_dumps = None
+
+    def test_quoted_env_is_not_a_dump(self):
+        for cmd in ('grep -n "env" Makefile', "rg 'env' src", 'git commit -m "fix env"', 'gh pr create --title "Load env"',
+                    'echo "env"', "ls build/env.d"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_more_spellings(self):
+        for cmd, rid in [("./env", "G-ENV-03"), ("/opt/homebrew/bin/env", "G-ENV-03"), ("`which printenv`", "G-ENV-03"),
+                         ("echo x; e''nv", "G-ENV-03"), ("cat /proc/self/env*", "G-ENV-05"),
+                         ("cat /proc/self/envir?n", "G-ENV-05"), ("cat /proc/self/envi[r]on", "G-ENV-05"),
+                         ("cat /proc/self/*", "G-ENV-05|G-SEC-03"), ("cd /proc/self && cat environ", "G-ENV-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertRegex(r.stderr, rf"\[({rid})\]", cmd)          # /proc/self/* also hits the secret scan first
+
+
+class EnvRound2(EnvSpellings):
+    test_spellings_are_dumps = None
+
+    def test_more_environ_spellings(self):
+        for cmd in ("cat /dev/fd/../environ", "cat /pr?c/self/environ", "cat /p*/self/environ",
+                    "x=/proc/self; cat $x/environ", "cd / && cat proc/self/environ", "cd /proc/self && cat env*",
+                    "cd /proc/self; cat e?viron", "cd /proc && cat self/env*"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertRegex(r.stderr, r"\[(G-ENV-05|G-SEC-03)\]", cmd)
+        for cmd in ("cat env.example", "ls src/environment.py", "grep environ src/a.py"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+
+class EnvRound3(EnvSpellings):
+    test_spellings_are_dumps = None
+
+    def test_globs_in_proc_context(self):
+        for cmd in ("cd /proc/self && cat [e]nviron", "cd /proc/self && cat ?nviron", "cd /proc/self && cat *iron",
+                    "cd /pr?c/self && cat [e]nviron", "cd /dev/fd/.. && cat [e]nviron"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+        self.assertEqual(self.bash("cd /proc && ls").returncode, 0)
+
+
+class EnvRound4(EnvSpellings):
+    test_spellings_are_dumps = None
+
+    def test_no_false_positives_outside_proc(self):
+        for cmd in ("ls src/processing/*.py", "rm -f build/*.o 2>/dev/stderr", "pytest tests/test_?.py > /dev/stdout",
+                    "ls /procedures/*.md"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+    def test_more_proc_spellings(self):
+        for cmd in ("cat /proc/self/e{n,x}viron", "cd /proc/self && cat {e,x}nviron", "cd /proc/self && cat $'\\x65nviron'",
+                    "cd /proc/self && grep -r . .", "cd /proc/self && tar -cf - . | tar -xOf -", "cd /proc/self && ls | xargs cat"):
+            self.assertEqual(self.bash(cmd).returncode, 2, cmd)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,202 @@
+---
+id: 0005
+title: Close the shell-write guard gaps found in the 0004 reviews
+status: Approved
+spec: ./spec.md
+created: 2026-11-06
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-11-06T13:52:35Z
+approved-via: cli
+approved-sha256: bccf6c53a8475d1b5b67e296db075b8e40947ad4cd6ded363b5adbe59b210f2c
+---
+
+# Plan: Close the shell-write guard gaps found in the 0004 reviews
+
+<!-- State 3 PLAN, produced read-only: no source or test file was edited to write it.
+     Steps are chronological and file-by-file. Each step is one TDD cycle: proof test first (red), then code (green).
+     Ticking boxes and appending to the Deviation log keep the approval valid; any other change needs re-approval. -->
+
+## Approach
+Every change adds blocks, so the order runs from the smallest and most local change to the widest:
+1. the registry and `guard-bash` regexes (gap 3)
+2. the allowance rule (gap 6)
+3. the shared lock-env helper (gap 5)
+4. the safety pass in repos without `.aiops/` (gap 2)
+5. the protected-tree check for deletes (gap 1)
+6. incoming changes: archives first, then git (gap 4)
+
+Each step registers the ids it emits, in the same commit, so `tests/test_rules.py::Coverage` stays green. A final
+step proves the playbook and the existing suite (AC-12, AC-13), then the docs follow.
+
+Spec-gate decisions (zoujagger, 2026-11-06):
+- `git pull` is refused off main, with the procedure fetch then merge
+- deleting a directory that holds a tracked secret is blocked
+
+Plan decisions (zoujagger, 2026-11-06):
+- **One PR** for S1-S9, with one fresh-context review.
+- **S8's Red evidence** is a planted, reverted break, recorded in the commit message; no permanent mutation test.
+- **The safety pass's extra python start** in repos without `.aiops/` is accepted, with no time budget in the tests.
+  It's documented in the CHANGELOG.
+
+Code to reuse:
+- `guards._check_command` (`guards.py:674`): the target loop, `_rel`, `_aiops_protected`, `glob_hit`, `globs`
+- the parent-directory test already in the git branch (`guards.py:~760`, `g.startswith(r.rstrip("/") + "/")`)
+- `guards._extract_dirs` (`guards.py:559`), `_git_sub` (`:344`), `_git_config_writes_signing` (`:587`),
+  `_toolchain_path` (`:630`), `_in_plugin` (`:661`)
+- `cli.init_actions` (`cli.py:429`) → `_agent_blocked`
+- `lifecycle.agent_may_write` / `LOCK_ENV`
+- `rules.dumps_environment` → `rules.safe_env_command`
+- `hooks/engine.sh:12` (the `.aiops` early exit)
+- test fixtures: `tests/helpers.RepoCase`, the `test_guards.Ids` helpers, `test_shell_hooks.Allowance`,
+  `test_playbook.Playbook`
+
+## Steps
+- [x] **S1**: Environment dumps (gap 3) and the registry stages.
+  - `re_dump_env` tests `$u` with an optional path prefix: `${S}(\S*/)?(printenv|env)${E}`.
+  - New `re_environ='/proc/[^ ;&|]*/environ'` → `block G-ENV-05` (secret).
+  - `defaults/rules` adds G-ENV-05. The stage of G-SEC-01, G-TOOL-02, G-TOOL-04, G-TOOL-05 and G-BASH-01 becomes
+    `every-repo`; `rules.md` adds a G-ENV-05 section.
+  - Files: `hooks/guard-bash.sh`, `defaults/rules`, `defaults/rules.md` (modify).
+  - Test first: `tests/test_shell_hooks.py::EnvSpellings::test_spellings_are_dumps` (`/usr/bin/env`, `e''nv`,
+    `"printenv"`, `\env` → G-ENV-03; `cat /proc/self/environ`, `xargs -0 < /proc/1/environ` → G-ENV-05) and
+    `tests/test_rules.py::Why::test_safety_rules_every_repo` (G-SEC-01, G-TOOL-02, G-TOOL-04, G-TOOL-05, G-BASH-01
+    → "in every repo"). They fail on today's regex and stages.
+  - Covers: AC-4, AC-11
+- [x] **S2**: G-ENV-03 allowances accept only safe forms (gap 6).
+  - `rules.safe_env_command(cmd)` (R-6 rules); `allowed()` requires it for G-ENV-03.
+  - `allowance_problems` reports others: "G-ENV-03 allows only `printenv NAME…` or a command that doesn't run
+    env/printenv".
+  - `dumps_environment` becomes `return not safe_env_command(cmd)` (alias, one release).
+  - Files: `lib/sdlc_engine/rules.py` (modify).
+  - Test first: `tests/test_rules.py::Allowance::test_only_safe_env_forms` with AC-10's accepted and refused lists,
+    and `tests/test_shell_hooks.py::Allowance::test_safe_env_forms_through_the_hook` (`ls env` allowed with an
+    entry; `bash -c env` and `env env` blocked with one). They fail: today `bash -c env`, `env env`,
+    `if true; then env; fi`, `env FOO=1 make` and `watch env` are accepted.
+  - Covers: AC-10
+- [x] **S3**: The lock is judged without the agent's env, for `init --force` too (gap 5).
+  - `machine.lock_env_stripped()` (a context manager that pops `SDLC_HOOK_PROFILE` and `AIOPS_INTENT`).
+  - `lifecycle.agent_may_write` uses it (no behaviour change there), and `cli.init_actions(agent=True)` wraps
+    `_agent_blocked` in it.
+  - Files: `lib/sdlc_engine/machine.py`, `lib/sdlc_engine/cli.py`, `lib/sdlc_engine/lifecycle.py` (modify).
+  - Test first: `tests/test_cli.py::Init::test_agent_force_ignores_lock_env`. A locked repo with a modified
+    Makefile; `CLAUDECODE=1 SDLC_HOOK_PROFILE=spike sdlc init --force` (and `AIOPS_INTENT=0009`) keeps the Makefile
+    and lists it. It fails today: the Makefile is overwritten.
+  - Covers: AC-9
+- [x] **S4**: A safety pass in repos without `.aiops/` (gap 2).
+  - `hooks/engine.sh` skips the early exit for `pre-bash` (and still prints nothing for `session-start` and
+    `prompt`).
+  - `check_bash`: in an uninitialized repo, run `_check_command(…, gates=False)`.
+  - `_check_command` gains `gates`; with it False, only the plugin, outside-repo secret and toolchain checks run,
+    plus `_git_config_writes_signing` for `--global`/`--system`/`-f <outside>`, and nesting.
+  - Files: `hooks/engine.sh`, `lib/sdlc_engine/guards.py` (modify).
+  - Test first: `tests/test_guards.py::Uninitialized::test_safety_pass_blocks` (AC-3 commands → G-TOOL-04, G-SEC-01,
+    G-TOOL-02, G-TOOL-05, plus a `bash -c` nesting) and `::test_gates_stay_dormant` (`rm -rf src`,
+    `echo x > src/a.py`, `git push origin main` allowed), driven through `hooks/engine.sh pre-bash` in a repo with
+    no `.aiops/`. They fail today: every command passes.
+  - Covers: AC-3
+- [x] **S5**: Deleting a protected tree (gap 1).
+  - `guards._contains_protected(root, target, cwd)`: the repo root or an ancestor; `.aiops`, `.git`; protected-glob
+    prefixes; `git ls-files -z -- <target>` matched against the protected and secret globs.
+  - It's called for the delete and move targets (`rm`, `rmdir`, `unlink`, `shred`, `mv` sources, `find … -delete`
+    roots) in every state. It blocks G-FILE-05 (gate), or the existing `.aiops` id for `.aiops`.
+  - `defaults/rules` and `rules.md` add G-FILE-05.
+  - Files: `lib/sdlc_engine/guards.py`, `defaults/rules`, `defaults/rules.md` (modify).
+  - Test first: `tests/test_guards.py::ProtectedTree`, failing today because these pass in state 4:
+    - `test_blocks_in_unlocked_state`: the AC-1 commands
+    - `test_allows_ordinary_deletes`: the AC-2 commands, with a 10 000-file untracked `node_modules` timed under
+      200 ms
+    - `test_tracked_secret_dir`: `rm -rf config` with a committed `config/prod.key`
+  - Covers: AC-1, AC-2
+- [x] **S6**: Archives can't bring in protected config (gap 4, part 1).
+  - `guards._incoming_paths` for `tar -x` / `unzip` into the repo: `tarfile` / `zipfile` member names, joined with
+    the extract dir.
+  - A member under `.aiops/config*`, `.claude/settings.json` or a protected path is G-FILE-06. An unreadable or
+    missing archive is G-FILE-06 too ("can't inspect").
+  - `defaults/rules` and `rules.md` add G-FILE-06.
+  - Files: `lib/sdlc_engine/guards.py`, `defaults/rules`, `defaults/rules.md` (modify).
+  - Test first: `tests/test_guards.py::Incoming::test_archives`: tar.gz and zip carrying
+    `.aiops/config/allowed-commands`, `.claude/settings.json` or `.github/workflows/aiops-gates.yml` are blocked; a
+    `src/`-only archive is allowed; a missing archive is refused. It fails today: extraction into `.` passes.
+  - Covers: AC-5
+- [x] **S7**: Git can't bring in protected config (gap 4, part 2).
+  - `git stash pop|apply`: `git stash show --name-only --include-untracked`.
+  - `git merge|rebase <ref>`: `git diff --name-only HEAD...<ref>`. `git cherry-pick <c>`: `git show --name-only`.
+  - The main branch and `origin/<main>` are exempt, and so are paths under `.aiops/NNNN-*`.
+  - `git pull` is refused off the main branch (G-FILE-06, procedure: "git fetch, then git merge <ref>").
+  - Files: `lib/sdlc_engine/guards.py` (modify).
+  - Test first: `tests/test_guards.py::Incoming`, failing today because each of these passes in state 4:
+    - `test_stash`: a stash changing `.aiops/config/protected-paths` is blocked; a `src/` stash is allowed
+    - `test_merge_rebase_cherry_pick`: branch `x` changing `.aiops/config.json` is blocked; `main`, `origin/main`
+      and an approval-only branch are allowed
+    - `test_pull`: refused on a feature branch, allowed on main
+  - Covers: AC-6, AC-7, AC-8
+- [x] **S8**: Playbook conformance and the existing suite.
+  - `test_playbook.Playbook.walk` asserts each AC-1 command stays blocked in states 1, 4 and 5, in all three
+    profiles.
+  - Fix any existing test that a new block catches only if the command really is unsafe; otherwise narrow the
+    check. Log either case.
+  - Files: `tests/test_playbook.py` (modify); guards only if a regression appears.
+  - Test first: the new walk assertions, written before any fix S8 needs. With S1-S7 correct they pass on the first
+    run, and the Red evidence is a planted `_contains_protected → None` run, recorded in the commit message.
+  - Covers: AC-12, AC-13
+- [x] **S9**: Docs.
+  - `docs/architecture.md`: the always-on safety row, `.aiops/` integrity (parent directories, incoming changes),
+    the static-parsing residuals, and the "Safety off in unrelated repos" residual removed.
+  - `README.md`: always-on guards; `git pull` off main.
+  - `TROUBLESHOOTING.md`: G-FILE-05, G-FILE-06, and "fetch then merge".
+  - CHANGELOG `[Unreleased]` (planned as 0.2.0-alpha.4): Security fixes, and the matching 0.2.0-alpha.3 known
+    issues marked fixed. `docs/roadmap.md`: a line on 0005.
+  - Files: `docs/architecture.md`, `README.md`, `TROUBLESHOOTING.md`, `CHANGELOG.md`, `docs/roadmap.md` (modify).
+  - Test first: `tests/test_shell_hooks.py::ShellHooks::test_docs_match_what_shipped` gains an assertion that
+    architecture.md no longer says "aren't checked in a repo without `.aiops/`". It fails until the doc is updated.
+  - Covers: AC-13
+
+## Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| R-1 blocks common deletes (`rm -rf build`, `dist`, `node_modules`) | medium | high | Only tracked files and protected-glob prefixes count, so untracked trees aren't walked. AC-2 lists commands that must stay allowed, with a timing budget |
+| Safety pass in uninitialized repos is slow or crashes unrelated work | medium | medium | One python start like the secret scan; `gates=False` skips git calls. engine.sh's fail-closed applies only to `pre-*` and blocks on an engine crash, so the Uninitialized tests guard against crashes |
+| Refusing `git pull` off main disrupts the agent | high | low | The block procedure says exactly what to do (fetch + an inspected merge); pull on main stays allowed |
+| `git diff HEAD...<ref>` with an unknown ref, or a shallow clone | medium | low | Can't tell → refuse with the procedure (fetch the ref); tested |
+| Approval commits from a clean clone are blocked by R-4 | low | high | `.aiops/NNNN-*` paths exempt; the approval-only branch test in S7 |
+| Archive inspection of huge or malicious archives (zip bombs, absolute or `..` member names) | low | medium | Only member *names* are read, never content. Absolute and `..` names count as outside, and are refused if they land in the repo |
+| Existing tests rely on now-blocked commands | medium | low | S8 runs the whole suite; each case is fixed or the check narrowed, and logged |
+
+## Test definitions
+| AC | Test (file::name) | Type | Proves |
+|---|---|---|---|
+| AC-1 | `tests/test_guards.py::ProtectedTree::test_blocks_in_unlocked_state`, `::test_tracked_secret_dir` | integration | root, ancestors, `.aiops`, `.git`, protected trees and tracked-secret dirs can't be deleted or moved in state 4 |
+| AC-2 | `tests/test_guards.py::ProtectedTree::test_allows_ordinary_deletes` | integration | ordinary deletes, copies and moves stay allowed; `node_modules` decided within 200 ms |
+| AC-3 | `tests/test_guards.py::Uninitialized::test_safety_pass_blocks`, `::test_gates_stay_dormant` | integration | toolchain, plugin and secret shell writes blocked without `.aiops/`; gates dormant |
+| AC-4 | `tests/test_shell_hooks.py::EnvSpellings::test_spellings_are_dumps` | unit | every env spelling is G-ENV-03; `/proc/*/environ` is G-ENV-05 |
+| AC-5 | `tests/test_guards.py::Incoming::test_archives` | integration | archives carrying protected config are refused; plain archives allowed; an unreadable one refused |
+| AC-6 | `tests/test_guards.py::Incoming::test_stash` | integration | a stash bringing protected config is refused |
+| AC-7 | `tests/test_guards.py::Incoming::test_merge_rebase_cherry_pick` | integration | merge, rebase and cherry-pick of protected config are refused; main and approval-only branches allowed |
+| AC-8 | `tests/test_guards.py::Incoming::test_pull` | integration | pull refused off main with the fetch+merge procedure; allowed on main |
+| AC-9 | `tests/test_cli.py::Init::test_agent_force_ignores_lock_env` | integration | the agent's `init --force` can't lift the lock with env |
+| AC-10 | `tests/test_rules.py::Allowance::test_only_safe_env_forms`, `tests/test_shell_hooks.py::Allowance::test_safe_env_forms_through_the_hook` | unit | only `printenv NAME…` and non-running forms are allowable |
+| AC-11 | `tests/test_rules.py::Why::test_safety_rules_every_repo`, `tests/test_rules.py::Coverage::*` | unit | new ids registered and emitted; stages accurate |
+| AC-12 | `tests/test_playbook.py::Playbook::test_solo`, `::test_team`, `::test_strict` | e2e | AC-1 commands stay blocked across the walk in every profile |
+| AC-13 | the whole suite (`make check`), `tests/test_shell_hooks.py::ShellHooks::test_docs_match_what_shipped` | regression | nothing previously allowed is newly blocked without a logged reason; docs match |
+
+## Deviation log
+| Date | Step | Deviation from plan | Reason | Commit |
+|---|---|---|---|---|
+| 2026-11-06 | S5 | Two additions. **Home and its ancestors are protected too:** deleting `~` takes `~/.ssh`, the global git config and the installed plugin, whether or not the repo is under home. **`find … -delete` counts as a tree delete only without a filter** (`-name`, `-path`, `-type`, …): a filtered find deletes matching files only, and the existing G-ART-04 still protects `.aiops/` from it. | A home-delete is catastrophic in every repo layout. `find . -name '*.pyc' -delete` is a common, safe command that existing tests rely on. | S5 |
+| 2026-11-06 | S6 | An archive that can't be read is refused only when the extract directory is the repo root or holds `.aiops/`, `.claude/` or a protected path; elsewhere (`-C build`) it's allowed. AC-5's "an unreadable archive is refused" holds for extraction into the repo root, which the test uses. | GNU tar and unzip drop `..` members, so such an archive can only write under its destination. Three existing tests extract into `build/` (AC-13). | S6 |
+| 2026-11-06 | review r1 | **Scope (zoujagger, 2026-11-06):** every bypass of the six gaps and every false positive found in review round 1 is fixed here, plus the wrapper-prefix hole (already on main), which voids all of 0005. The other older classes go to a new intent 0006: git plumbing (`update-index`, `checkout-index`, `read-tree`), `switch`/`checkout <branch>`/`reset`/`revert`, `export`/`declare`/`set`/`ps` dumps, case-insensitive filesystems, human-only checks in uninitialized repos. | Round 1: CHANGES_REQUESTED 62/100 (security FAIL, 6 HIGH). | 3e31fff, a252209 |
+| 2026-11-06 | review r1 | Fixes:<br>- **G-ENV-03:** back to matching on `$c` as on main (no quoted-`env` false positives), plus a command-position match on `$u` with any path prefix. This replaces S1's bin-dir-only prefix, which wasn't logged.<br>- **G-ENV-05:** catches `/proc` globs and `cd /proc`.<br>- **Wrappers:** stripped with their options and operands.<br>- **Safety pass:** secret and toolchain checks on every target (a `$HOME` session root); `git config` scope by option prefix, `-f` outside the repo, `GIT_CONFIG*=` (S4's planned `-f`, missed before); copies and extractions into home or toolchain directories.<br>- **`git pull` on main:** only a pull of main itself.<br>- **G-FILE-06:** every operand, value options, cherry-pick ranges, `stash branch`, `-z`; archives with `--strip-components`, `--transform`, `-P`, link members, and resolved through repo symlinks; `tar xfz` parsing.<br>- **G-FILE-05:** a filtered find judged by the protected files it reaches; `-exec rm`; `pushd`/`popd`; `ln -s` in the same command; `rm link` allowed; `rsync --delete`.<br>- **Safe forms:** every simple command must be safe; `source`/`.` dropped (AC-10 listed `source env/bin/activate` as accepted: it runs its argument, and G-ENV-03 never blocks it anyway); secret-named `printenv` refused. | Review round 1 findings. | 3e31fff, a252209 |
+| 2026-11-06 | — | Not logged before:<br>- The S2 test change for `env FOO=1 make`: refused, as R-6 says.<br>- The planned `Why::test_safety_rules_every_repo` was named `Stages0005`.<br>- S6's incoming guard also covers `.aiops/install-state.json` (engine-written, like config).<br>- S9 asserts "only in initialized repos", not the planned wording.<br>- S9 adds a `[Unreleased]` "fixes the 0.2.0-alpha.3 known issues" line instead of editing the released section.<br>- `.env` writes in repos without `.aiops/` are now blocked (G-SEC-01): S4's dormancy test had listed them as allowed. | CLAUDE.md rule 6 (code review LOW). Released notes stay as shipped. | — |
+| 2026-11-06 | review r2 | Fixes for review round 2 (CHANGES_REQUESTED 74/100), closing each finding's class:<br>- **Nested commands:** `trap`, `coproc`, `watch`, `parallel … :::`, `flock -c`, `sh -c '…' _ args` (positional args substituted), `find -exec` through shells and wrappers, `git rebase -x/--exec`, `git -c alias.*=!…`.<br>- **Tokenizer:** `!`/`{`/`}` count as separators only in command position, so `find . ! -name x -delete` keeps its `!`.<br>- **Negated `find` tests** (`-not`, `!`, `-o`, `,`) fall back to the whole-tree check.<br>- **Symlinks made in the same command** are followed for every path under the link: deletes, writes, globs, `mv` sources, extract directories.<br>- **`rsync`:** `--del*`, its options that take a value, `--remove-source-files`.<br>- **`tar --one-top-level`** is refused.<br>- **Same-command time of check:** an archive written, or a ref moved (`branch -f/-u`, `update-ref`, `fetch a:b`), earlier in the same command is refused.<br>- **Cherry-pick:** a stuck `-mN`; `--stdin` refused.<br>- **`git pull` on main:** refused with `-c branch.*`/`remote.*`/`url.*`.<br>- **`git config`:** options matched by unique prefix (`--fil`), a stuck `-f<path>`, an exported `GIT_CONFIG`, `-f` naming a toolchain path.<br>- **Writes into home:** `git clone <dir>`, `--work-tree`, `wget -P`, `curl --output-dir`.<br>- **G-ENV-05:** any path ending `/environ`, and `/proc`/`/dev/fd`/`/p*` context with `environ` or an `e…` glob.<br>- **Safe forms:** `*_URL`, `*_DSN` and similar names; assignment prefixes refused. | Round-2 findings (security FAIL 17/25, code 84). | d696220 |
+| 2026-11-06 | review r2 | False positives fixed or accepted:<br>- **Fixed:** `find . -type d [-empty] -delete` is allowed (removes only empty directories). That also exempts it from G-ART-04, which main applies to it: the one place this PR allows something main blocks, because no artifact is a directory-only target. An in-repo venv on PATH no longer makes the repo root a toolchain directory. Archives with link members are refused only when the destination is guarded or a link escapes it. `git stash pop` with no stash is left to git.<br>- **Accepted:** copying into `$HOME` itself (`cp x ~`, `cp a .` from a `$HOME` session) stays G-TOOL-04, because home holds the toolchain. `rm -rf .git` is reported as the existing G-TOOL-03, not G-FILE-05 (AC-1 names G-FILE-05 or the `.aiops` id).<br>- **Tests:** the fail-closed concern for the safety pass is covered by `SafetyPassFuzz` (41 common commands, no crash, no block). AC-2 is timed in process on the whole engine decision, and AC-8 asserts that `git pull` on main passes with the lock off. | Code review MAJOR 1-3 and MINORs; verifier lows. | d696220 |
+| 2026-11-07 | review r3 | Fixes for review round 3 (code 76 with a BLOCKER, security FAIL 14/25 with a CRITICAL):<br>- **Regressions against main, fixed:**<br>&nbsp;&nbsp;- The tokenizer treats `!`/`{` as command position after a reserved word, a function header `f()` and `coproc NAME`.<br>&nbsp;&nbsp;- An `ln -s` destination is checked as a write again; the link is recorded only after its own segment.<br>&nbsp;&nbsp;- `05f0a2c` commits the G-ENV-05 hook change that d696220 had left out.<br>- **Older, fixed here:**<br>&nbsp;&nbsp;- Escaped `\(` `\)` `\;` stay words.<br>&nbsp;&nbsp;- A hard link's source and `cp -l` are checked as writes (they make protected files writable).<br>- **Classes completed:**<br>&nbsp;&nbsp;- `-o` counts as negation only when a branch has no name test.<br>&nbsp;&nbsp;- Name tests also match the directories that hold protected files.<br>&nbsp;&nbsp;- Nested commands: `$0`; `trap --`; `flock --command=`; `coproc NAME`; parallel's options; `script -c`; `su -c`; stuck `-x`; git editor, pager and sequence-editor settings and variables; `bisect run`; `submodule foreach`, judged one level down.<br>&nbsp;&nbsp;- Links: chains, relative to the link's directory, `ln -t`.<br>&nbsp;&nbsp;- `tar` long-option prefixes.<br>&nbsp;&nbsp;- Time of check: anything an earlier segment wrote above the archive, any earlier nested command, and any earlier git command outside a read-only set.<br>&nbsp;&nbsp;- Clustered `-nm2`; `git clone` value options; `GIT_WORK_TREE=`; downloads into the current directory; `--remove-sent-files`; any glob in a `/proc` context; `*PWD`, `CONN` and `PROXY` names. | Round-3 findings. | 05f0a2c, 123c2d1 |
+| 2026-11-07 | review r4 | Fixes for review round 4 (verifier VERIFIED; code 80/100 with a BLOCKER; security FAIL 15/25 with a CRITICAL):<br>- **Regressions against main, fixed:**<br>&nbsp;&nbsp;- The tokenizer marks escapes with a character scanner that honours quotes and consumes `\\` as a pair. Text replacement made `\\;` hide the rest of the line.<br>&nbsp;&nbsp;- `function NAME {` is command position.<br>&nbsp;&nbsp;- The `/proc` context is anchored to real path components: `/processing/`, `/dev/stdout` and `/dev/stderr` are no longer blocked as G-ENV-05.<br>- **Classes completed:**<br>&nbsp;&nbsp;- git `-c` keys and variables that run commands: `diff.external`, `core.fsmonitor`, `credential.*helper`, `merge`/`difftool`, `gpg.*program`, filter drivers, `uploadpack`, `core.askPass`, `GIT_EXTERNAL_DIFF`, `GIT_ASKPASS`, `GIT_SSH`.<br>&nbsp;&nbsp;- Remote-name downloads target `./<basename>`.<br>&nbsp;&nbsp;- Hard links: `cp -al`/`-rl` directories, `link`, `rsync --link-dest`, judged as protected trees.<br>&nbsp;&nbsp;- `find -exec` writers (`cp`, `sed`, `tee`, `dd`, `install`, `perl`, `ln`) are judged like deletes.<br>&nbsp;&nbsp;- `${@}`; `for d;`/`shift`/indirect positional args (each arg judged as a delete target).<br>&nbsp;&nbsp;- Wrappers: `runuser`, `--` after wrapper options, `watch --` (quoted with `shlex.join`), parallel `--halt`, `submodule` option forms.<br>&nbsp;&nbsp;- A set or exported `TAR_OPTIONS` is refused for extraction.<br>&nbsp;&nbsp;- `~` in a link target is expanded.<br>&nbsp;&nbsp;- Time of check: any earlier command outside a short read-only set makes a later extract or merge refused; `-c remote.*.fetch` counts as moving refs.<br>&nbsp;&nbsp;- G-ENV-05: braces, `$'…'` and directory dumps in a `/proc` context.<br>&nbsp;&nbsp;- Protected-file candidates walk the literal prefix of a bash-style glob.<br>- **Accepted:** a branch created earlier in the same command, and download-then-extract into an unguarded directory, are refused. The procedure is to run them as separate commands, because the time-of-check rule can't tell those apart from a moved ref or a replaced archive (code review MINOR 1-2).<br>- **LOW, not fixed:** other downloaders (`aria2c`, `http --download`), `git clone`'s default directory in a guarded cwd, `cp -s` symlink farms, and arguments read from stdin by `xargs`/`parallel ::::`. They stay residuals. | Round-4 findings. | f33c90f |
+| 2026-11-07 | review r5 | **Final round** under zoujagger's stop rule: verifier VERIFIED, code PASS 90, security PASS 19/25, with no regression against main and no test-claimed failure. **Promoted by zoujagger:** three tokenizer holes, already on main, that hid a whole command:<br>- unquoted backslash-newline continuations are joined first (`rm -rf \<newline>.aiops`)<br>- `$'…'` is its own quote type with backslash escapes, decoded and re-quoted for shlex<br>- merged punctuation (`);`, `)&&`, `)|`) is split into its operators<br><br>Because `(cd src); rm …` now splits, a command with a subshell is also judged without `cd` tracking (a subshell's `cd` doesn't outlive it). **Recorded as residuals** (`docs/architecture.md`, intent 0006):<br>- git command keys and variables not yet known (`protocol.ext.allow`, `core.gitProxy`, `remote.*.uploadpack`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`/`KEY`/`VALUE`)<br>- `find -fprint`<br>- `${@:1}` and array positional forms<br>- `cpio -pdl`<br>- downloads whose name isn't known (`wget -i`, `--content-disposition`, `curl -J`)<br>- `aria2c`/`http`<br>- clone's default directory<br>- `cp -s`<br>- `GIT_SSH` program files<br>- G-ENV-05 false positives when a `/proc` read and an unrelated glob share a command line<br>- the cost of the `.git/` walk for a filtered find at `.` | Round 5 and the stop rule. | b698d39 |
+| 2026-11-07 | review r5 re-check | The targeted security re-check of b698d39 failed: two regressions against main, holes left in the fixes, and false positives from evaluating subshells twice.<br>- **Regressions:**<br>&nbsp;&nbsp;- R1: a quoted heredoc body ending in `\` was joined, so its delimiter was lost and the following `rm` was hidden.<br>&nbsp;&nbsp;- R2: `$'` inside a `#` comment opened a quote that ran to the end of the input.<br>- **Fix:** one pre-pass, `shell._prescan`, replaces `_join_continuations`. In a single left-to-right pass it drops comments, joins unquoted continuations, tracks `'…'`, `"…"` and `$'…'` across lines, and removes heredoc bodies through their delimiter. A quoted heredoc body is never joined; an unquoted one is joined before its delimiter is compared. This also closes the apostrophe-in-heredoc and apostrophe-in-comment holes and the comment-quote residual.<br>- **`)>file`:** the leading `)` is split off a redirection token.<br>- **Subshells:** the double evaluation is replaced by exact scope. `shell.scoped_segments` reports `(` and `)`, and `_check_command` saves `cwd` and the dirstack at `(` and restores them at `)`, so `(cd /tmp/w && tar -xzf r.tgz)` and `(cd build && rm -rf *)` are allowed again, while `(cd .github && rm -rf workflows)` stays blocked. | Targeted re-check of b698d39. | 4e18711 |
+| 2026-11-09 | review r6 | Fixes for review round 6 (verifier VERIFIED; code CHANGES_REQUESTED with two BLOCKERs; security FAIL 11/25 with a CRITICAL), all in the 4e18711 tokenizer:<br>- **Regressions against main, fixed:**<br>&nbsp;&nbsp;- `#` right after `)` is no longer a comment (`$(…)#`, `$((…))#`, `<(…)#`, `a=(…)#` continue the word in bash). **Defence in depth:** whenever the pre-pass drops a comment (or sees `)#`), `tokenize()` appends a second reading after a `RESET` token in which each comment's text is read as a command (replaced in r7: `#` is kept as a word); the guard and the secret scan judge both readings, each from the session cwd. A misjudged comment (backticks, quotes nested in `"$(…)"`) can no longer hide a command. (r7: that cost was stricter than main, see below.)<br>&nbsp;&nbsp;- `time -p` / `time --` keep command position, so `{` and `!` after them split; `!` and `{` are in `PREFIXES`.<br>&nbsp;&nbsp;- Scope events pair each `)` with a reported `(`; a `case` pattern's `)` (and an optional leading `(`) is no scope event.<br>- **Already on main, fixed:** heredoc delimiters are parsed as bash words with quote removal (`<<E-O`, `<<'E'OF`, `<<EOF"x"`); `$[…]` is arithmetic; quotes nested in `"$(…)"`/`"${…}"`/backticks are followed; a heredoc whose delimiter line never comes no longer hides the remaining lines (fail closed).<br>- **MINOR:** `segments()` is `scoped_segments()` filtered (no duplicate logic); `git cherry-pick` of a commit already on main (an ancestor of `main`/`origin/main`) is trusted like main; the AC-12 walk adds `rm -rf docs`; CHANGELOG corrected (`source` is refused) and the tokenizer changes listed; this log's commit column filled with SHAs. | d0984a7 |
+| 2026-11-09 | review r7 | Fixes for review round 7 (verifier VERIFIED; code CHANGES_REQUESTED with a BLOCKER; security FAIL 12/25 with a CRITICAL):<br>- **Regression against main, fixed:** the r6 `case` tracking matched the dequoted token, so `\case`, `"case"`, `ca''se` or `>/dev/null case` (ordinary commands in bash) started a case and the words of the following subshell were dropped, the always-on secret scan included. Now `_mark_escapes` marks only the unquoted, unescaped `case`/`in`/`esac` keywords in the raw text, words are never dropped, and a `$(…)` in a case pattern is segmented as a command.<br>- **Incomplete r6 fix:** `case` is followed from command position (after reserved words too), with `in` after a newline or a substitution; an unfinished case fails closed (the line is also judged with every `)` as a scope end).<br>- **False positives (stricter than main), fixed:** the second reading keeps `#` as a word, as main read it, instead of turning the comment into a command; `ls src  # touch nothing yet` is allowed in the locked states again.<br>- **MINOR:** the residuals in docs/architecture.md now name cherry-picks of main commits (local refs) and a `#` with a quote nested in `"$(…)"` (also on main). | ed828de |
+| 2026-11-09 | review r8 | Fixes for review round 8 (verifier VERIFIED; code CHANGES_REQUESTED with two BLOCKERs; security FAIL 12/25 with a CRITICAL), the same class as r7: case tracking reads dequoted words, so a quoted `'a()'`/`'if'`/`"time"`, a fd redirection (`>&2 case`) or a quoted `';;'` in a case body desynced it and a subshell read as a pattern was dropped (regression against main, the secret scan included).<br>- **Backstop for the class:** pattern words are never dropped (flushed and judged), and any line where a `case` was recognised is also judged with case tracking off (every `)` a scope end), after a RESET. A bypass now has to fool both readings.<br>- **Direct fix:** a redirection of any kind (fd duplications included) means `case`/`esac` is a command, not a keyword.<br>- **Tests by class:** `test_case_desync_matrix` crosses 9 prefixes with 5 closers, 5 quoted operators in a case body, and a real case inside a subshell; red against 6ecc5e7, green now.<br>- **Accepted false positive:** with case tracking off, a pattern's `)` ends an enclosing subshell, so `(cd build && case … esac && rm -rf *)` is judged from the outer cwd (blocked when that holds a protected path); pattern words like `*` are judged as main judged them. | 11e1db0 |
+| 2026-11-09 | review r9 | Round 9 under zoujagger's stop rule (only a regression against main or a CRITICAL blocks; other new holes go to intent 0006). Verifier VERIFIED; code CHANGES_REQUESTED (BLOCKER, regression: a `)` inside backticks or `${…}` closed the subshell scope early, so `cd /tmp && (cd <repo> && echo \`)\` && rm -rf .aiops)` and locked-state writes passed); security FAIL 13/25 (HIGH, regression: `(true)# (` … `(true)# )` comments faked a subshell that undid a top-level `cd`; two HIGH not regressions).<br>- **Fix by class:** a line with scope events is also judged as main read it (every `cd` persisting), after a RESET. Every refinement over main is now an extra reading, never a replacement, so the union is at least as strict as main by construction (stated as the invariant in `scoped_segments`). `test_scope_desync_matrix` (5 inner forms × `.aiops` and G-FILE-05 deletes, plus the phantom-subshell form and locked-state writes in `CommentsWhenLocked`) is red at 8eaebc7.<br>- **Accepted false positive:** a delete outside the repo after a quoted `)` in a subshell is judged from the outer cwd too.<br>- **To intent 0006 (not regressions, also on main):** `)#<<EOF` skipping lines, `true&&>/dev/null cmd` merging commands, `$'…'` heredoc delimiters (docs/architecture.md residuals). | 9af94b2 |
+| 2026-11-09 | review r9 re-check | The targeted re-check of 9af94b2 found one regression against main (HIGH): symlinks recorded in one reading carried over the RESET, so a trailing `ln -sfn /x/safe <repo>` redirected an earlier `rm -rf .aiops` (or a locked-state write) in the cwd-persisting reading through a link bash hadn't made yet. Fix: `links` is reset with `cwd`/`dirstack`/`scope`/`assigned` at every RESET; each reading replays every segment, so links made earlier in the line are rebuilt. State that only adds blocks (`written`, `refs_moved`, `opaque`, sticky env) persists. No false positives against main found (re-check Q2). Test: `test_scope_desync_matrix` and `CommentsWhenLocked` with trailing `ln`, red at 24e3533. | 46f42fd |
+| 2026-11-09 | review r9 re-check 2 | The second targeted re-check (of 46f42fd) found one regression against main (HIGH) and one LOW:<br>- **HIGH:** an assignment in `( … )` or `$( … )` leaked into later segments (`d=src/app.py; (d=/tmp/x); echo hi > $d` passed the lock). Main blocked it by accident: shlex returned `);` as one word, so `d=x)` was never recorded. Fix: the scoped reading saves and restores `assigned` with the cwd; the flat (main) reading, now its own pass (`scoped_segments(flat=True)`), drops an assignment-only command ended by `)` as main did, which also covers a `)` inside backticks fooling the scopes.<br>- **LOW:** `$'\UFFFFFFFF'` crashed `_ansi_c`, and the secret scan's fallback skipped the line as `echo` (HARMLESS). Fix: invalid code points stay literal; the fallback judges every word.<br>- **To intent 0006 (also on main):** assignments in pipeline members, `&` jobs and conditional branches (docs/architecture.md residuals). | 7ae94cd |
+| 2026-11-09 | review r9 re-check 3 | The third targeted re-check (of 7ae94cd) found one more regression against main (HIGH): `(d=.aiops e=${x/)/}; rm -rf $d)` lost `d` in both readings (the scoped reading restored `assigned` at the fake `)`; the flat reading dropped the assignment), so the delete passed unlocked. **Decision (zoujagger, 2026-11-09): revert subshell scoping and open the PR.** The guard no longer applies scope events: `cd`, `pushd` and assignments persist past `)`, exactly as on main. Main both recorded (`d=x )`) and dropped (`d=x);`) an assignment before `)`, so a line with a `)` is judged both ways (the flat pass that drops it is kept as an extra reading). Removed with it: the subshell-scope tests (`(cd src); rm -rf .aiops` is again judged in `src`, as on main) and both accepted false positives (round 8: `(cd build && case … esac && rm -rf *)`; round 9: a quoted `)` before an outside delete), which are allowed again. Exact scoping moves to intent 0006 (docs/architecture.md residuals). | eea6268 |

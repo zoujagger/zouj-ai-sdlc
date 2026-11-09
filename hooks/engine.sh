@@ -12,7 +12,8 @@ input=$(cat)
 if [[ ! -d "$root/.aiops" ]] && [[ -z "$(git -C "$root" ls-files -- .aiops 2>/dev/null | head -n1)" ]]; then
   # session-start still announces the plugin so people know how to switch it on.
   [[ "$event" == session-start ]] && echo "zouj-ai-sdlc is installed but this repo is not initialized (no .aiops/), so its gates are off here. To use the AI-native SDLC workflow: /zouj-ai-sdlc:init"
-  exit 0
+  # pre-bash still runs: the safety checks (toolchain, plugin, secrets outside the repo) are on in every repo
+  [[ "$event" == pre-bash ]] || exit 0
 fi
 
 errf=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/zouj-ai-sdlc-hook.$$")

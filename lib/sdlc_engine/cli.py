@@ -426,6 +426,13 @@ def _agent_blocked(root, rel):
                               "tool_input": {"file_path": str(root / rel), "content": ""}}) is not None
 
 
+def _agent_blocked_now(root, rel):
+    """_agent_blocked, judged without the lock env the agent's own command could set (0005, gap 5)."""
+    from .machine import lock_env_stripped
+    with lock_env_stripped():
+        return _agent_blocked(root, rel)
+
+
 def init_actions(root, force=False, agent=False):
     """[(action, rel)] for every scaffold file: "create" (missing, or --force) or "keep" (exists). Under the agent,
     --force keeps existing human-owned files, and any file the guard won't let the agent write ("owned"). A file with a symlink on its path is "symlink" (init refuses to
@@ -437,7 +444,7 @@ def init_actions(root, force=False, agent=False):
             out.append(("symlink", rel))
         elif not (root / rel).exists():
             out.append(("create", rel))
-        elif force and agent and (HUMAN_OWNED_RE.match(rel) or _agent_blocked(root, rel)):
+        elif force and agent and (HUMAN_OWNED_RE.match(rel) or _agent_blocked_now(root, rel)):
             out.append(("owned", rel))
         else:
             out.append(("create" if force else "keep", rel))

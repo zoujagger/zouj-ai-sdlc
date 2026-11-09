@@ -5,6 +5,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 known issues, delivered as intent
+`.aiops/0005-guard-gaps/`. Almost every change adds blocks. Two exceptions loosen a check: `find . -type d -delete`
+(removes only empty directories) and `git cherry-pick` of a commit already on main are allowed.
+
+### Security
+- **Deleting a protected tree is blocked in every state (`G-FILE-05`).** This covers the repo itself, a directory
+  above it or above home, and a directory holding a protected path or a git-tracked protected or secret file (`rm -rf ./`,
+  `rm -rf "$PWD"`, `rm -rf ..`, `mv .github …`, `rm -rf .claude`). Untracked trees such as `node_modules` aren't
+  walked, and a filtered `find -delete` is unaffected.
+- **Protected config can't be brought in from elsewhere (`G-FILE-06`).** Archives are judged by their member names;
+  `git stash pop|apply`, `git merge|rebase <ref>` and `git cherry-pick` by the paths they bring in. Main and
+  approval commits pass. `git pull` off main is refused: `git fetch`, then `git merge <ref>`.
+- **Safety checks in every repo.** In a repo without `.aiops/`, shell writes to the approval toolchain, the installed
+  plugin, secrets outside the repo and `git config --global` signing keys are blocked (as Edit/Write were). It costs
+  one python start per Bash call there, like the secret scan. SDLC gates stay dormant.
+- **Every spelling of an environment dump.** `/usr/bin/env`, `e''nv`, `"printenv"` and `\env` are G-ENV-03. Reading
+  `/proc/*/environ` is the new secret rule `G-ENV-05`.
+- **G-ENV-03 allowances accept only safe forms:** `printenv NAME…`, or a command that doesn't run env/printenv
+  (`ls env`, `python -m venv env`). `source`/`.` run their argument and are refused. The list of known dumps is gone.
+- **The agent's `sdlc init --force`** judges the read-only lock without `SDLC_HOOK_PROFILE` / `AIOPS_INTENT`.
+- **Wrappers no longer hide a write.** `nice`, `timeout 5`, `stdbuf`, `setsid`, `ionice`, `sudo -u x`,
+  `command -p`, `flock f`, `xargs`, `busybox` and the like are seen through by every shell rule, including the
+  read-only lock. This hole predates 0005.
+- **The shell parser reads commands as bash does.** It is shared by the guards and the always-on secret scan.
+  Comments and heredoc bodies are dropped exactly; a heredoc delimiter is a bash word (`<<E-O`, `<<'E'OF`), and a
+  missing delimiter line hides nothing. Backslash-newline continuations are joined and `$'…'` is decoded.
+  `)>file`, `!`/`{` after keywords, `time -p`, `function f {` and `\\;` split commands correctly, while `find`'s `\;`
+  stays a word. When a comment is dropped, the line is also judged with every `#` kept as a word (as before), so a
+  separator that a misread comment hid still splits. Only the unquoted, unescaped `case`/`in`/`esac` keywords, not
+  after a redirection, drive case parsing; pattern words are judged too, and a line with a `case` is also judged
+  without case tracking. A subshell's `cd` and assignments still persist past its `)`, as before: every attempt to
+  scope them exactly was fooled by a `)` that bash keeps inside a word, so exact scoping moves to intent 0006.
+- Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
+  `.aiops/`, and G-ENV-03's list of known dumps.
+
+### Changed
+- `git pull` is refused off the main branch (G-FILE-06): `git fetch`, then `git merge <ref>`, which is inspected.
+- A G-ENV-03 allowance must be safe in every simple command; `source`/`.` and secret-named `printenv` are refused.
+
 ## [0.2.0-alpha.3] - 2026-11-06
 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.

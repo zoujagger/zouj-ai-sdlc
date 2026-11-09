@@ -138,6 +138,17 @@ class Init(RepoCase):
         self.assertRegex(owners, r"(?m)^/\.github/\s+@")
         self.assertRegex(owners, r"(?m)^/\.claude/\s+@")
 
+    def test_agent_force_ignores_lock_env(self):
+        """0005 S3 (gap 5): an inline SDLC_HOOK_PROFILE / AIOPS_INTENT can't lift the lock for the agent's --force."""
+        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        mk = self.root / "Makefile"
+        mk.write_text(mk.read_text() + "# ours\n")                         # no active intent: code is locked
+        for env in ({"SDLC_HOOK_PROFILE": "spike"}, {"AIOPS_INTENT": "0009"}):
+            r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1", **env})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertTrue(mk.read_text().endswith("# ours\n"), env)
+            self.assertIn("Makefile", r.stdout)
+
     def test_unknown_stack_fails(self):
         self.assertEqual(self.run_sdlc("init", "--stack", "cobol").returncode, 1)
 

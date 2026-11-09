@@ -122,6 +122,19 @@ Instead: propose the change in chat; a human edits protected files.
 Why: protected paths are human-owned in every state (`defaults/protected-paths` plus the repo's own list).
 Instead: propose the change in chat; a human edits protected files.
 
+## G-FILE-05
+Why: deleting or moving a directory takes everything in it: the whole repo (`.aiops/`, `.git/`), the CI audit
+workflow, `.claude/`, or a committed secret. The check counts protected-path globs and git-tracked files, not
+untracked build output.
+Instead: name the paths you mean (`rm -rf build/`, `rm src/old.py`), outside `.aiops/`, `.git/` and protected paths.
+
+## G-FILE-06
+Why: extracting an archive, popping a stash, or merging, rebasing, cherry-picking or pulling from another branch can
+write `.aiops/config*`, `.claude/settings.json` or a protected path without either guard seeing a write. Changes
+from the main branch (human-merged) and to intent folders (approval commits) are allowed.
+Instead: extract outside the repo and copy what you need; `git fetch`, then `git merge <ref>` (inspected); ask the
+human to change human-owned config.
+
 ## G-MERGE-01
 Why: merging is the final human gate (state 5); the GitHub API is the same merge by another route.
 Instead: leave the PR for a CODEOWNER to review and merge.
@@ -190,6 +203,10 @@ Instead: use `.env.example` or the docs for variable names.
 ## G-ENV-04
 Why: `echo $GITHUB_TOKEN` (any variable named ...KEY, TOKEN, SECRET or PASSWORD) prints a credential into the session.
 Instead: check that it's set without printing it (`[ -n "$GITHUB_TOKEN" ]`).
+
+## G-ENV-05
+Why: `/proc/<pid>/environ` holds a process's whole environment, every token included.
+Instead: read the one variable you need by a name that isn't secret, or check that it's set (`[ -n "$VAR" ]`).
 
 ## G-ENV-01
 Why: printing a token (`gh auth token`, `git credential fill`, ...) puts the credential into the session.
