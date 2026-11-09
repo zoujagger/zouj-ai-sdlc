@@ -100,7 +100,8 @@ class ShellHooks(RepoCase):
                     "echo 'a()' case x in ; ( cat ~/.aws/credentials ) ; echo 'a()' esac",   # round 8
                     "'if' case x in ; ( cat ~/.aws/credentials ) ; 'if' esac",
                     ">&2 case x in ; ( cat ~/.aws/credentials ) ; >&2 esac",
-                    "case x in x) echo ';;' ; ( cat ~/.aws/credentials ) ;; esac"):
+                    "case x in x) echo ';;' ; ( cat ~/.aws/credentials ) ;; esac",
+                    "echo $'\\UFFFFFFFF'; cat ~/.aws/credentials"):     # round-9 re-check: no tokenizer crash
             self.assertEqual(self.bash(cmd), 2, cmd)
         for cmd in ("make check  # run the tests", "echo hi # it's\nls"):
             self.assertEqual(self.bash(cmd), 0, cmd)

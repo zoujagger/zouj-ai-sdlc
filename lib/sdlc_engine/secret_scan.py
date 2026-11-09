@@ -119,8 +119,8 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
             return why
     try:
         segs = scoped_segments(tokenize(cmd))
-    except Exception:  # noqa: BLE001: unparsable input: fall back to whitespace words
-        segs = [(cmd.split(), [])]
+    except Exception:  # noqa: BLE001: unparsable input: every whitespace word is judged (no harmless skip)
+        segs = [(["\x00unparsed"] + cmd.split(), [])]
     start_cwd = cwd
     for words, _redirs in segs:
         if _redirs is None:                                # the second reading (comments kept) starts afresh

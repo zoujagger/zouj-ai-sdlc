@@ -1501,6 +1501,20 @@ class CommentsWhenLocked(RepoCase):
             self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")    # the lock itself still holds
             self.assertIn("[G-LOCK-02]", r.stderr, cmd)
 
+    def test_subshell_assignments_stay_inside(self):
+        """Round-9 second re-check (HIGH, regression against main): an assignment in `( … )` or `$( … )` doesn't
+        reach the commands after it, also when a `)` inside backticks fools the scope tracking."""
+        for cmd in ("d=src/app.py; (d=/tmp/x); echo hi > $d", "d=src/app.py; x=$(d=/tmp/x); echo hi > $d",
+                    "d=src/app.py; { (d=/tmp/x); }; echo hi > $d", "d=src/app.py; (export d=/tmp/x); echo hi > $d",
+                    "d=src/app.py; (echo `)`; d=/tmp/x); echo hi > $d"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertEqual(r.returncode, 2, f"{cmd}: {r.stderr}")
+            self.assertIn("[G-LOCK-02]", r.stderr, cmd)
+        for cmd in ("(d=src; ls $d)", "d=/tmp/x; (cd src && make); echo hi > $d"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd), env={"CLAUDE_PROJECT_DIR": str(self.root)})
+            self.assertEqual(r.returncode, 0, f"{cmd}: {r.stderr}")
+
+
 class IncomingRound6(Incoming):
     """0005 review round 6 (MINOR): a commit already on main is trusted like main itself, so `git cherry-pick main~1`
     isn't refused for the config it carries; a commit only on another branch still is."""

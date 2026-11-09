@@ -1361,10 +1361,10 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             if words == RESET:                           # another reading starts afresh: state that weakens a check
                 cwd, dirstack, scope, assigned, links = start_cwd, [], [], {}, {}   # (links redirect targets) is
                 #                                          reset; state that only adds blocks persists (round-9 re-check)
-            elif words == "(":
-                scope.append((cwd, list(dirstack)))
+            elif words == "(":                           # a subshell's assignments stay inside it too
+                scope.append((cwd, list(dirstack), dict(assigned)))
             elif scope:
-                cwd, dirstack = scope.pop()
+                cwd, dirstack, assigned = scope.pop()
             continue
         config_env = sticky_config_env or any(GIT_CONFIG_ENV_RE.match(w) for w in words)
         words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]

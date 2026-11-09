@@ -235,7 +235,8 @@ def _ansi_c(body):
                 i += 2
                 continue
             if m:
-                out.append(chr(int(next(g for g in m.groups() if g), 8 if m.group(2) else 16)))
+                cp = int(next(g for g in m.groups() if g), 8 if m.group(2) else 16)
+                out.append(chr(cp) if cp <= 0x10FFFF else body[i:i + 1 + m.end()])   # invalid: kept literal
                 i += 1 + m.end()
                 continue
             out.append(n)
@@ -326,7 +327,17 @@ def _tokens(cmd):
     return [p for t in toks for p in _split_punct(t)]
 
 
-def scoped_segments(tokens, cases=True):
+ASSIGN_RE = re.compile(r"^[A-Za-z_]\w*=")
+DECLARE = {"export", "declare", "typeset", "readonly", "local"}
+
+
+def _assignment_only(words):
+    """`d=x`, `export d=x`: a command that only sets variables."""
+    rest = words[1:] if words and words[0] in DECLARE else words
+    return bool(rest) and all(ASSIGN_RE.match(w) or w.startswith("-") for w in rest)
+
+
+def scoped_segments(tokens, cases=True, flat=False):
     """segments() plus scope events: ("(", None) where a subshell, group or substitution opens, (")", None) where the
     matching `)` closes it, and (RESET, None) where tokenize()'s second reading starts. A `)` that ends a `case`
     pattern, or that pairs with no reported `(`, is no scope event (0005 review round 6). Only the real keywords
@@ -380,8 +391,12 @@ def scoped_segments(tokens, cases=True):
             flush()
             opened[-1] = "pat"
         elif t in SEPARATORS and (t not in ("!", "{", "}") or command_position):   # `!`/`{`/`}` only in command
-            flush()                                                                  # position: `find . ! -name x`
-            if t == "(":
+            if flat and t == ")" and not redirs and _assignment_only(words):         # position: `find . ! -name x`
+                words = []                       # main's reading: `d=x)` set nothing outside (round-9 re-check)
+            flush()
+            if flat:
+                pass
+            elif t == "(":
                 opened.append("(")
                 out.append(("(", None))
             elif t == ")" and opened and opened[-1] == "(":
@@ -404,7 +419,7 @@ def scoped_segments(tokens, cases=True):
     if saw_case:                        # case tracking reads dequoted words (`'a()' case`), so a line with a case is
         out = out + [(RESET, None)] + scoped_segments(tokens, cases=False)  # also judged with every `)` a scope end
     if any(r is None and w in ("(", ")") for w, r in out):   # scope tracking can't see a `)` bash reads inside a word
-        out = out + [(RESET, None)] + [(w, r) for w, r in out if r is not None or w == RESET]   # (`)`, ${x/)/}):
+        out = out + [(RESET, None)] + scoped_segments(tokens, cases=False, flat=True)   # (`)`, ${x/)/}):
     return out                          # also judged as main read it, every cd persisting (review round 9)
 
 
