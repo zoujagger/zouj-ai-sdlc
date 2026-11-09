@@ -9,10 +9,14 @@ trigger-style skills, red-flag tables, subagent-driven execution) and strictly m
 Playbook*: work starts from an intent, every state commits an artifact the next one reads, and **humans decide at every
 gate**. Here those gates are enforced by hooks instead of being left to the model's good behaviour.
 
-```
- 1 BRAINSTORMING ──▶ 2 SPECIFICATION ──▶ 3 PLAN (read-only) ──▶ 4 EXECUTION (autonomous) ──▶ 5 PRE-REVIEW
-   intent.md          spec.md             plan.md                code + green tests            review.md + pr.md
- ✋ "Intent Approved"  ✋ "Spec Approved"   ✋ "Plan Approved"       (make check green)             ✋ the human merges
+```mermaid
+flowchart TD
+  A["1 BRAINSTORMING<br/>intent.md"] -->|"✋ Intent Approved NNNN"| B["2 SPECIFICATION<br/>spec.md"]
+  B -->|"✋ Spec Approved NNNN"| C["3 PLAN · code read-only<br/>plan.md"]
+  C -->|"✋ Plan Approved NNNN"| D["4 EXECUTION · autonomous TDD<br/>code + tests"]
+  D -->|"all steps [x] · make check green"| E["5 PRE-REVIEW<br/>review.md + pr.md"]
+  E -->|"CHANGES_REQUESTED"| D
+  E -->|"✋ the human merges"| F(["DONE"])
 ```
 
 ## Start using
@@ -111,8 +115,8 @@ under the read-only lock: they print your terminal command instead.
 **Blocked by mistake?** Every block names its rule (`BLOCKED [G-ENV-03] by guard-bash: …`); `sdlc why <id>` explains
 it. Two heuristic rules (`G-ENV-03` env/printenv, `G-BASH-07` sudo and friends) accept a human-owned exact-command
 allowance: add `<id> <exact command>` to `.aiops/config/allowed-commands` (never a whole-environment dump such as a
-bare `printenv`). It lifts that one rule for that one command,
-and every other rule still runs. No rule that protects a gate, a secret or the approval toolchain can be allowed, and
+bare `printenv`). It lifts that one rule for that one command, and every other rule still runs. No rule that protects
+a gate, a secret or the approval toolchain can be allowed, and
 there is no per-rule disable switch (`docs/adr/0002-allowances-never-touch-a-gate.md`).
 
 ## How it works
@@ -149,9 +153,9 @@ Local hooks are a strong deterrent, not a sandbox. The CI audit plus CODEOWNERS 
 | Kind | Location | Contents |
 |---|---|---|
 | Skills | `skills/` | `using-zouj-ai-sdlc` (bootstrap, injected at session start) · core states `intent` `spec` `plan` `implement` `review` `pr` `status` · `init` `fix` `parallel` · Maintain `deploy` `triage` `incident` `postmortem` `retro` `release` `learn` `adr` `security-check` · `help-me` `onboard` · policies (security, compliance, UX, brand) |
-| Agents | `agents/` | product-analyst, architect, planner, implementer, verifier, code-reviewer, security-reviewer, test-engineer, docs-writer, release-manager, diagnostician, incident-responder |
+| Agents | `agents/` | 12 role agents, from product-analyst (state 1) to incident-responder (Maintain): [who does what](docs/sdlc.md#who-does-what) |
 | Hooks | `hooks/hooks.json` | SessionStart, UserPromptSubmit (approvals), PreToolUse (gate, lock, bash, files, tests, deploy guards), PostToolUse (validate + format/lint), Stop (`make check`) |
-| Engine | `bin/sdlc`, `lib/sdlc_engine/`, `schemas/` | `status next new draft use validate approve close lock unlock init doctor` |
+| Engine | `bin/sdlc`, `lib/sdlc_engine/`, `schemas/` | the `sdlc` CLI and the hook dispatcher (all commands: [COMMANDS-QUICK-REF.md](COMMANDS-QUICK-REF.md)) |
 | Templates | `templates/artifacts/`, `templates/scaffold/` | artifact templates · what `init` copies into a repo (Makefile contract, CLAUDE.md, REVIEW.md, CI, bands) |
 | Tests / evals | `tests/`, `evals/` | deterministic guard tests (`make test`) · behavioural evals (`make evals`, the `claude plugin eval` format) |
 
@@ -173,16 +177,15 @@ echo "$(git config user.email) namespaces=\"git\" $(cat ~/.ssh/aiops_signing.pub
 sdlc legacy-approvals --write                           # once, when upgrading: records older unsigned approvals
 git add .aiops/config && git commit -m "chore(aiops): approver keys"   # lands via PR; CI trusts the target branch's list
 ```
-Signing-key options, from strongest to weakest: approve from a separate OS user or a clean clone; an `sk-` key (touch,
-without `no-touch-required`); a dedicated passphrase key kept out of ssh-agent. The escape hatch
+How strong each signing-key option is: [approval isolation](docs/architecture.md#approval-isolation). The escape hatch
 `"approval_key_policy": "any"` (in `.aiops/config.json`) accepts any key, at a cost: anything running as you can then
-sign approvals ([approval isolation](docs/architecture.md#approval-isolation)).
+sign approvals.
 
 `sdlc doctor` checks the setup. Under the default `approval_key_policy: "human"`, `sdlc approve` refuses before
 stamping anything unless each signature needs you: a passphrase key not loaded in ssh-agent, or an `sk-` key (touch).
-Approve in your own terminal with `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan` (Claude prints the exact path), which asks for the passphrase. Typing
-`Plan Approved NNNN` in Claude works with an `sk-` key. With a passphrase key, Claude is told the exact terminal
-command instead.
+Approve in your own terminal with `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan` (Claude
+prints the exact path), which asks for the passphrase. Typing `Plan Approved NNNN` in Claude works with an `sk-` key.
+With a passphrase key, Claude is told the exact terminal command instead.
 
 ## Develop
 ```bash
@@ -192,5 +195,6 @@ make dev          # claude --plugin-dir .
 make evals        # behavioural evals against a live model
 ```
 Docs: [state machine](docs/state-machine.md) · [architecture](docs/architecture.md) · [playbook mapping](docs/sdlc.md) ·
-[governance](docs/governance.md) · [worked example](docs/examples/0001-csv-export/). This repo dogfoods itself:
+[governance](docs/governance.md) · [roadmap](docs/roadmap.md) · [worked example](docs/examples/0001-csv-export/).
+This repo dogfoods itself:
 see [`.aiops/0001-zouj-ai-sdlc-plugin/`](.aiops/0001-zouj-ai-sdlc-plugin/).
