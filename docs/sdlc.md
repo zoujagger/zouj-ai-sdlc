@@ -2,13 +2,12 @@
 
 > "The loop keeps running. Human judgement stays above it."
 
-The playbook's loop, **Intent → Plan → Design → Build → Test → Deploy → Maintain → (new intent)**, maps onto the
-plugin's five enforced states plus optional Deploy and Maintain skills that feed new intents back in.
+The playbook's six stages, **Plan → Design → Build → Test → Deploy → Maintain → (a new intent, back to Plan)**, map
+onto the plugin's five enforced states plus optional Deploy and Maintain skills that feed new intents back in.
 
 | Playbook stage | zouj-ai-sdlc | Artifact | Human gate | Enforced by |
 |---|---|---|---|---|
-| Trigger: Intent | 1 BRAINSTORMING · `/zouj-ai-sdlc:intent` (also issues → `claude-issue-triage.yml`, alerts → `claude-maintain.yml`) | `intent.md` | `Intent Approved NNNN` (product owner) | prompt hook, pre-edit guard |
-| 1 Plan (formalise and share) | `.aiops/` in the repo, CODEOWNERS on `.aiops/`, skills encode the process | — | — | `aiops-gates.yml` |
+| 1 Plan | 1 BRAINSTORMING · `/zouj-ai-sdlc:intent` (also issues → `claude-issue-triage.yml`, alerts → `claude-maintain.yml`). The intent home is `.aiops/` in the repo, under CODEOWNERS | `intent.md` | `Intent Approved NNNN` (product owner) | prompt hook, pre-edit guard, `aiops-gates.yml` |
 | 2 Design | 2 SPECIFICATION · `/zouj-ai-sdlc:spec`, policy skills, `/zouj-ai-sdlc:adr` | `spec.md` (+ ADRs) | `Spec Approved NNNN` (+ tech lead if `risk: high`) | prompt hook, creation order |
 | 3 Build: Plan mode | 3 PLAN · `/zouj-ai-sdlc:plan` (read-only lock) | `plan.md` | `Plan Approved NNNN` (engineer) | read-only lock |
 | 3 Build: implementation | 4 EXECUTION · `/zouj-ai-sdlc:implement`, `/zouj-ai-sdlc:parallel` | code, commits, Deviation log | none: autonomous | Stop hook (`make check`) |
