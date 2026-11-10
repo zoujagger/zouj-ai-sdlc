@@ -25,6 +25,7 @@ The engine derives the state from those files and git. Hooks enforce it, so a ru
 4. **State 4 is autonomous.** For each plan step: write the proof test, run it and **see it fail**, write the code, and iterate until lint, build and tests are green. Tick the step. Don't ask the human for input during this loop unless an engine error is truly unresolvable. If reality diverges from the plan, log it in the plan's **Deviation log**. Changing the Steps themselves voids the approval, so ask for `Plan Approved` again.
 5. **State 5 belongs to the human.** Fresh-context reviewers score the change against `spec.md` and for vulnerabilities. You may open a PR when asked. You never merge, approve PRs, push to main, or deploy to production.
 6. **When a hook blocks you,** relay the reason and the procedure to the human. Never look for a way around it: no other tool, no interpreter one-liner, no renamed path.
+7. **The profile is the human's.** It sets how an approval is proven (`solo`, `team`, `strict`). While the card says none is chosen, the human types `Setup Profile solo|team|strict` as their whole prompt; you never type it, and never edit `.aiops/config.json`. Changing a profile later is a run in their own terminal: `sdlc where` prints the command with the plugin's full path.
 
 ## Red flags: stop if you think any of these
 | Thought | Reality |
@@ -37,6 +38,6 @@ The engine derives the state from those files and git. Hooks enforce it, so a ru
 | "The guard is wrong here, I'll use python to write the file." | That's bypassing a guardrail. Report the block instead. |
 
 ## Commands
-`sdlc status [id]` · `sdlc next` · `sdlc new <slug>` · `sdlc draft <id> spec|plan|review` · `sdlc validate` · `sdlc use <id>`.
+`sdlc status [id]` · `sdlc next` · `sdlc new <slug>` · `sdlc draft <id> spec|plan|review` · `sdlc validate` · `sdlc use <id>` · `sdlc where`.
 Optional, outside the core machine: `/zouj-ai-sdlc:fix` (bug: locked failing test first), `:deploy` (staging only),
 `:triage`, `:incident`, `:postmortem` (these feed a new intent), `:adr`, `:learn`, `:retro`, `:status`, `:help-me`.

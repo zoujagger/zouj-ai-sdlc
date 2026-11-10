@@ -5,7 +5,7 @@ description: Interactive tour of the zouj-ai-sdlc workflow (5 states, human gate
 
 # Onboarding
 
-1. **Setup.** Run `sdlc doctor`. If the repo isn't initialized, offer `/zouj-ai-sdlc:init` first. If the Makefile contract is unwired, say so: state 4 can't prove anything until `make check` checks something.
+1. **Setup.** Run `sdlc doctor`. If the repo isn't initialized, offer `/zouj-ai-sdlc:setup` first. If the state card says no profile is chosen yet, say that the human sets it by typing `Setup Profile solo|team|strict` as their whole prompt. If the Makefile contract is unwired, say so: state 4 can't prove anything until `make check` checks something.
 2. **Role.** Ask (AskUserQuestion) which hat they wear: product owner, engineer, reviewer / CODEOWNER, or service owner / SRE.
 3. **Explain in under 250 words**, for that role only:
    - The machine: 1 BRAINSTORMING → 2 SPECIFICATION → 3 PLAN (read-only) → 4 EXECUTION (autonomous) → 5 PRE-REVIEW, with artifacts in `.aiops/NNNN-slug/`.

@@ -120,7 +120,7 @@ known gap in S12.
     project settings can't set it and the guards still run; `templates/scaffold/.claude/settings.json` has no
     `defaultMode`) → fails: the README lists allow-rules only
   - Covers: AC-17
-- [ ] **S10**: Skills describe the new flow.
+- [x] **S10**: Skills describe the new flow.
   - Files: `skills/setup/SKILL.md`, `skills/configure/SKILL.md`, `skills/init/SKILL.md`,
     `skills/using-zouj-ai-sdlc/SKILL.md`, `skills/intent/SKILL.md`, `skills/triage/SKILL.md`,
     `skills/deploy/SKILL.md`, `skills/onboard/SKILL.md` (modify)

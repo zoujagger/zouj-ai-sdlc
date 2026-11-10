@@ -676,6 +676,34 @@ class Docs(unittest.TestCase):
         self.assertNotIn("defaultMode", json.dumps(settings))                      # the plugin sets no permission mode
         self.assertNotIn("allow", settings["permissions"])
 
+    def test_setup_skill_asks_for_the_phrase(self):
+        skill = self.text("skills/setup/SKILL.md")
+        self.assertIn("`Setup Profile <profile>`", skill)
+        self.assertIn("whole prompt", skill)
+        self.assertIn("`team` included", skill)                                    # every profile is recorded
+        self.assertLess(skill.index("--yes"), skill.index("`Setup Profile <profile>`"))   # scaffold, then the phrase
+        self.assertNotIn("For `solo` or `strict`, the printed human step is", skill)      # no terminal step for solo
+        self.assertNotIn("run `<plugin>/bin/sdlc setup --profile solo` in their own terminal", skill)
+        self.assertRegex(skill, r"(?i)never.*(type|typing|simulat)")              # the agent doesn't type it
+        using = self.text("skills/using-zouj-ai-sdlc/SKILL.md")
+        self.assertIn("Setup Profile", using)                                      # the bootstrap knows the phrase
+
+    def test_skills_name_where_and_with(self):
+        for rel in ("skills/setup/SKILL.md", "skills/configure/SKILL.md", "skills/using-zouj-ai-sdlc/SKILL.md"):
+            self.assertIn("sdlc where", self.text(rel), rel)
+        for rel in ("skills/setup/SKILL.md", "skills/init/SKILL.md"):
+            self.assertIn("--with", self.text(rel), rel)
+        setup = self.text("skills/setup/SKILL.md")
+        for part in ("review", "maintain", "deploy", "governance", "issues"):
+            self.assertIn(part, setup, part)
+        self.assertIn("Setup Profile", self.text("skills/configure/SKILL.md"))    # the first profile is the phrase
+        self.assertIn("Setup Profile", self.text("skills/onboard/SKILL.md"))
+
+    def test_skills_name_the_part_they_need(self):
+        for rel, part in (("skills/intent/SKILL.md", "maintain"), ("skills/triage/SKILL.md", "maintain"),
+                          ("skills/deploy/SKILL.md", "deploy")):
+            self.assertIn(f"sdlc setup --with {part}", self.text(rel), rel)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,7 +8,7 @@ argument-hint: "<alert:<metric> | #issue | message text>"
 
 Trigger: `$ARGUMENTS`
 
-1. For metric alerts, run `python3 scripts/check-bands.py --metric <metric>` to confirm the band level deterministically:
+1. For metric alerts, run `python3 scripts/check-bands.py --metric <metric>` to confirm the band level deterministically. If `scripts/check-bands.py` or `ops/bands.yaml` is missing, the `maintain` part isn't installed: say so, name `sdlc setup --with maintain`, and go on with a read-only diagnosis of what was reported.
    - **Band 1 (1σ):** just log it. Reply with the reading and stop.
    - **Band 2 (2σ):** read-only diagnosis (continue below).
    - **Band 3 (3σ):** diagnosis, plus either propose a fix PR or recommend the **pre-approved runbook** listed in `ops/bands.yaml` (e.g. rollback). A human runs it via the workflow.
