@@ -113,7 +113,7 @@ known gap in S12.
     `tests/test_lifecycle.py::ListInstalled::test_profile_comes_from_config`,
     `tests/test_guards.py` adds `sdlc where` to an allowed list → fail: unknown command `where`
   - Covers: AC-9, AC-10
-- [ ] **S9**: Auto mode in the scaffold's `.aiops/README.md`.
+- [x] **S9**: Auto mode in the scaffold's `.aiops/README.md`.
   - Files: `templates/scaffold/.aiops/README.md` (modify), `defaults/scaffold-history.json` (regenerate with
     `python3 scripts/scaffold-history.py`: the tree now differs from the alpha.3 tag)
   - Test first: `tests/test_cli.py::Docs::test_scaffold_explains_auto_mode` (names `--permission-mode auto`, says
@@ -213,3 +213,4 @@ known gap in S12.
 | 2026-11-10 | S7 | One engine change after all, in `setup.steps_for_human`: the "type `Setup Profile <p>`" step is printed for every profile while the repo has none, `team` included | `PhraseWalk::test_team` failed: `team` differs from the template by no key, so the agent-run setup printed no profile step and the default was never recorded (spec R-21: "for every profile") | S7 |
 | 2026-11-10 | S7 | The manual run in a `make dev` session (Risks, first row) is not done: this session doesn't have the plugin loaded | Left for the human before the merge; `PhraseWalk` drives the same hook with the markers every session's hooks see | S7 |
 | 2026-11-10 | S8 | The helper is `terminal_lines` (a list). At a gate that needs signing, the card line is the full approve command (`… approve 0001 intent`), not the bare prefix. The doctor row needed no change: it already read `config.json` | The full command is what the human pastes; it starts with the prefix AC-10 names. With no profile, a second card line names the phrase (spec R-11) | S8 |
+| 2026-11-10 | S9 | The scaffold's `.aiops/README.md` also gained two bullets (Profile, Parts) and a pointer to `sdlc where` | It is the one consumer-facing page that explains the gates, and editing it once means one `scaffold-history.json` regeneration before the release | S9 |

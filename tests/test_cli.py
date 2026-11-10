@@ -654,5 +654,28 @@ class Card(RepoCase):
         self.assertNotIn("Your terminal", self.card())                             # state 4: the agent's turn
 
 
+class Docs(unittest.TestCase):
+    """What the shipped text must say about the first run (0007 S9-S13: AC-17, AC-18, AC-19, AC-21)."""
+
+    def setUp(self):
+        from helpers import ROOT
+        self.root = ROOT
+
+    def text(self, rel):
+        return (self.root / rel).read_text()
+
+    def test_scaffold_explains_auto_mode(self):
+        readme = self.text("templates/scaffold/.aiops/README.md")
+        section = readme.split("## Unattended execution", 1)[1]
+        self.assertIn("--permission-mode auto", section)
+        self.assertIn('"defaultMode": "auto"', section)
+        self.assertIn("user settings", section)                                    # where that key works
+        self.assertRegex(section, r"ignore[sd]?\b.*\bproject settings|project settings\b.*\bignore")
+        self.assertRegex(section, r"guards? still")                                # auto mode doesn't lift them
+        settings = json.loads(self.text("templates/scaffold/.claude/settings.json"))
+        self.assertNotIn("defaultMode", json.dumps(settings))                      # the plugin sets no permission mode
+        self.assertNotIn("allow", settings["permissions"])
+
+
 if __name__ == "__main__":
     unittest.main()
