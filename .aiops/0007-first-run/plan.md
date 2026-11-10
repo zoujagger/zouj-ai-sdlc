@@ -70,7 +70,7 @@ known gap in S12.
     `::test_dry_run_names_parts_left_out`, `::test_with_maintain_adds_only_maintain`, `::test_bogus_part_refused`;
     `tests/test_playbook.py::CoreWalk::test_solo`, `::test_team`, `::test_strict` → fail: unknown option `--with`
   - Covers: AC-11, AC-12, AC-16
-- [ ] **S4**: `list-installed`, `repair` and `upgrade` leave uninstalled parts alone.
+- [x] **S4**: `list-installed`, `repair` and `upgrade` leave uninstalled parts alone.
   - Files: `lib/sdlc_engine/lifecycle.py` (modify: `classify` skips paths of parts that aren't installed unless
     recorded or on disk, `cmd_list_installed` ends with the parts line)
   - Test first: `tests/test_lifecycle.py::CoreOnly::test_list_installed_hides_parts_not_installed`,
@@ -206,3 +206,4 @@ known gap in S12.
 | 2026-11-10 | S3 | With no install-state, a `config.json` that is the template plus one profile's keys (a human's `setup --profile`) also reads the parts from disk (`lifecycle.config_written`). Test `Parts::test_rerun_after_partial_setup_installs_what_the_first_run_chose` | A human's run writes the profile before install-state, so its rerun after a failure would otherwise install every part (AC-20) | S3 |
 | 2026-11-10 | S3 | Only one existing setup test changed (`Symlinks`, now `--with maintain`), not every fresh-repo test. The commit command setup prints lists only files of installed parts | The other `SetupCase` tests assert core files only. A file at an opt-in path in a core-only repo is the user's own, not the scaffold's | S3 |
 | 2026-11-10 | S3 | `CoreWalk` skips the mid-walk `upgrade`/`repair` check (its fixtures are `maintain` files), and `protected_tree_blocked` creates `docs/` first | Until S4, `upgrade` would create the left-out parts; S4 adds the core check. A core-only repo has no `docs/`, and `rm -rf docs` on a missing directory has nothing to judge | S3 |
+| 2026-11-10 | S4 | `lifecycle.adopt` also changed: the adopted state carries `parts` (read from disk), and a missing file of a part that isn't installed is not marked `declined`. Tests `Compat::test_release_repo_without_state_keeps_every_part` and, in `tests/test_playbook.py`, `lifecycle_on_core` (the check S3 deferred) | Without it a core-only repo that lost its install-state would list 20 `declined` rows; the walk on core now also proves that the agent's `upgrade` and `repair` bring in no opt-in file | S4 |

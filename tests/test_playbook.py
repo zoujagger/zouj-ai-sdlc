@@ -133,7 +133,7 @@ class Playbook(SetupCase):
         """The agent runs upgrade and repair mid-walk, with real work to do: no gate, artifact, lock or locked code
         may change. Locked (states 1-3), the code file is handed to the human; unlocked, it's written."""
         if self.parts != "all":                  # the fixtures below are files of the maintain part
-            return
+            return self.lifecycle_on_core(d, intent, where)
         self.make_stale(d)
         before = snapshot(d, intent)
         env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d), "CLAUDECODE": "1"}
@@ -146,6 +146,19 @@ class Playbook(SetupCase):
         self.assertTrue((d / "docs" / "retros" / "README.md").exists(), where)
         bands = (d / "ops" / "bands.yaml").read_text()
         self.assertEqual(bands == "old template\n", before["locked"], where)             # code: only unlocked
+
+    def lifecycle_on_core(self, d, intent, where):
+        """On the core-only scaffold, the agent's upgrade and repair change nothing the playbook protects and bring
+        in no file of a part that isn't installed (0007 AC-13, AC-16)."""
+        from sdlc_engine import lifecycle
+        optional = {rel for rel in lifecycle.scaffold_paths() if lifecycle.part_of(rel) != "core"}
+        before = snapshot(d, intent)
+        env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d), "CLAUDECODE": "1"}
+        for args in (("upgrade", "--yes"), ("repair", "--yes")):
+            r = subprocess.run([sys.executable, SDLC, *args], cwd=d, input="", capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, f"{where} {args}: {r.stdout}{r.stderr}")
+        self.assertEqual(playbook_violations(d, intent, before), [], where)
+        self.assertEqual([rel for rel in sorted(optional) if (d / rel).exists()], [], where)
 
     def gate_allowances_rejected(self, d):
         """An allowed-commands entry for a gate rule lifts nothing (only heuristic rules are allowable)."""

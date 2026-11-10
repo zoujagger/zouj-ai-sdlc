@@ -210,10 +210,13 @@ def classify(root, st):
     unmanaged a scaffold path on disk that install-state doesn't claim (never touched)
     dropped   recorded, but no longer in the plugin's scaffold
     new       in the running plugin's scaffold, never installed here (upgrade creates it)
-    declined  part of the adopted release's scaffold, but the user had removed it: never re-created"""
+    declined  part of the adopted release's scaffold, but the user had removed it: never re-created
+    A file of an opt-in part that isn't installed (installed_parts) is not listed at all, unless install-state
+    records it or it exists on disk (unmanaged): it is never `new` or `missing`, so no command creates it."""
     version = cli.plugin_version()
     scaffold = set(scaffold_paths())
     files = (st or {}).get("files", {})
+    rules, installed = part_rules(), {"core", *(installed_parts(root, st) if st else PARTS)}
     out = {}
     for rel, entry in files.items():
         f = root / rel
@@ -233,7 +236,7 @@ def classify(root, st):
     for rel in scaffold - set(files):
         if (root / rel).exists():
             out[rel] = "unmanaged"
-        elif st:
+        elif st and part_of(rel, rules) in installed:
             out[rel] = "new"
     return dict(sorted(out.items()))
 
@@ -257,6 +260,9 @@ def cmd_list_installed(root, args):
         out(f"  {status:<9}  {rel}")
     counts = {s: sum(1 for v in rows.values() if v == s) for s in STATUSES}
     out("Summary: " + ", ".join(f"{n} {s}" for s, n in counts.items() if n))
+    left_out = parts_line(installed_parts(root, st))
+    if left_out:
+        out(left_out)
     return 0
 
 
@@ -340,12 +346,14 @@ def adopt(root):
         files[rel] = entry
     newest = max(versions, key=version_key) if versions else None
     release = next((k for k in hist if (running if k == "unreleased" else k) == newest), None)
+    parts, rules = installed_parts(root, None), part_rules()      # read from disk: there is no state to name them
     for rel in hist.get(release, {}):                  # in the adopted release, but not on disk: the user removed it
-        if "+" not in rel and rel not in files and rel not in NEVER_DECLINED and not (root / rel).exists() and not (root / rel).is_symlink():
+        if "+" not in rel and rel not in files and rel not in NEVER_DECLINED and not (root / rel).exists() \
+                and not (root / rel).is_symlink() and part_of(rel, rules) in ("core", *parts):
             files[rel] = {"sha256": None, "version": None, "declined": True,
                           "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
     return {"schema": SCHEMA, "adopted": True, "files": files, "migrations": [], "stack": stack, "ref": ref,
-            "plugin_version": newest,
+            "plugin_version": newest, "parts": parts,
             "profile": config(root).get("profile", "team"),
             "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 

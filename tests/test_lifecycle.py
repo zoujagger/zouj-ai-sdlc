@@ -590,6 +590,90 @@ class Compat(Adoption):
         self.assertEqual(self.run_sdlc("validate", "0001").returncode, 0)
         self.assertFalse((self.root / STATE).exists())                           # nothing wrote install-state
 
+    def test_state_without_parts_reads_as_every_part(self):
+        """0007 AC-14: install-state from 0.2.0-alpha.3 has no `parts` key; every part stays managed."""
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
+        st = json.loads((self.root / STATE).read_text())
+        del st["parts"]                                                          # as 0.2.0-alpha.3 wrote it
+        del st["files"]["docs/runbooks/README.md"]                               # a file a later release added
+        (self.root / STATE).write_text(json.dumps(st))
+        (self.root / "docs" / "runbooks" / "README.md").unlink()
+        (self.root / "ops" / "bands.yaml").unlink()
+        rows = dict(reversed(line.split()) for line in self.run_sdlc("list-installed").stdout.splitlines()
+                    if len(line.split()) == 2)
+        self.assertEqual(rows["ops/bands.yaml"], "missing")
+        self.assertEqual(rows["docs/runbooks/README.md"], "new")
+        self.assertNotIn("Not installed", self.run_sdlc("list-installed").stdout)
+        self.assertEqual(self.run_sdlc("upgrade", "--yes").returncode, 0)        # a human's run: writes everything
+        self.assertTrue((self.root / "ops" / "bands.yaml").exists())
+        self.assertTrue((self.root / "docs" / "runbooks" / "README.md").exists())
+
+    def test_release_repo_without_state_keeps_every_part(self):
+        """0007 AC-14: the full 0.2.0-alpha.2 scaffold with its template config and no install-state."""
+        from sdlc_engine import lifecycle
+        self.scaffold_as_released("0.2.0-alpha.2")
+        self.assertEqual(lifecycle.installed_parts(self.root, None), sorted(lifecycle.PARTS))
+        self.assertEqual(lifecycle.adopt(self.root)["parts"], sorted(lifecycle.PARTS))
+        self.assertNotIn("Not installed", self.run_sdlc("list-installed").stdout)
+
+
+class CoreOnly(RepoCase):
+    """The lifecycle commands leave the opt-in parts that aren't installed alone (0007 S4, AC-13)."""
+
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+        from sdlc_engine import lifecycle
+        self.lc = lifecycle
+        self.assertEqual(self.run_sdlc("init").returncode, 0)                    # the default: core only
+        self.optional = set(self.lc.scaffold_paths()) - CORE
+
+    def files(self):
+        return {str(p.relative_to(self.root)) for p in self.root.rglob("*")
+                if p.is_file() and p.relative_to(self.root).parts[0] != ".git"}
+
+    def rows(self):
+        out = self.run_sdlc("list-installed").stdout
+        return {line.split()[1]: line.split()[0] for line in out.splitlines() if len(line.split()) == 2}, out
+
+    def test_list_installed_hides_parts_not_installed(self):
+        rows, out = self.rows()
+        self.assertEqual(set(rows), CORE)
+        self.assertEqual(set(rows.values()), {"current"})
+        last = out.strip().splitlines()[-1]
+        self.assertIn("Not installed (opt-in parts)", last)
+        for name in self.lc.PARTS:
+            self.assertIn(name, last)
+        self.assertIn("sdlc setup --with", last)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
+        self.assertNotIn("Not installed", self.rows()[1])                        # every part installed: no such line
+
+    def test_upgrade_and_repair_create_none_of_them(self):
+        (self.root / "CLAUDE.md").unlink()                                       # real work for repair
+        st = json.loads((self.root / STATE).read_text())
+        st["plugin_version"] = "0.1.0"                                           # and for upgrade
+        (self.root / STATE).write_text(json.dumps(st))
+        for env in ({"CLAUDECODE": "1"}, {}):                                    # the agent, then the human
+            for cmd in ("repair", "upgrade"):
+                dry = self.run_sdlc(cmd, "--dry-run", env=env)
+                self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+                for rel in self.optional:
+                    self.assertNotIn(rel, dry.stdout, (cmd, env))
+                r = self.run_sdlc(cmd, "--yes", env=env)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(self.files() & self.optional, set(), (cmd, env))
+        self.assertEqual(json.loads((self.root / STATE).read_text())["parts"], [])
+
+    def test_unrecorded_part_file_on_disk_is_unmanaged(self):
+        (self.root / "ops").mkdir()
+        (self.root / "ops" / "bands.yaml").write_text("metrics: []   # ours\n")
+        rows, _ = self.rows()
+        self.assertEqual(rows["ops/bands.yaml"], "unmanaged")
+        self.assertEqual(set(rows) - {"ops/bands.yaml"}, CORE)
+        self.assertEqual(self.run_sdlc("upgrade", "--yes").returncode, 0)
+        self.assertEqual((self.root / "ops" / "bands.yaml").read_text(), "metrics: []   # ours\n")
+        self.assertEqual(self.files() & self.optional, {"ops/bands.yaml"})       # and the rest of the part stays out
+
 
 CORE = {".aiops/README.md", ".aiops/config.json", ".aiops/config/allowed-signers", ".aiops/config/legacy-approvals",
         ".aiops/config/protected-paths", ".aiops/config/readonly-exempt", ".aiops/config/secret-paths",
