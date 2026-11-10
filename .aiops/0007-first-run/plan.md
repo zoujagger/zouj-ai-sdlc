@@ -96,7 +96,7 @@ known gap in S12.
     `::test_agent_setup_and_writes_still_cannot_change_config`; `tests/test_shell_hooks.py` adds the phrase to the
     `engine.sh prompt` exit-0 cases → fail: the hook prints nothing for the phrase
   - Covers: AC-1, AC-4, AC-5, AC-6, AC-7
-- [ ] **S7**: The playbook walk with the profile set by phrase.
+- [x] **S7**: The playbook walk with the profile set by phrase.
   - Files: `tests/test_playbook.py` (modify: `PhraseWalk`: agent-run `setup --yes`, then the hook with
     `Setup Profile <p>`, then the existing walk with approvals through the hook)
   - Test first: `tests/test_playbook.py::PhraseWalk::test_solo`, `::test_team`, `::test_strict` → `test_solo` fails
@@ -210,3 +210,5 @@ known gap in S12.
 | 2026-11-10 | S5 | The template check is `lifecycle.config_written` (S2/S3), not a `template_config()` factored out of `setup._as_setup_writes`. `human_steps` became a printer over a new `steps_for_human(..., install=False)`, so the reply can leave out the plugin-install step. Three extra tests: `test_refused_without_aiops`, `test_unknown_name`, and a missing `config.json` case | `_as_setup_writes` compares bytes with the ref pinned and is used for a different question (was this file planted?). The phrase is typed with the plugin already running | S5 |
 | 2026-11-10 | S6 | `lib/sdlc_engine/setup.py` changed too: when the repo has no profile yet, the agent-run setup's human step is "type `Setup Profile <p>` as your whole prompt" (the terminal command is still named, and the downgrade label is kept). `tests/test_setup.py::Owned` updated for the new text, with a case for an edited config that still gets the terminal step | Without it the engine would keep sending `solo` users to a terminal while the hook already accepts the phrase (AC-18 depends on it) | S6 |
 | 2026-11-10 | S6 | The shell-hook case is `tests/test_cli.py::ProfilePhrase::test_through_the_shell_hook`, not an addition to `tests/test_shell_hooks.py`. Extra test `::test_second_phrase_changes_nothing` | It needs the scaffolded fixture of `ProfilePhrase`; `test_shell_hooks.py` only has a broken-engine case for `prompt` | S6 |
+| 2026-11-10 | S7 | One engine change after all, in `setup.steps_for_human`: the "type `Setup Profile <p>`" step is printed for every profile while the repo has none, `team` included | `PhraseWalk::test_team` failed: `team` differs from the template by no key, so the agent-run setup printed no profile step and the default was never recorded (spec R-21: "for every profile") | S7 |
+| 2026-11-10 | S7 | The manual run in a `make dev` session (Risks, first row) is not done: this session doesn't have the plugin loaded | Left for the human before the merge; `PhraseWalk` drives the same hook with the markers every session's hooks see | S7 |

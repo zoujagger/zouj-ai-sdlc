@@ -504,27 +504,32 @@ def steps_for_human(root, profile, pending, review=(), install=True):
     if profile == "strict" and not cli.codeowners_cover_aiops(root):
         steps.append("Give /.aiops/ a real owner (strict requires it): in .github/CODEOWNERS replace the @your-org/... "
                      "placeholders, at least:\n       /.aiops/ @<approver>")
-    for rel, (_old, _new, keys) in pending.items():   # under the agent: the human applies these
-        snippet = json.dumps(keys, indent=2).replace("\n", "\n       ")
-        if rel == ".aiops/config.json":
-            current = config(root)["profile"]
-            command = f"{shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}"
-            if current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):   # solo < team < strict
-                steps.append(f"Downgrade requested by the agent's run ({current} to {profile}): approvals would be "
-                             f"proven by {PROOF[profile]} instead of {PROOF[current]}. Skip the next step unless you "
-                             "asked for it.")
-            if no_profile_yet(root)[0]:           # the repo's first profile: the human's typed phrase sets it
-                steps.append(f"Choose the profile: type `Setup Profile {profile}` as your whole prompt in Claude "
-                             "Code (.aiops/config.json is human-owned; setup run by the agent leaves it at init's "
-                             "defaults). The phrase sets these keys and commits the file alone:\n"
-                             f"       {snippet}\n"
-                             f"       Or run in your own terminal, then confirm the diff: {command}")
-            else:
-                steps.append(f"Apply profile {profile} in your own terminal (.aiops/config.json is human-owned; setup "
-                             f"run by the agent leaves it as it is). Run, then confirm the diff:\n"
-                             f"       {command}\n"
-                             f"       It sets:\n       {snippet}")
+    # The profile. A repo with no profile yet gets it from the human's typed phrase, whichever profile it is (the
+    # default, team, differs from the template by no key but is still recorded); a set profile changes in a terminal.
+    first = no_profile_yet(root)[0]
+    if first or ".aiops/config.json" in pending:
+        current = config(root)["profile"]
+        command = f"{shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}"
+        if current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):   # solo < team < strict
+            steps.append(f"Downgrade requested by the agent's run ({current} to {profile}): approvals would be "
+                         f"proven by {PROOF[profile]} instead of {PROOF[current]}. Skip the next step unless you "
+                         "asked for it.")
+        if first:
+            snippet = json.dumps(PROFILE_CONFIG[profile], indent=2).replace("\n", "\n       ")
+            steps.append(f"Choose the profile: type `Setup Profile {profile}` as your whole prompt in Claude "
+                         "Code (.aiops/config.json is human-owned; setup run by the agent leaves it at init's "
+                         "defaults). The phrase sets these keys and commits the file alone:\n"
+                         f"       {snippet}\n"
+                         f"       Or run in your own terminal, then confirm the diff: {command}")
         else:
+            snippet = json.dumps(pending[".aiops/config.json"][2], indent=2).replace("\n", "\n       ")
+            steps.append(f"Apply profile {profile} in your own terminal (.aiops/config.json is human-owned; setup "
+                         f"run by the agent leaves it as it is). Run, then confirm the diff:\n"
+                         f"       {command}\n"
+                         f"       It sets:\n       {snippet}")
+    for rel, (_old, _new, keys) in pending.items():   # under the agent: the human applies these
+        if rel != ".aiops/config.json":
+            snippet = json.dumps(keys, indent=2).replace("\n", "\n       ")
             steps.append(f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
                          f"       {snippet}")
     if review:                                    # unreviewed(), taken before setup wrote anything

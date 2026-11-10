@@ -76,11 +76,9 @@ class Playbook(SetupCase):
         git(d, "add", "-A")
         git(d, "commit", "-qm", "init")
         env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d)}
-        with_parts = ["--with", self.parts] if self.parts else []
-        r = subprocess.run([sys.executable, SDLC, "setup", "--profile", profile, "--yes", *with_parts], cwd=d,
-                           input="", capture_output=True, text=True, env=env)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.scaffold(d, profile, env)
         self.assertEqual((d / "ops" / "bands.yaml").exists(), self.parts == "all")   # the scaffold under test
+        self.assertEqual(json.loads((d / ".aiops" / "config.json").read_text())["profile"], profile)
         # the human registers their key (human-owned) and commits the scaffold
         (d / ".aiops" / "config" / "allowed-signers").write_text(
             allowed_signer_line("owner@example.com", signing_key()))
@@ -90,6 +88,17 @@ class Playbook(SetupCase):
         intent = d / ".aiops" / "0001-csv-export"
         intent.mkdir()
         return d, intent
+
+    def scaffold(self, d, profile, env):
+        """The human sets the repo up in their own terminal, choosing the profile there."""
+        with_parts = ["--with", self.parts] if self.parts else []
+        r = subprocess.run([sys.executable, SDLC, "setup", "--profile", profile, "--yes", *with_parts], cwd=d,
+                           input="", capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def weak_approval(self, d, intent):
+        """(ok, message) for `Intent Approved` with the test key, which has no passphrase and needs no touch."""
+        return approvals.approve(d, intent, "intent", via="test")
 
     def human_key(self, profile):
         """The human's accepted key: a passphrase key (team) or an sk- touch key (strict)."""
@@ -200,7 +209,7 @@ class Playbook(SetupCase):
         self.protected_tree_blocked(d, f"{profile} state 1")
         self.gate_allowances_rejected(d)
         # the proof differs by profile: the weak test key is refused by team and strict
-        ok, msg = approvals.approve(d, intent, "intent", via="test")
+        ok, msg = self.weak_approval(d, intent)
         self.assertEqual(ok, profile == "solo", msg)
         if not ok:
             self.assertIn("passphrase" if profile == "team" else "sk-", msg)
@@ -270,6 +279,42 @@ class Playbook(SetupCase):
 class CoreWalk(Playbook):
     """The same walk, every profile, on the default scaffold: the 16 core files and no opt-in part (0007, AC-16)."""
     parts = None
+
+
+class PhraseWalk(Playbook):
+    """The first run as 0007 describes it, with no terminal step for the profile: the agent scaffolds (core, init's
+    defaults), the human types `Setup Profile <p>`, and the walk goes on through the prompt hook (AC-2, AC-16)."""
+    parts = None
+
+    def typed(self, d, text):
+        """The human types `text` as their whole prompt: the UserPromptSubmit hook's context ("" if it said nothing)."""
+        payload = json.dumps({"prompt": text, "cwd": str(d), "hook_event_name": "UserPromptSubmit"})
+        env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d),
+               "CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1"}          # what every session's hooks see
+        r = subprocess.run([sys.executable, SDLC, "hook", "prompt"], cwd=d, input=payload, capture_output=True,
+                           text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"] if r.stdout.strip() else ""
+
+    def scaffold(self, d, profile, env):
+        r = subprocess.run([sys.executable, SDLC, "setup", "--profile", profile, "--yes"], cwd=d, input="",
+                           capture_output=True, text=True, env={**env, "CLAUDECODE": "1"})     # the agent's run
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"type `Setup Profile {profile}` as your whole prompt", r.stdout)
+        template = json.loads((ROOT / "templates" / "scaffold" / ".aiops" / "config.json").read_text())
+        self.assertEqual(json.loads((d / ".aiops" / "config.json").read_text()), template)     # no profile yet
+        self.assertIn(f"profile SET: {profile}", self.typed(d, f"Setup Profile {profile}"))
+        self.assertEqual(git(d, "show", "--name-only", "--format=%s", "HEAD").split("\n"),
+                         [f"chore(aiops): Setup Profile {profile}", "", ".aiops/config.json"])
+
+    def weak_approval(self, d, intent):
+        ctx = self.typed(d, "Intent Approved 0001")
+        return "gate OPENED" in ctx, ctx
+
+    def approve(self, d, intent, kind, profile):
+        if profile != "solo":                    # a passphrase or a touch can't run in a test: the patched key
+            return super().approve(d, intent, kind, profile)
+        self.assertIn("gate OPENED", self.typed(d, f"{kind.capitalize()} Approved 0001"))
 
 
 class Mutation(Playbook):
