@@ -103,7 +103,7 @@ known gap in S12.
     before S5-S6 (the first `Intent Approved 0001` is refused under the `team` default); after them it must pass
     with no engine change in this step
   - Covers: AC-2, AC-16
-- [ ] **S8**: `sdlc where`, the card's terminal line, and the profile read from `config.json`.
+- [x] **S8**: `sdlc where`, the card's terminal line, and the profile read from `config.json`.
   - Files: `lib/sdlc_engine/cli.py` (modify: `cmd_where`, `COMMANDS`, USAGE, `terminal_line(root, st)` used by
     `card` and `hook_session_start`, the doctor row), `lib/sdlc_engine/lifecycle.py` (modify: `cmd_list_installed`
     prints the config's profile)
@@ -212,3 +212,4 @@ known gap in S12.
 | 2026-11-10 | S6 | The shell-hook case is `tests/test_cli.py::ProfilePhrase::test_through_the_shell_hook`, not an addition to `tests/test_shell_hooks.py`. Extra test `::test_second_phrase_changes_nothing` | It needs the scaffolded fixture of `ProfilePhrase`; `test_shell_hooks.py` only has a broken-engine case for `prompt` | S6 |
 | 2026-11-10 | S7 | One engine change after all, in `setup.steps_for_human`: the "type `Setup Profile <p>`" step is printed for every profile while the repo has none, `team` included | `PhraseWalk::test_team` failed: `team` differs from the template by no key, so the agent-run setup printed no profile step and the default was never recorded (spec R-21: "for every profile") | S7 |
 | 2026-11-10 | S7 | The manual run in a `make dev` session (Risks, first row) is not done: this session doesn't have the plugin loaded | Left for the human before the merge; `PhraseWalk` drives the same hook with the markers every session's hooks see | S7 |
+| 2026-11-10 | S8 | The helper is `terminal_lines` (a list). At a gate that needs signing, the card line is the full approve command (`… approve 0001 intent`), not the bare prefix. The doctor row needed no change: it already read `config.json` | The full command is what the human pastes; it starts with the prefix AC-10 names. With no profile, a second card line names the phrase (spec R-11) | S8 |

@@ -109,6 +109,17 @@ class ListInstalled(RepoCase):
         self.assertIn(f"running plugin: {VERSION}", r.stdout)
         self.assertEqual(self.snapshot(), before)                       # read-only
 
+    def test_profile_comes_from_config(self):
+        """0007 R-9: config.json is the one source for the profile; install-state keeps what setup recorded."""
+        self.assertIn("profile team", self.run_sdlc("list-installed").stdout)   # the default: none chosen yet
+        payload = {"prompt": "Setup Profile solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
+        self.assertIn("profile SET", self.hook("prompt", payload).stdout)
+        self.assertEqual(json.loads((self.root / STATE).read_text())["profile"], "team")   # the phrase didn't touch it
+        out = self.run_sdlc("list-installed").stdout
+        self.assertIn("profile solo", out)
+        self.assertNotIn("profile team", out)
+        self.assertIn("profile: solo", self.run_sdlc("doctor").stdout)
+
     def test_stale_and_dropped(self):
         st = json.loads((self.root / STATE).read_text())
         (self.root / "REVIEW.md").write_text("old template\n")         # what an older plugin wrote

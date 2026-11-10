@@ -256,7 +256,7 @@ class BashGuard(RepoCase):
                     "sdlc legacy-approvals --write", "python3 -c 'import sdlc_engine'"):
             self.assertTrue(self.blocked(cmd), cmd)
         for cmd in ("sdlc status", "sdlc validate --all", "git log --grep approve", "cat lib/sdlc_engine/guards.py",
-                    "echo $HOME", "make test"):
+                    "echo $HOME", "make test", "sdlc where"):               # 0007: it only prints the terminal command
             self.assertFalse(self.blocked(cmd), cmd)
 
     def test_shell_writes_respect_protected_paths(self):

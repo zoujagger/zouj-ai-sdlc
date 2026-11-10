@@ -246,7 +246,8 @@ def cmd_list_installed(root, args):
     st = load(root)
     if st:
         out(f"zouj-ai-sdlc install state ({STATE})")
-        out(f"  recorded: {st.get('plugin_version')} · ref {st.get('ref')} · profile {st.get('profile')} · "
+        # the profile is read from .aiops/config.json, its one source: the typed phrase and a hand edit change it there
+        out(f"  recorded: {st.get('plugin_version')} · ref {st.get('ref')} · profile {config(root).get('profile')} · "
             f"stack {st.get('stack') or 'none'}")
     else:
         out(f"zouj-ai-sdlc: this repo has no install state ({STATE}); it was initialized before 0.2.0-alpha.3 or "

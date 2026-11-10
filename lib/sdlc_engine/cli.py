@@ -41,13 +41,14 @@ Lifecycle (any user or agent)
   init [--stack python|node|go] [--with PARTS] [--force]   scaffold this repo: the core files (.aiops/, Makefile
                              contract, CI audit, REVIEW.md), plus opt-in PARTS (review, maintain, deploy,
                              governance, issues, comma-separated, or all)
-  setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
+  setup [--profile solo|team|strict] [--stack S] [--with PARTS] [--dry-run] [--yes]   guided, rerunnable setup
   feedback                   issue links and a doctor summary to paste (sends nothing)
   list-installed             what the plugin installed here: current, stale, modified, missing, unmanaged
   repair [--dry-run] [--yes] restore missing managed files (never a modified one)
   upgrade [--dry-run] [--yes]  bring the scaffold to this plugin version: stale files replaced (diff shown),
                              modified ones kept except the CI ref, every ref pinned to a full sha, migrations listed
   why <id>                   explain a block (e.g. `sdlc why G-ENV-03`): reason, stage, safe alternative
+  where                      print the sdlc command for your own terminal (the plugin's absolute path)
   doctor                     check tools and wiring
 
 Human only (refused inside Claude Code)
@@ -92,7 +93,39 @@ def card(root, st):
         f"- Gates: {gates} · Steps: {st.steps_done}/{st.steps_total} · Deviations: {st.deviations}"
         f" · Open questions: {st.open_questions}",
         f"- Waiting on: {st.waiting_on} · Next: {st.next}",
+        *terminal_lines(root, st),
     ])
+
+
+def terminal_lines(root, st=None):
+    """The card lines for a pending human step, [] when there is none:
+    - no profile chosen yet: the command for the human's own terminal, and the phrase that sets the profile
+    - the intent waits on the human at a gate (states 1-3) and signing needs a terminal: the approve command.
+    signing_problem may run ssh-keygen, so it is asked only in that second case."""
+    from . import lifecycle, setup
+    if setup.no_profile_yet(root)[0]:
+        return [f"- Your terminal: {lifecycle.human_command('').rstrip()}",
+                "- No profile chosen yet: the human types `Setup Profile solo|team|strict` as the whole prompt"]
+    if st is not None and st.waiting_on == "human" and st.state in (1, 2, 3) and approvals.signing_problem(root):
+        return [f"- Your terminal: {approvals.approve_command(st.id, KINDS[st.state - 1])}"]
+    return []
+
+
+def cmd_where(root, args):
+    """Print the sdlc command for the human's own terminal. `sdlc` is on PATH only inside Claude Code; the commands
+    only a human may run need the plugin's absolute path. Reads nothing from the repo and starts no process."""
+    from . import lifecycle
+    if args:
+        out("usage: sdlc where   (prints the sdlc command for your own terminal; it takes no arguments)", sys.stderr)
+        return 1
+    cmd = lifecycle.human_command("").rstrip()
+    out(f"""{cmd}
+Run it in your own terminal for the human-only commands (they are refused inside Claude Code):
+  … setup --profile solo|team|strict     set or change how approvals are proven
+  … approve <id> intent|spec|plan        open a gate (when signing needs your passphrase or key)
+  … close <id>      … unlock      … legacy-approvals --write
+  … uninstall --dry-run, then … uninstall""")
+    return 0
 
 
 def cmd_status(root, args):
@@ -804,7 +837,7 @@ def hook_session_start(data):
     d = active_dir(root)
     status = card(root, evaluate(root, d)) if d else \
         f"## zouj-ai-sdlc · no active intent ({len(intent_dirs(root))} in .aiops/). Code is read-only until an " \
-        "intent's plan is approved. Start: /zouj-ai-sdlc:intent"
+        "intent's plan is approved. Start: /zouj-ai-sdlc:intent" + "".join(f"\n{ln}" for ln in terminal_lines(root))
     lockf = root / ".aiops" / "state" / "test-lock"
     if lockf.exists():
         status += "\n- ⚠️ Test lock active (/fix): test files are read-only until make check is green."
@@ -843,7 +876,7 @@ HOOKS = {"pre-edit": _pre(guards.check_edit), "pre-bash": _pre(guards.check_bash
 COMMANDS = {"status": cmd_status, "next": cmd_next, "new": cmd_new, "draft": cmd_draft, "use": cmd_use,
             "validate": cmd_validate, "approve": cmd_approve, "close": cmd_close, "lock": cmd_lock,
             "unlock": cmd_unlock, "legacy-approvals": cmd_legacy_approvals, "init": cmd_init, "doctor": cmd_doctor,
-            "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why,
+            "setup": cmd_setup, "feedback": cmd_feedback, "why": cmd_why, "where": cmd_where,
             "list-installed": cmd_list_installed, "repair": cmd_repair,
             "upgrade": cmd_upgrade, "uninstall": cmd_uninstall}
 
@@ -855,6 +888,8 @@ def main(argv=None):
         return 0
     if argv[0] == "hook":
         return hook(argv[1] if len(argv) > 1 else "")
+    if argv[0] == "where":                       # needs no repo: not even the lookup of its root
+        return cmd_where(None, argv[1:])
     if argv[0] not in COMMANDS:
         out(f"unknown command {argv[0]!r}\n\n{USAGE}", sys.stderr)
         return 1

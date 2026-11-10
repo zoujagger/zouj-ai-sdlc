@@ -565,5 +565,94 @@ class ProfilePhrase(RepoCase):
         self.assertEqual(self.profile(), "solo")
 
 
+def terminal_command():
+    import shlex
+    from helpers import ROOT
+    from sdlc_engine import approvals
+    return f"{approvals.PYTHON} -I {shlex.quote(str(ROOT / 'bin' / 'sdlc'))}"
+
+
+class Where(RepoCase):
+    """`sdlc where` prints the command for the human's own terminal (0007 S8, AC-9)."""
+
+    def snapshot(self):
+        return ({str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*")
+                 if p.is_file() and p.relative_to(self.root).parts[0] != ".git"}, git(self.root, "status", "--porcelain"))
+
+    def test_first_line_is_the_terminal_command(self):
+        import subprocess
+        import sys
+        from helpers import SDLC
+        before = self.snapshot()
+        for case in ("initialized", "no .aiops/"):
+            if case == "no .aiops/":
+                shutil.rmtree(self.root / ".aiops")
+                before = self.snapshot()
+            for env in ({}, {"CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1"}):   # the human, the agent
+                r = self.run_sdlc("where", env=env)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                lines = r.stdout.splitlines()
+                self.assertEqual(lines[0], terminal_command(), (case, env))
+                rest = "\n".join(lines[1:])
+                for sub in ("setup --profile", "approve <id> intent|spec|plan", "uninstall", "legacy-approvals",
+                            "close <id>", "unlock"):
+                    self.assertIn(sub, rest)
+                self.assertEqual(self.snapshot(), before, (case, env))             # writes nothing
+        outside = subprocess.run([sys.executable, SDLC, "where"], cwd=self.root.parent, capture_output=True, text=True,
+                                 env=self.env)                                     # not even a git repo
+        self.assertEqual((outside.returncode, outside.stdout.splitlines()[0]), (0, terminal_command()))
+        r = self.run_sdlc("where", "approve")                                      # it takes no arguments
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout, "")
+        self.assertIn("where", self.run_sdlc("help").stdout)
+
+
+class Card(RepoCase):
+    """The state card names the human's terminal command when a human step is pending (0007 S8, AC-10)."""
+
+    def card(self):
+        r = self.run_sdlc("status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def session(self):
+        return self.hook("session-start", {"cwd": str(self.root), "source": "startup"}).stdout
+
+    def test_terminal_line_when_no_profile_chosen(self):
+        shutil.rmtree(self.root / ".aiops")
+        self.assertEqual(self.run_sdlc("init").returncode, 0)                      # the template config: no profile
+        for text in (self.session(),):                                             # no active intent yet
+            self.assertIn(f"- Your terminal: {terminal_command()}", text)
+            self.assertIn("Setup Profile solo|team|strict", text)
+        self.d.mkdir()
+        self.write("intent", INTENT)
+        for text in (self.card(), self.session()):
+            self.assertIn(f"- Your terminal: {terminal_command()}", text)
+            self.assertIn("Setup Profile solo|team|strict", text)
+        payload = {"prompt": "Setup Profile solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
+        self.assertIn("profile SET", self.hook("prompt", payload).stdout)
+        for text in (self.card(), self.session()):                                 # chosen: solo needs no terminal
+            self.assertNotIn("Your terminal", text)
+            self.assertNotIn("Setup Profile", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
+
+    def test_terminal_line_when_a_gate_needs_the_terminal(self):
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')   # a signature per approval
+        self.write("intent", INTENT)                                               # waiting on the human at the gate
+        for text in (self.card(), self.session()):
+            self.assertIn(f"- Your terminal: {terminal_command()} approve 0001 intent", text)
+            self.assertNotIn("Setup Profile", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
+
+    def test_no_terminal_line_otherwise(self):
+        self.assertNotIn("Your terminal", self.session())                          # no intent.md yet: waiting on the agent
+        self.write("intent", INTENT)
+        self.assertNotIn("Your terminal", self.card())                             # policy any: the phrase is enough
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        (self.d / "intent.md").unlink()
+        self.assertNotIn("Your terminal", self.card())                             # a signature is needed, but not yet
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
+        self.to_execution()
+        self.assertNotIn("Your terminal", self.card())                             # state 4: the agent's turn
+
+
 if __name__ == "__main__":
     unittest.main()
