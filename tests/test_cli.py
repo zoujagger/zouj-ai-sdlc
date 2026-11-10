@@ -14,7 +14,7 @@ class Init(RepoCase):
 
     def test_scaffolds_without_overwriting(self):
         (self.root / "Makefile").write_text("mine:\n\techo keep\n")
-        r = self.run_sdlc("init")
+        r = self.run_sdlc("init", "--with", "all")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual((self.root / "Makefile").read_text(), "mine:\n\techo keep\n")
         self.assertIn("Kept existing", r.stdout)
@@ -22,17 +22,17 @@ class Init(RepoCase):
                     ".github/workflows/aiops-gates.yml", "ops/bands.yaml"):
             self.assertTrue((self.root / rel).exists(), rel)
         self.assertIn(".aiops/state/", (self.root / ".gitignore").read_text())
-        self.assertEqual(self.run_sdlc("init").returncode, 0)   # idempotent
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)   # idempotent
         self.assertEqual((self.root / ".gitignore").read_text().count(".aiops/state/"), 1)
 
     def test_stack_preset_wires_the_makefile(self):
-        r = self.run_sdlc("init", "--stack", "python")
+        r = self.run_sdlc("init", "--with", "all", "--stack", "python")
         self.assertIn("wired format, lint, typecheck, test, build", r.stdout)
         self.assertIn("pytest -q", (self.root / "Makefile").read_text())
 
     def test_agent_init_force_keeps_human_owned_files(self):
         from helpers import ROOT
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         owned = {".aiops/config.json": '{"profile": "strict", "approval_key_policy": "sk", "main_branch": "trunk"}\n',
                  ".aiops/config/allowed-signers": "owner@example.com namespaces=\"git\" ssh-ed25519 AAAAkey\n",
                  ".claude/settings.json": '{"permissions": {"deny": ["Read(./x)"]}}\n',
@@ -41,14 +41,14 @@ class Init(RepoCase):
         for rel, text in owned.items():
             (self.root / rel).write_text(text)
         (self.root / "docs" / "ai-usage-policy.md").write_text("mine\n")          # a doc the agent may write
-        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        r = self.run_sdlc("init", "--with", "all", "--force", env={"CLAUDECODE": "1"})
         self.assertEqual(r.returncode, 0, r.stderr)
         for rel, text in owned.items():
             self.assertEqual((self.root / rel).read_text(), text, rel)           # untouched under the agent
             self.assertIn(rel, r.stdout)                                          # listed for the human
         self.assertIn("your own terminal", r.stdout)
         self.assertNotEqual((self.root / "docs" / "ai-usage-policy.md").read_text(), "mine\n")   # the rest is reset
-        r = self.run_sdlc("init", "--force")                                      # a human: as before
+        r = self.run_sdlc("init", "--with", "all", "--force")                                      # a human: as before
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn("strict", (self.root / ".aiops" / "config.json").read_text())
         # nothing tells the agent to run --force: doctor's Makefile fix and the docs
@@ -58,7 +58,7 @@ class Init(RepoCase):
 
     def test_agent_init_force_never_writes_what_the_guard_blocks(self):
         """Review 0003 round 6 MEDIUM: under the agent, --force writes no more than the agent's own Write could."""
-        self.assertEqual(self.run_sdlc("init", "--stack", "python").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all", "--stack", "python").returncode, 0)
         extra = self.root / ".aiops" / "config" / "protected-paths"
         extra.write_text(extra.read_text() + "Makefile the wired contract is human-owned here\n")
         kept = {"Makefile": (self.root / "Makefile").read_text(),                 # repo-protected, wired
@@ -67,7 +67,7 @@ class Init(RepoCase):
                 "scripts/check-bands.py": "# mine\n"}                             # code under the lock
         for rel, text in kept.items():
             (self.root / rel).write_text(text)
-        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        r = self.run_sdlc("init", "--with", "all", "--force", env={"CLAUDECODE": "1"})
         self.assertEqual(r.returncode, 0, r.stderr)
         for rel, text in kept.items():
             self.assertEqual((self.root / rel).read_text(), text, rel)
@@ -76,7 +76,7 @@ class Init(RepoCase):
 
     def test_agent_init_force_keeps_protected_paths_when_unlocked(self):
         """Review 0003 round 7 MEDIUM: protected paths are kept by their own rule, not only through the lock."""
-        self.assertEqual(self.run_sdlc("init", "--stack", "python").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all", "--stack", "python").returncode, 0)
         cfg = self.root / ".aiops" / "config.json"
         cfg.write_text(json.dumps({**json.loads(cfg.read_text()), "lock_when_idle": False}) + "\n")   # code unlocked
         extra = self.root / ".aiops" / "config" / "protected-paths"
@@ -86,7 +86,7 @@ class Init(RepoCase):
         for rel, text in kept.items():
             (self.root / rel).write_text(text)
         (self.root / "CLAUDE.md").write_text("mine\n")                           # unlocked, unprotected: reset
-        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        r = self.run_sdlc("init", "--with", "all", "--force", env={"CLAUDECODE": "1"})
         self.assertEqual(r.returncode, 0, r.stderr)
         for rel, text in kept.items():
             self.assertEqual((self.root / rel).read_text(), text, rel)
@@ -96,7 +96,7 @@ class Init(RepoCase):
     def test_scaffold_offers_the_plugin(self):
         before = json.loads((Path(__file__).resolve().parents[1] / "templates" / "scaffold" / ".claude" /
                              "settings.json").read_text())["permissions"]["deny"]
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         settings = json.loads((self.root / ".claude" / "settings.json").read_text())
         from helpers import ROOT
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
@@ -114,7 +114,7 @@ class Init(RepoCase):
     def test_scaffold_pins_and_protects(self):
         from helpers import ROOT
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         settings = json.loads((self.root / ".claude" / "settings.json").read_text())
         self.assertIn("Read(./.env)", settings["permissions"]["deny"])
         self.assertIn("Read(./**/*.pem)", settings["permissions"]["deny"])
@@ -140,20 +140,20 @@ class Init(RepoCase):
 
     def test_agent_force_ignores_lock_env(self):
         """0005 S3 (gap 5): an inline SDLC_HOOK_PROFILE / AIOPS_INTENT can't lift the lock for the agent's --force."""
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         mk = self.root / "Makefile"
         mk.write_text(mk.read_text() + "# ours\n")                         # no active intent: code is locked
         for env in ({"SDLC_HOOK_PROFILE": "spike"}, {"AIOPS_INTENT": "0009"}):
-            r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1", **env})
+            r = self.run_sdlc("init", "--with", "all", "--force", env={"CLAUDECODE": "1", **env})
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertTrue(mk.read_text().endswith("# ours\n"), env)
             self.assertIn("Makefile", r.stdout)
 
     def test_unknown_stack_fails(self):
-        self.assertEqual(self.run_sdlc("init", "--stack", "cobol").returncode, 1)
+        self.assertEqual(self.run_sdlc("init", "--with", "all", "--stack", "cobol").returncode, 1)
 
     def test_scaffold_gate_verifies_base(self):
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         gates = (self.root / ".github" / "workflows" / "aiops-gates.yml").read_text()
         self.assertIn('git rev-parse -q --verify "${BASE_SHA}^{commit}"', gates)
         self.assertIn("exit 1", gates)
@@ -341,6 +341,127 @@ class Allowances(RepoCase):
         self.allow("# human-owned\nG-ENV-03 ls env\nG-BASH-07 sudo systemctl status docker\n")
         r = self.run_sdlc("validate", "--ci", "--base", "main")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
+STATE = ".aiops/install-state.json"
+
+
+class InitParts(RepoCase):
+    """`sdlc init` writes the core scaffold by default; `--with` adds opt-in parts (0007 S2: AC-11, 12, 14, 20)."""
+
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+        from sdlc_engine import lifecycle
+        self.lc = lifecycle
+        self.base = self.files()
+
+    def files(self):
+        return {str(p.relative_to(self.root)) for p in self.root.rglob("*")
+                if p.is_file() and p.relative_to(self.root).parts[0] != ".git"}
+
+    def part(self, name):
+        return {rel for rel in self.lc.scaffold_paths() if self.lc.part_of(rel) == name}
+
+    def parts(self):
+        return json.loads((self.root / STATE).read_text()).get("parts")
+
+    def init(self, *args):
+        r = self.run_sdlc("init", *args)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r
+
+    def test_fresh_init_writes_core(self):
+        r = self.init()
+        self.assertEqual(self.files() - self.base, self.part("core") | {STATE, ".gitignore"})
+        self.assertEqual(len(self.part("core")), 16)
+        self.assertEqual(self.parts(), [])
+        self.assertIn("--with", r.stdout)                                         # says how to add the rest
+        for name in self.lc.PARTS:
+            self.assertIn(name, r.stdout)
+
+    def test_with_adds_only_that_part(self):
+        self.init()
+        before = self.files()
+        self.init("--with", "maintain")
+        self.assertEqual(self.files() - before, self.part("maintain"))
+        self.assertEqual(len(self.part("maintain")), 7)
+        self.assertEqual(self.parts(), ["maintain"])
+        self.init("--with", "review,deploy")
+        self.assertEqual(self.parts(), ["deploy", "maintain", "review"])        # --with only adds
+
+    def test_with_all(self):
+        self.init("--with", "all")
+        self.assertEqual(self.files() - self.base, set(self.lc.scaffold_paths()) | {STATE, ".gitignore"})
+        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+
+    def test_unknown_part_refused_before_writing(self):
+        for value in ("bogus", "maintain,bogus", "core"):
+            r = self.run_sdlc("init", "--with", value)
+            self.assertEqual(r.returncode, 1, value)
+            for name in self.lc.PARTS:
+                self.assertIn(name, r.stderr)
+            self.assertEqual(self.files(), self.base, value)                      # nothing written
+        r = self.run_sdlc("init", "--with")                                       # no value
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(self.files(), self.base)
+
+    def test_rerun_without_with_keeps_parts(self):
+        self.init("--with", "maintain")
+        before = self.files()
+        self.init()
+        self.assertEqual(self.files(), before)                                    # adds nothing, removes nothing
+        self.assertEqual(self.parts(), ["maintain"])
+
+    def test_edited_config_without_state_gets_every_part(self):
+        (self.root / ".aiops").mkdir()                                            # initialized before install-state
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
+        self.init()
+        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())
+        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+
+    def test_template_config_with_full_scaffold_gets_every_part(self):
+        self.init("--with", "all")
+        (self.root / STATE).unlink()                                              # as 0.2.0-alpha.2 left it
+        (self.root / "ops" / "bands.yaml").unlink()
+        (self.root / ".github" / "workflows" / "deploy.yml").unlink()
+        self.init()
+        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())            # both restored: every part counts
+        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+
+    def test_rerun_after_partial_core_setup_stays_core(self):
+        self.init()
+        (self.root / STATE).unlink()                                              # the first run stopped part-way
+        for rel in ("CLAUDE.md", "REVIEW.md", ".github/workflows/ci.yml"):
+            (self.root / rel).unlink()
+        before = self.files()
+        self.init()
+        self.assertEqual(self.files() - before, {"CLAUDE.md", "REVIEW.md", ".github/workflows/ci.yml", STATE})
+        self.assertEqual(self.parts(), [])
+        shutil.rmtree(self.root / ".aiops")                                       # it stopped before config.json
+        (self.root / ".aiops").mkdir()
+        (self.root / ".aiops" / "README.md").write_text("x\n")
+        self.init()
+        self.assertEqual(self.parts(), [])
+
+    def test_rerun_after_partial_with_maintain_completes_it(self):
+        self.init("--with", "maintain")
+        (self.root / STATE).unlink()
+        for rel in ("CLAUDE.md", "ops/bands.yaml"):
+            (self.root / rel).unlink()
+        before = self.files()
+        self.init()
+        self.assertEqual(self.files() - before, {"CLAUDE.md", "ops/bands.yaml", STATE})
+        self.assertEqual(self.parts(), ["maintain"])
+
+    def test_the_users_own_files_do_not_count_as_a_part(self):
+        (self.root / ".github").mkdir()
+        (self.root / ".github" / "dependabot.yml").write_text("version: 2\nupdates: []\n")   # theirs, not the scaffold's
+        (self.root / "docs" / "adr").mkdir(parents=True)
+        (self.root / "docs" / "adr" / "0001-record-architecture-decisions.md").write_text("# ours\n")
+        self.init()
+        self.assertFalse((self.root / "docs" / "ai-usage-policy.md").exists())    # governance was not inferred
+        self.assertEqual(self.parts(), [])
 
 
 if __name__ == "__main__":

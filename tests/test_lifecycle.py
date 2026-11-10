@@ -24,7 +24,7 @@ class InstallState(RepoCase):
         return json.loads((self.root / STATE).read_text())
 
     def test_init_records_every_file(self):
-        r = self.run_sdlc("init")
+        r = self.run_sdlc("init", "--with", "all")
         self.assertEqual(r.returncode, 0, r.stderr)
         st = self.state()
         self.assertEqual(st["schema"], 1)
@@ -47,20 +47,20 @@ class InstallState(RepoCase):
 
     def test_kept_files_are_not_recorded_and_rerun_keeps_state(self):
         (self.root / "Makefile").write_text("mine:\n\techo keep\n")
-        self.run_sdlc("init")
+        self.run_sdlc("init", "--with", "all")
         self.assertNotIn("Makefile", self.state()["files"])
         before = (self.root / STATE).read_text()
-        self.assertEqual(self.run_sdlc("init").returncode, 0)                           # nothing new written
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)                           # nothing new written
         self.assertEqual((self.root / STATE).read_text(), before)
 
     def test_stack_wiring_is_hashed_as_written(self):
-        self.run_sdlc("init", "--stack", "python")
+        self.run_sdlc("init", "--with", "all", "--stack", "python")
         st = self.state()
         self.assertEqual(st["stack"], "python")
         self.assertEqual(st["files"]["Makefile"]["sha256"], sha(self.root / "Makefile"))
 
     def test_scaffold_codeowners_covers_install_state(self):
-        self.run_sdlc("init")
+        self.run_sdlc("init", "--with", "all")
         self.assertRegex((self.root / ".github" / "CODEOWNERS").read_text(), r"(?m)^/\.aiops/install-state\.json\s+@")
 
 
@@ -82,7 +82,7 @@ class ListInstalled(RepoCase):
     def setUp(self):
         super().setUp()
         shutil.rmtree(self.root / ".aiops")
-        self.assertEqual(self.run_sdlc("init", "--stack", "python").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all", "--stack", "python").returncode, 0)
 
     def snapshot(self):
         return {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*")
@@ -188,7 +188,7 @@ class Adoption(RepoCase):
 
     def test_stack_wired_makefile_matches(self):
         from sdlc_engine import lifecycle
-        self.run_sdlc("init", "--stack", "go")
+        self.run_sdlc("init", "--with", "all", "--stack", "go")
         (self.root / STATE).unlink()
         st = lifecycle.adopt(self.root)
         self.assertEqual(st["files"]["Makefile"]["sha256"], sha(self.root / "Makefile"))
@@ -228,7 +228,7 @@ class Adoption(RepoCase):
 
     def test_links_and_non_scaffold_files_are_never_claimed(self):
         from sdlc_engine import lifecycle
-        self.run_sdlc("init")
+        self.run_sdlc("init", "--with", "all")
         (self.root / STATE).unlink()
         (self.root / "REVIEW.md").unlink()
         (self.root / "REVIEW.md").symlink_to(self.root / "CLAUDE.md")
@@ -241,7 +241,7 @@ class Repair(RepoCase):
     def setUp(self):
         super().setUp()
         shutil.rmtree(self.root / ".aiops")
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         self.state0 = json.loads((self.root / STATE).read_text())
 
     def state(self):
@@ -359,7 +359,7 @@ class Upgrade(RepoCase):
     def setUp(self):
         super().setUp()
         shutil.rmtree(self.root / ".aiops")
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         home = self.root.parent / f"{self.root.name}.home"
         (home / ".claude" / "plugins").mkdir(parents=True)
         (home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {
@@ -507,7 +507,7 @@ class Uninstall(RepoCase):
     def setUp(self):
         super().setUp()
         shutil.rmtree(self.root / ".aiops")
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         self.d.mkdir(parents=True)
         self.write("intent", INTENT)
 

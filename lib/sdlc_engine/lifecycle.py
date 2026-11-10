@@ -52,9 +52,10 @@ def save(root, st):
     cli.write_file(root, STATE, (json.dumps(st, indent=2, sort_keys=True) + "\n").encode())
 
 
-def record(root, written, profile=None, stack=None, ref=None):
-    """Record the scaffold files just written (their bytes on disk) in install-state. Files that were only kept are
-    not claimed. Nothing is written when nothing was, so a rerun leaves the state as it is."""
+def record(root, written, profile=None, stack=None, ref=None, parts=None):
+    """Record the scaffold files just written (their bytes on disk) in install-state, and the installed opt-in
+    `parts` when given. Files that were only kept are not claimed. Nothing is written when nothing was, so a rerun
+    leaves the state as it is."""
     paths = [rel for rel in dict.fromkeys(written) if rel not in NOT_OWNED and (cli.TEMPLATES / "scaffold" / rel).is_file()]
     if not paths:
         return
@@ -68,6 +69,8 @@ def record(root, written, profile=None, stack=None, ref=None):
         "stack": stack if stack is not None else st.get("stack"),
         "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
+    if parts is not None:
+        st["parts"] = sorted(parts)
     for rel in paths:
         st["files"][rel] = {"sha256": sha256_file(root / rel), "version": version,
                             "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
@@ -111,9 +114,70 @@ def parse_parts(value):
     return sorted(set(names)), None
 
 
-def scaffold_paths():
+def parts_line(parts, command="setup"):
+    """One line naming the opt-in parts that aren't installed and how to add them; "" when every part is."""
+    missing = [p for p in PARTS if p not in parts]
+    if not missing:
+        return ""
+    return (f"Not installed (opt-in parts): {', '.join(missing)}. Add one with `sdlc {command} --with <part>` "
+            "(comma-separated, or `--with all`).")
+
+
+def scaffold_paths(parts=None):
+    """Every scaffold path; with `parts` (opt-in part names), only core and those parts."""
     root = cli.TEMPLATES / "scaffold"
-    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+    paths = sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+    if parts is None:
+        return paths
+    rules, keep = part_rules(), {"core", *parts}
+    return [rel for rel in paths if part_of(rel, rules) in keep]
+
+
+def config_is_template(root):
+    """True if .aiops/config.json is missing or still holds exactly the scaffold template's JSON: nobody has chosen
+    anything in this repo yet (a new repo, or a setup that stopped part-way)."""
+    f = root / ".aiops" / "config.json"
+    if not f.exists() and not f.is_symlink():
+        return True
+    try:
+        return not f.is_symlink() and \
+            json.loads(f.read_text()) == json.loads((cli.TEMPLATES / "scaffold" / ".aiops" / "config.json").read_text())
+    except (OSError, ValueError):
+        return False
+
+
+def parts_on_disk(root):
+    """The opt-in parts with at least one file on disk that a release of the plugin wrote (compared after
+    normalize(), against every release's scaffold and the running one). The user's own file at a scaffold path, such
+    as their dependabot.yml, doesn't count."""
+    rules, released = part_rules(), {}
+    for files in history().values():
+        for rel, digest in files.items():
+            released.setdefault(rel, set()).add(digest)
+    found = set()
+    for rel in scaffold_paths():
+        part, f = part_of(rel, rules), root / rel
+        if part == "core" or part in found or not f.is_file() or cli.symlink_on_path(root, rel):
+            continue
+        digest = sha256_bytes(normalize(f.read_bytes()))
+        if digest in released.get(rel, ()) or digest == sha256_bytes(normalize(render(rel, cli.REF_PLACEHOLDER))):
+            found.add(part)
+    return sorted(found)
+
+
+def installed_parts(root, st, requested=()):
+    """The opt-in parts installed here, sorted, plus the `requested` ones (`--with` only adds):
+    - install-state names them (`parts`); state written before 0.2.0-alpha.4 has no such key and means every part
+    - with no install-state: a repo whose config.json is still the template (or missing) has the parts found on
+      disk, so a new repo gets core only and a rerun after a setup that stopped part-way installs what the first run
+      chose; a repo with an edited config was initialized before install-state existed and has every part."""
+    if st is not None:
+        base = [p for p in st["parts"] if p in PARTS] if isinstance(st.get("parts"), list) else PARTS
+    elif config_is_template(root):
+        base = parts_on_disk(root)
+    else:
+        base = PARTS
+    return sorted(set(base) | set(requested))
 
 
 def expected(rel, ref, stack=None):

@@ -36,7 +36,9 @@ Lifecycle (any user or agent)
   validate [id] [--all] [--ci] [--base REF]  check artifacts against schemas/; --ci also audits approval
                              commits (signers, legacy list and config read from REF when given)
   lock                       /fix: lock test files after the human approved the failing test
-  init [--stack python|node|go] [--force]   scaffold this repo (.aiops/, Makefile contract, CI, REVIEW.md)
+  init [--stack python|node|go] [--with PARTS] [--force]   scaffold this repo: the core files (.aiops/, Makefile
+                             contract, CI audit, REVIEW.md), plus opt-in PARTS (review, maintain, deploy,
+                             governance, issues, comma-separated, or all)
   setup [--profile solo|team|strict] [--stack S] [--dry-run] [--yes]   guided, rerunnable setup
   feedback                   issue links and a doctor summary to paste (sends nothing)
   list-installed             what the plugin installed here: current, stale, modified, missing, unmanaged
@@ -433,13 +435,14 @@ def _agent_blocked_now(root, rel):
         return _agent_blocked(root, rel)
 
 
-def init_actions(root, force=False, agent=False):
-    """[(action, rel)] for every scaffold file: "create" (missing, or --force) or "keep" (exists). Under the agent,
-    --force keeps existing human-owned files, and any file the guard won't let the agent write ("owned"). A file with a symlink on its path is "symlink" (init refuses to
-    run). Writes nothing, so `sdlc setup` can preview exactly what `init` will do."""
-    scaffold = TEMPLATES / "scaffold"
+def init_actions(root, force=False, agent=False, parts=None):
+    """[(action, rel)] for every scaffold file (with `parts`, only core and those opt-in parts): "create" (missing,
+    or --force) or "keep" (exists). Under the agent, --force keeps existing human-owned files, and any file the guard
+    won't let the agent write ("owned"). A file with a symlink on its path is "symlink" (init refuses to run). Writes
+    nothing, so `sdlc setup` can preview exactly what `init` will do."""
+    from . import lifecycle
     out = []
-    for rel in sorted(str(p.relative_to(scaffold)) for p in scaffold.rglob("*") if p.is_file()):
+    for rel in lifecycle.scaffold_paths(parts):
         if symlink_on_path(root, rel):
             out.append(("symlink", rel))
         elif not (root / rel).exists():
@@ -496,11 +499,20 @@ def cmd_init(root, args):
     if stack and stack not in STACKS:
         out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
         return 1
+    from . import lifecycle
+    requested = []
+    if "--with" in args:
+        i = args.index("--with")
+        requested, why = lifecycle.parse_parts(args[i + 1] if i + 1 < len(args) else "")
+        if why:
+            out(f"{why}. Nothing was written.", sys.stderr)
+            return 1
     problem = scaffold_root_problem(root)
     if problem:
         out(f"refusing: {problem}. Nothing was written.", sys.stderr)
         return 1
-    actions = init_actions(root, force, agent=approvals.running_under_agent())
+    parts = lifecycle.installed_parts(root, lifecycle.load(root), requested)
+    actions = init_actions(root, force, agent=approvals.running_under_agent(), parts=parts)
     refusal = symlink_refusal(root, actions)
     if refusal:
         out(refusal, sys.stderr)
@@ -520,9 +532,8 @@ def cmd_init(root, args):
     if stack and "Makefile" in created:
         wired = _wire_stack(root, stack)
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
-    from . import lifecycle
     try:
-        lifecycle.record(root, written, stack=stack)
+        lifecycle.record(root, written, stack=stack, parts=parts)
     except OSError as exc:
         out(write_failure(exc, written), sys.stderr)
         return 1
@@ -530,6 +541,9 @@ def cmd_init(root, args):
     if skipped:
         out("Kept existing (compare them with the plugin's templates/scaffold/):\n  "
             + "\n  ".join(skipped))
+    left_out = lifecycle.parts_line(parts, "init")
+    if left_out:
+        out(left_out)
     out("""
 zouj-ai-sdlc is now active in this repo. Next:
   1. Wire the Makefile contract (format/lint/typecheck/test/build): copy the recipes from the plugin's

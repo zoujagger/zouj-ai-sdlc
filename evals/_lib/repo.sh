@@ -23,7 +23,7 @@ init_repo() {
     exit 1
   fi
   git config --global gpg.format ssh; git config --global user.signingkey "$PWD/.eval-signing-key.pub"
-  $SDLC init >/dev/null
+  $SDLC init --with all >/dev/null          # the full scaffold, as these cases have always had
   mkdir -p .aiops/config
   echo "eval@example.com namespaces=\"git\" $(cat .eval-signing-key.pub)" > .aiops/config/allowed-signers
   printf '.eval-signing-key*\n' >> .gitignore

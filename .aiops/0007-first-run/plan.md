@@ -50,7 +50,7 @@ known gap in S12.
     `::test_every_manifest_line_matches_a_file`, `::test_never_declined_is_core`, `::test_core_is_sixteen_files` →
     fail: no manifest, no `parts()`
   - Covers: AC-15
-- [ ] **S2**: `sdlc init` installs the chosen parts and records them.
+- [x] **S2**: `sdlc init` installs the chosen parts and records them.
   - Files: `lib/sdlc_engine/lifecycle.py` (modify: `installed_parts(root, st, requested)`, `scaffold_paths(parts=None)`,
     `record(..., parts=)` writes `"parts"`), `lib/sdlc_engine/cli.py` (modify: `init_actions(..., parts=)`, `cmd_init`
     parses `--with`, USAGE). With nothing recorded, `installed_parts` reads the disk: template `config.json` or no
@@ -199,3 +199,7 @@ known gap in S12.
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-10 | S1 | The manifest reader is `part_rules()` (the `(part, glob)` lines), not `parts()`; `PARTS` holds the five opt-in names. A fifth test, `Parts::test_parse_parts`, covers `parse_parts` | `parts` is used as an argument name throughout S2-S4 | S1 |
+| 2026-11-10 | S2 | A part counts as "on disk" only if one of its files equals a released scaffold file (after `normalize()`), not merely exists. New test `InitParts::test_the_users_own_files_do_not_count_as_a_part` | A project's own `dependabot.yml` or issue forms sit at scaffold paths; counting them would install `governance` or `issues` in a new repo. Narrower than spec R-13's wording, same intent | S2 |
+| 2026-11-10 | S2 | "Template config" also covers a missing `config.json` (a setup that stopped before writing it). The check lives in `lifecycle.config_is_template`, with `parts_on_disk` and `parts_line` beside it | The first file written is `.aiops/README.md`, so `.aiops/` can exist without a config; S5 reuses the helper from `lifecycle` | S2 |
+| 2026-11-10 | S2 | Existing tests that remove the fixture's `.aiops/` and then run `sdlc init` (`tests/test_cli.py::Init`, the lifecycle suites, `tests/test_setup.py`) now pass `--with all`. So does `evals/_lib/repo.sh` | The plan expected only `SetupCase` and `Playbook.repo` to need it; 22 init tests rely on opt-in files (`ops/bands.yaml`, `deploy.yml`, `claude.yml`). Their meaning is unchanged: the full scaffold | S2 |
+| 2026-11-10 | S2 | `sdlc init` ends with a line naming the parts it left out | Spec R-17 asks for it in setup's preview; init is the other entry point | S2 |

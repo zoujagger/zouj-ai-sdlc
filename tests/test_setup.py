@@ -26,13 +26,13 @@ class Init(RepoCase):
         self.assertIn("Makefile", kept)
         self.assertIn(".aiops/config.json", created)
         self.assertFalse((self.root / ".aiops" / "config.json").exists())       # previewing writes nothing
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         for rel in created | kept:
             self.assertTrue((self.root / rel).exists(), rel)
         self.assertEqual((self.root / "Makefile").read_text(), "mine:\n\techo keep\n")
         again = cli.init_actions(self.root)
         self.assertEqual({act for act, _ in again}, {"keep"})                    # a rerun plans no creation
-        rerun = self.run_sdlc("init")
+        rerun = self.run_sdlc("init", "--with", "all")
         self.assertIn("Kept existing", rerun.stdout)
         self.assertNotIn("--force", rerun.stdout)                                # nothing suggests resetting files
         self.assertNotIn("re-run with --stack", rerun.stdout)                    # a rerun keeps the Makefile
@@ -151,12 +151,12 @@ class Plan(SetupCase):
             self.assertIn(says, r.stderr, args)
             self.assertNotIn("dry run", r.stdout, args)
             self.assertEqual(r.stdout, "", args)                          # refused before preflight
-        r = self.run_sdlc("init", "--stack", str(evil))
+        r = self.run_sdlc("init", "--with", "all", "--stack", str(evil))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(self.snapshot(), before)
 
     def test_unknown_stored_profile(self):
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         cfg = self.root / ".aiops" / "config.json"
         for value in ('"bogus"', "null"):
             cfg.write_text('{"commit_approvals": true, "require_signed_approvals": true, "profile": ' + value + "}\n")
@@ -234,7 +234,7 @@ class Owned(SetupCase):
 
     def alpha1_repo(self):
         """A repo set up by 0.2.0-alpha.1: no profile in config.json, a customised .claude/settings.json."""
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         cfg, settings = self.root / ".aiops" / "config.json", self.root / ".claude" / "settings.json"
         cfg.write_text('{"lock_when_idle": true, "commit_approvals": true, "main_branch": "main",\n'
                        ' "require_signed_approvals": true}\n')
@@ -257,7 +257,7 @@ class Owned(SetupCase):
     def test_agent_creates_a_missing_config_with_init_defaults(self):
         """Round 4 MEDIUM: under the agent, a new config.json is what init writes (team); the profile is a human step."""
         scaffold = json.loads((cli.TEMPLATES / "scaffold" / ".aiops" / "config.json").read_text())
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         (self.root / ".aiops" / "config.json").unlink()                             # initialized, but no config
         for case in ("initialized repo", "fresh repo"):
             if case == "fresh repo":
@@ -346,7 +346,7 @@ class Owned(SetupCase):
                 self.assertTrue(any(st == "!" for st, _, _ in setup.inventory(self.root)))
 
     def test_invalid_json_is_refused(self):
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         for rel in (".aiops/config.json", ".claude/settings.json"):
             with self.subTest(file=rel):
                 f = self.root / rel
@@ -363,7 +363,7 @@ class Owned(SetupCase):
 
     def test_json_that_isnt_an_object_is_refused(self):
         """Round 5: valid JSON of the wrong shape gets a ✗ row, never a traceback."""
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         for rel, bad in ((".aiops/config.json", "1\n"), (".aiops/config.json", "[]\n"),
                          (".claude/settings.json", "[]\n"),
                          (".claude/settings.json", '{"extraKnownMarketplaces": "x"}\n'),
@@ -412,7 +412,7 @@ class Symlinks(SetupCase):
         return d
 
     def scaffolded(self):
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         git(self.root, "add", "-A")
         git(self.root, "commit", "-q", "-m", "scaffold")
         return self.snapshot(), (self.root / ".claude" / "settings.json").read_bytes()
@@ -421,7 +421,7 @@ class Symlinks(SetupCase):
         before, settings = self.scaffolded()
         (self.root / "REVIEW.md").unlink()
         (self.root / "REVIEW.md").symlink_to(".claude/settings.json")
-        r = self.run_sdlc("init", "--force", env={"CLAUDECODE": "1"})
+        r = self.run_sdlc("init", "--with", "all", "--force", env={"CLAUDECODE": "1"})
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("REVIEW.md", r.stderr)
         self.assertIn("symlink", r.stderr)
@@ -434,7 +434,7 @@ class Symlinks(SetupCase):
         target.write_text("[user]\n\tname = me\n")
         (self.root / "REVIEW.md").unlink()
         (self.root / "REVIEW.md").symlink_to(target)
-        r = self.run_sdlc("init", "--force")
+        r = self.run_sdlc("init", "--with", "all", "--force")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertEqual(target.read_text(), "[user]\n\tname = me\n")
 
@@ -444,7 +444,7 @@ class Symlinks(SetupCase):
         (self.root / "ops").mkdir()
         (self.root / "ops" / "bands.yaml").symlink_to(out / "planted")            # dangling
         before = self.snapshot()
-        for args in (("init",), ("setup", "--profile", "solo", "--yes")):
+        for args in (("init", "--with", "all"), ("setup", "--profile", "solo", "--yes")):
             r = self.run_sdlc(*args, env={"CLAUDECODE": "1", "PATH": str(self.bin_with())})
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             self.assertIn("scripts", r.stdout + r.stderr)
@@ -466,7 +466,7 @@ class Symlinks(SetupCase):
         (self.root / "REVIEW.md").unlink()
         import os
         os.link(target, self.root / "REVIEW.md")
-        r = self.run_sdlc("init", "--force")
+        r = self.run_sdlc("init", "--with", "all", "--force")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(target.read_text(), "mine\n")
         self.assertIn("REVIEW.md", (self.root / "REVIEW.md").read_text())
@@ -476,10 +476,10 @@ class WriteErrors(SetupCase):
     """Round 5: a failed write is reported with what was already written, never as a traceback."""
 
     def test_init_force_over_a_directory(self):
-        self.assertEqual(self.run_sdlc("init").returncode, 0)
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
         (self.root / "REVIEW.md").unlink()
         (self.root / "REVIEW.md").mkdir()
-        r = self.run_sdlc("init", "--force")
+        r = self.run_sdlc("init", "--with", "all", "--force")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertNotIn("Traceback", r.stderr)
         self.assertIn("REVIEW.md", r.stderr)
