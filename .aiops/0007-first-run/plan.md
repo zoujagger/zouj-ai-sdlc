@@ -78,7 +78,7 @@ known gap in S12.
     `tests/test_lifecycle.py::Compat::test_state_without_parts_reads_as_every_part` → fail: the 20 opt-in files show
     as `new` and `upgrade` creates them
   - Covers: AC-13, AC-14
-- [ ] **S5**: `setup.set_first_profile`: check, write, commit alone, reply.
+- [x] **S5**: `setup.set_first_profile`: check, write, commit alone, reply.
   - Files: `lib/sdlc_engine/setup.py` (modify: `template_config()` factored out of `_as_setup_writes`,
     `no_profile_yet(root)`, `set_first_profile(root, name)`)
   - Test first: `tests/test_setup.py::FirstProfile::test_sets_and_commits_config_alone`,
@@ -207,3 +207,4 @@ known gap in S12.
 | 2026-11-10 | S3 | Only one existing setup test changed (`Symlinks`, now `--with maintain`), not every fresh-repo test. The commit command setup prints lists only files of installed parts | The other `SetupCase` tests assert core files only. A file at an opt-in path in a core-only repo is the user's own, not the scaffold's | S3 |
 | 2026-11-10 | S3 | `CoreWalk` skips the mid-walk `upgrade`/`repair` check (its fixtures are `maintain` files), and `protected_tree_blocked` creates `docs/` first | Until S4, `upgrade` would create the left-out parts; S4 adds the core check. A core-only repo has no `docs/`, and `rm -rf docs` on a missing directory has nothing to judge | S3 |
 | 2026-11-10 | S4 | `lifecycle.adopt` also changed: the adopted state carries `parts` (read from disk), and a missing file of a part that isn't installed is not marked `declined`. Tests `Compat::test_release_repo_without_state_keeps_every_part` and, in `tests/test_playbook.py`, `lifecycle_on_core` (the check S3 deferred) | Without it a core-only repo that lost its install-state would list 20 `declined` rows; the walk on core now also proves that the agent's `upgrade` and `repair` bring in no opt-in file | S4 |
+| 2026-11-10 | S5 | The template check is `lifecycle.config_written` (S2/S3), not a `template_config()` factored out of `setup._as_setup_writes`. `human_steps` became a printer over a new `steps_for_human(..., install=False)`, so the reply can leave out the plugin-install step. Three extra tests: `test_refused_without_aiops`, `test_unknown_name`, and a missing `config.json` case | `_as_setup_writes` compares bytes with the ref pinned and is used for a different question (was this file planted?). The phrase is typed with the plugin already running | S5 |

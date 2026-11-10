@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 
 from . import approvals, cli
-from .machine import config, git, initialized
+from . import artifacts as A
+from .machine import config, git, initialized, intent_dirs
 
 PROFILES = cli.PROFILES
 TIMEOUT = 5
@@ -477,11 +478,19 @@ def apply(root, profile, actions, stack=None, review=(), parts=None):
 
 
 def human_steps(root, profile, pending, review=()):
-    """What only the human can do: install the plugin, set up signing, own .aiops/, apply changes to human-owned
-    files, commit, and start the first intent."""
+    """Print what only the human can do: install the plugin, set up signing, own .aiops/, apply changes to
+    human-owned files, commit, and start the first intent."""
+    print("Human steps")
+    for i, step in enumerate(steps_for_human(root, profile, pending, review), 1):
+        print(f"  {i}. {step}")
+
+
+def steps_for_human(root, profile, pending, review=(), install=True):
+    """The human steps as a list. `install=False` leaves out installing the plugin (it is already running: the
+    prompt hook's reply)."""
     steps = ["In Claude Code (or just reopen Claude Code here: the project settings offer the plugin):\n"
              f"       /plugin marketplace add zoujagger/zouj-ai-sdlc@{REF}\n"
-             "       /plugin install zouj-ai-sdlc@zouj"]
+             "       /plugin install zouj-ai-sdlc@zouj"] if install else []
     if profile in ("team", "strict") and approvals.signing_problem(root):
         key = "~/.ssh/aiops_signing_sk" if profile == "strict" else "~/.ssh/aiops_signing"
         gen = (f"ssh-keygen -t ed25519-sk -f {key}            # a FIDO key: a touch for every approval"
@@ -521,6 +530,72 @@ def human_steps(root, profile, pending, review=()):
         steps.append(f"Commit the scaffold:\n       git add -- {paths} && git commit -m \"chore: adopt zouj-ai-sdlc "
                      f"(profile {config(root)['profile']})\" -- {paths}")
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
-    print("Human steps")
-    for i, step in enumerate(steps, 1):
-        print(f"  {i}. {step}")
+    return steps
+
+
+# ---------------------------------------------------------------- the first profile, set by a typed phrase
+
+def no_profile_yet(root):
+    """(True, "") while this repo has no profile and nothing depends on one, else (False, why). That is when the
+    human's typed phrase `Setup Profile <name>` may set the first profile:
+    - .aiops/config.json is a regular file that still equals the scaffold template (no `profile` key, nothing edited)
+    - no artifact is Approved or Closed: no gate has been opened under the default yet.
+    Changing a profile later, a downgrade included, is a run in the human's own terminal."""
+    from . import lifecycle
+    f = root / ".aiops" / "config.json"
+    if f.is_symlink():
+        return False, ".aiops/config.json is a symlink; a profile is written only to a regular file"
+    if not f.is_file():
+        return False, "there is no .aiops/config.json to set it in (run /zouj-ai-sdlc:setup first)"
+    written = lifecycle.config_written(root)
+    if written:
+        return False, f"a profile is already set here ({written})"
+    if written is None:
+        current = _json(f) or {}
+        if current.get("profile"):
+            return False, f"a profile is already set here ({current['profile']})"
+        return False, ".aiops/config.json was edited after setup (it no longer equals the scaffold template)"
+    for d in intent_dirs(root):
+        for kind in ("intent", "spec", "plan"):
+            art = d / f"{kind}.md"
+            if not art.is_file():
+                continue
+            status = A.parse(art.read_text()).get("status")
+            if status in ("Approved", "Closed"):
+                return False, (f".aiops/{d.name}/{kind}.md is already {status}: a gate has been opened under the "
+                               "default profile, so changing it now is a deliberate change")
+    return True, ""
+
+
+def set_first_profile(root, name):
+    """(ok, message) for the human's typed phrase `Setup Profile <name>` (the prompt hook calls this in-process, as
+    it does approvals.approve). Sets this repo's first profile: writes the template's keys plus the profile's into
+    .aiops/config.json, exactly what a terminal `sdlc setup --profile <name>` writes into a new config, and commits
+    that file alone, unsigned. Never changes a profile that is set (no_profile_yet)."""
+    from . import lifecycle
+    if name not in PROFILES:
+        return False, (f"profile NOT set: unknown profile {name!r}. Type `Setup Profile solo`, `Setup Profile team` "
+                       "or `Setup Profile strict` as the whole prompt.")
+    if not initialized(root):
+        return False, "profile NOT set: this repo isn't set up yet (no .aiops/). Run /zouj-ai-sdlc:setup first."
+    ok, why = no_profile_yet(root)
+    if not ok:
+        return False, (f"profile NOT set: {why}. The typed phrase only sets a repo's first profile. To change one, "
+                       f"the human runs in their own terminal: `{lifecycle.human_command(f'setup --profile {name}')}`.")
+    rel = ".aiops/config.json"
+    template = json.loads((cli.TEMPLATES / "scaffold" / rel).read_text())
+    try:
+        cli.write_file(root, rel, (json.dumps({**template, **PROFILE_CONFIG[name]}, indent=2) + "\n").encode())
+    except OSError as exc:
+        return False, f"profile NOT set: {rel} could not be written ({exc}). Nothing changed."
+    title = f"chore(aiops): Setup Profile {name}"
+    done = approvals._commit_alone(root, rel, title, f"AIOps-Profile: {name}\nSet-By: {approvals.approver(root)}", [])
+    if done is None:
+        note = f"The change is in the working tree, but committing it failed: commit it yourself ({rel}, alone)."
+    else:
+        note = f"Committed alone as `{title}`." + (f" The index was busy and still holds the old file: run "
+                                                    f"`{done[1]}` before your next commit." if done[1] else "")
+    steps = steps_for_human(root, name, {}, install=False)
+    return True, (f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n"
+                  "Relay the remaining human steps:\n"
+                  + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1)))

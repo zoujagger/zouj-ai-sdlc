@@ -909,5 +909,155 @@ class Parts(SetupCase):
         self.assertEqual(self.parts(), ["maintain"])
 
 
+CONFIG = ".aiops/config.json"
+
+
+class FirstProfile(SetupCase):
+    """setup.set_first_profile: what the typed phrase `Setup Profile <name>` does (0007 S5: AC-1, AC-3, AC-8)."""
+
+    def setUp(self):
+        super().setUp()
+        from sdlc_engine import setup
+        self.S = setup
+        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})   # the agent scaffolds: init's defaults
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.template = json.loads((cli.TEMPLATES / "scaffold" / CONFIG).read_text())
+        self.assertEqual(self.cfg(), self.template)                                # no profile chosen yet
+
+    def cfg(self):
+        return json.loads((self.root / CONFIG).read_text())
+
+    def head(self):
+        return git(self.root, "rev-parse", "HEAD")
+
+    def refused(self, name, *needles):
+        before = (self.head(), (self.root / CONFIG).read_bytes(), git(self.root, "status", "--porcelain"))
+        ok, msg = self.S.set_first_profile(self.root, name)
+        self.assertFalse(ok, msg)
+        self.assertIn("profile NOT set", msg)
+        self.assertIn(f"bin/sdlc setup --profile {name}", msg)                     # the terminal command
+        self.assertIn(" -I ", msg)
+        for needle in needles:
+            self.assertIn(needle, msg)
+        self.assertEqual((self.head(), (self.root / CONFIG).read_bytes(), git(self.root, "status", "--porcelain")),
+                         before)                                                   # no file, no commit
+        return msg
+
+    def test_sets_and_commits_config_alone(self):
+        before, state = self.head(), (self.root / STATE).read_bytes()
+        ok, msg = self.S.set_first_profile(self.root, "solo")
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.cfg(), {**self.template, **self.S.PROFILE_CONFIG["solo"]})
+        self.assertEqual((self.root / CONFIG).read_text(), json.dumps(self.cfg(), indent=2) + "\n")
+        self.assertEqual(git(self.root, "rev-parse", "HEAD~1"), before)            # exactly one new commit
+        shown = git(self.root, "show", "--name-only", "--format=%s%n%b", "HEAD")
+        self.assertEqual(shown.splitlines()[0], "chore(aiops): Setup Profile solo")
+        self.assertIn("AIOps-Profile: solo", shown)
+        self.assertIn("Set-By: Human Owner <owner@example.com>", shown)
+        self.assertNotIn("Co-Authored-By", shown)
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
+        self.assertEqual(git(self.root, "log", "-1", "--format=%G?"), "N")         # unsigned, in every profile
+        self.assertEqual((self.root / STATE).read_bytes(), state)                  # install-state untouched
+        self.assertIn("?? CLAUDE.md", git(self.root, "status", "--porcelain"))    # the scaffold is still the human's
+        for needle in ("profile SET: solo", self.S.PROOF["solo"], "chore(aiops): Setup Profile solo",
+                       "git add", "/zouj-ai-sdlc:intent"):
+            self.assertIn(needle, msg)
+        self.assertNotIn("/plugin marketplace add", msg)                           # the plugin is running: no install step
+        self.assertNotIn(CONFIG, msg.split("git add", 1)[1].split("&&", 1)[0])     # already committed
+
+    def test_staged_scaffold_stays_staged(self):
+        git(self.root, "add", "--", "CLAUDE.md", "Makefile")
+        ok, msg = self.S.set_first_profile(self.root, "solo")
+        self.assertTrue(ok, msg)
+        self.assertEqual(git(self.root, "diff", "--cached", "--name-only").split(), ["CLAUDE.md", "Makefile"])
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
+        self.assertEqual(git(self.root, "status", "--porcelain", "--", CONFIG), "")   # clean: the index followed
+
+    def test_repo_with_no_commit_yet(self):
+        d = self.root.parent / f"{self.root.name}.empty"
+        d.mkdir()
+        git(d, "init", "-q", "-b", "main")
+        for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com")):
+            git(d, "config", key, value)
+        cli.apply_init(d, cli.init_actions(d, parts=[]))
+        ok, msg = self.S.set_first_profile(d, "solo")
+        self.assertTrue(ok, msg)
+        self.assertEqual(git(d, "rev-list", "--count", "HEAD"), "1")               # the root commit
+        self.assertEqual(git(d, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
+
+    def test_refused_when_profile_set(self):
+        self.assertTrue(self.S.set_first_profile(self.root, "solo")[0])
+        self.refused("team", "already", "solo")
+        self.refused("solo", "already")                                            # the same one too: nothing to do
+
+    def test_refused_when_config_edited(self):
+        (self.root / CONFIG).write_text(json.dumps({**self.template, "main_branch": "trunk"}))
+        self.refused("solo", "edited")
+        (self.root / CONFIG).write_text("{ not json")
+        self.refused("solo", "edited")
+        (self.root / CONFIG).unlink()
+        ok, msg = self.S.set_first_profile(self.root, "solo")
+        self.assertFalse(ok, msg)
+        self.assertIn(CONFIG, msg)
+        self.assertFalse((self.root / CONFIG).exists())                            # not created either
+
+    def test_refused_when_an_artifact_is_approved_or_closed(self):
+        from helpers import INTENT
+        d = self.root / ".aiops" / "0001-csv-export"
+        d.mkdir()
+        for status in ("Approved", "Closed"):
+            (d / "intent.md").write_text(INTENT.format(id="0001").replace("status: Draft", f"status: {status}"))
+            self.refused("solo", "0001-csv-export", status)
+        (d / "intent.md").write_text(INTENT.format(id="0001"))                     # a Draft opens nothing
+        self.assertTrue(self.S.set_first_profile(self.root, "solo")[0])
+
+    def test_refused_without_aiops(self):
+        shutil.rmtree(self.root / ".aiops")
+        ok, msg = self.S.set_first_profile(self.root, "solo")
+        self.assertFalse(ok)
+        self.assertIn("/zouj-ai-sdlc:setup", msg)
+
+    def test_symlinked_config_refused(self):
+        target = self.root.parent / f"{self.root.name}.target.json"
+        target.write_text(json.dumps(self.template))
+        self.addCleanup(target.unlink)
+        (self.root / CONFIG).unlink()
+        (self.root / CONFIG).symlink_to(target)
+        self.refused("solo", "symlink")
+        self.assertEqual(json.loads(target.read_text()), self.template)
+
+    def test_commit_failure_leaves_the_change(self):
+        from sdlc_engine import approvals
+        before = self.head()
+        with mock.patch.object(approvals, "_commit_alone", return_value=None):
+            ok, msg = self.S.set_first_profile(self.root, "solo")
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.cfg()["profile"], "solo")
+        self.assertEqual(self.head(), before)
+        self.assertIn("commit it yourself", msg.lower())
+        self.assertIn(CONFIG, msg)
+
+    def test_team_reply_has_signing_steps(self):
+        ok, msg = self.S.set_first_profile(self.root, "team")                      # the test key has no passphrase
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.cfg()["approval_key_policy"], "human")
+        for needle in ("profile SET: team", self.S.PROOF["team"], "ssh-keygen -t ed25519 ", "allowed-signers"):
+            self.assertIn(needle, msg)
+
+    def test_strict_reply_has_codeowners_step(self):
+        ok, msg = self.S.set_first_profile(self.root, "strict")
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.cfg()["approval_key_policy"], "sk")
+        for needle in ("profile SET: strict", "ed25519-sk", "CODEOWNERS", "/.aiops/ @"):
+            self.assertIn(needle, msg)
+
+    def test_unknown_name(self):
+        ok, msg = self.S.set_first_profile(self.root, "fast")
+        self.assertFalse(ok)
+        for name in ("solo", "team", "strict"):
+            self.assertIn(name, msg)
+        self.assertEqual(self.cfg(), self.template)
+
+
 if __name__ == "__main__":
     unittest.main()
