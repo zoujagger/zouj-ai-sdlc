@@ -87,7 +87,7 @@ known gap in S12.
     `::test_symlinked_config_refused`, `::test_commit_failure_leaves_the_change`,
     `::test_team_reply_has_signing_steps`, `::test_strict_reply_has_codeowners_step` → fail: no such function
   - Covers: AC-1, AC-3, AC-8
-- [ ] **S6**: The prompt hook recognises the phrase.
+- [x] **S6**: The prompt hook recognises the phrase.
   - Files: `lib/sdlc_engine/cli.py` (modify: `PROFILE_RE`, `hook_prompt` tries it after `APPROVE_RE`, the
     unknown-name reply; no environment marker is read on this path)
   - Test first: `tests/test_cli.py::ProfilePhrase::test_whole_prompt_sets_the_profile`,
@@ -208,3 +208,5 @@ known gap in S12.
 | 2026-11-10 | S3 | `CoreWalk` skips the mid-walk `upgrade`/`repair` check (its fixtures are `maintain` files), and `protected_tree_blocked` creates `docs/` first | Until S4, `upgrade` would create the left-out parts; S4 adds the core check. A core-only repo has no `docs/`, and `rm -rf docs` on a missing directory has nothing to judge | S3 |
 | 2026-11-10 | S4 | `lifecycle.adopt` also changed: the adopted state carries `parts` (read from disk), and a missing file of a part that isn't installed is not marked `declined`. Tests `Compat::test_release_repo_without_state_keeps_every_part` and, in `tests/test_playbook.py`, `lifecycle_on_core` (the check S3 deferred) | Without it a core-only repo that lost its install-state would list 20 `declined` rows; the walk on core now also proves that the agent's `upgrade` and `repair` bring in no opt-in file | S4 |
 | 2026-11-10 | S5 | The template check is `lifecycle.config_written` (S2/S3), not a `template_config()` factored out of `setup._as_setup_writes`. `human_steps` became a printer over a new `steps_for_human(..., install=False)`, so the reply can leave out the plugin-install step. Three extra tests: `test_refused_without_aiops`, `test_unknown_name`, and a missing `config.json` case | `_as_setup_writes` compares bytes with the ref pinned and is used for a different question (was this file planted?). The phrase is typed with the plugin already running | S5 |
+| 2026-11-10 | S6 | `lib/sdlc_engine/setup.py` changed too: when the repo has no profile yet, the agent-run setup's human step is "type `Setup Profile <p>` as your whole prompt" (the terminal command is still named, and the downgrade label is kept). `tests/test_setup.py::Owned` updated for the new text, with a case for an edited config that still gets the terminal step | Without it the engine would keep sending `solo` users to a terminal while the hook already accepts the phrase (AC-18 depends on it) | S6 |
+| 2026-11-10 | S6 | The shell-hook case is `tests/test_cli.py::ProfilePhrase::test_through_the_shell_hook`, not an addition to `tests/test_shell_hooks.py`. Extra test `::test_second_phrase_changes_nothing` | It needs the scaffolded fixture of `ProfilePhrase`; `test_shell_hooks.py` only has a broken-engine case for `prompt` | S6 |

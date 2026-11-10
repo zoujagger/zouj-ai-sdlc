@@ -21,6 +21,8 @@ from .schema import validate
 
 TEMPLATES = PLUGIN_ROOT / "templates"
 APPROVE_RE = re.compile(r"^\s*(intent|spec|plan)\s+approved(?:\s+(\d{1,4}))?\s*[.!]?\s*$", re.I)
+# The human's whole prompt `Setup Profile solo|team|strict` sets a repo's first profile (setup.set_first_profile).
+PROFILE_RE = re.compile(r"^\s*setup\s+profile(?:\s+([a-z0-9_-]+))?\s*[.!]?\s*$", re.I)
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 HUMAN_ONLY = "refusing: this is a human gate and it is running inside Claude Code. Run it in your own terminal, " \
              "or type the approval phrase (e.g. `Plan Approved 0001`) in the Claude prompt."
@@ -758,10 +760,26 @@ def _pre(check):
     return run
 
 
-def hook_prompt(data):
-    m = APPROVE_RE.match(data.get("prompt") or "")
-    if not m:
+def hook_profile(data, m):
+    """The human typed `Setup Profile <name>` as the whole prompt: set this repo's first profile. Like an approval,
+    it runs in-process and reads no CLAUDECODE / CLAUDE_CODE_CHILD_SESSION marker: Claude Code sets both for the
+    hooks of every session, so they say nothing about who typed the prompt. Dormant without .aiops/."""
+    root = project_root(data.get("cwd"))
+    if not initialized(root):
         return 0
+    from . import setup
+    _ok, msg = setup.set_first_profile(root, (m.group(1) or "").lower())
+    out(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                           "additionalContext": f"zouj-ai-sdlc {msg}"}}))
+    return 0
+
+
+def hook_prompt(data):
+    prompt = data.get("prompt") or ""
+    m = APPROVE_RE.match(prompt)
+    if not m:
+        m = PROFILE_RE.match(prompt)
+        return hook_profile(data, m) if m else 0
     root = project_root(data.get("cwd"))
     if not initialized(root):
         return 0

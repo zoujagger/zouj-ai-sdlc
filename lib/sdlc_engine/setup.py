@@ -508,14 +508,22 @@ def steps_for_human(root, profile, pending, review=(), install=True):
         snippet = json.dumps(keys, indent=2).replace("\n", "\n       ")
         if rel == ".aiops/config.json":
             current = config(root)["profile"]
+            command = f"{shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}"
             if current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):   # solo < team < strict
                 steps.append(f"Downgrade requested by the agent's run ({current} to {profile}): approvals would be "
                              f"proven by {PROOF[profile]} instead of {PROOF[current]}. Skip the next step unless you "
                              "asked for it.")
-            steps.append(f"Apply profile {profile} in your own terminal (.aiops/config.json is human-owned; setup run "
-                         f"by the agent leaves it at init's defaults). Run, then confirm the diff:\n"
-                         f"       {shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}\n"
-                         f"       It sets:\n       {snippet}")
+            if no_profile_yet(root)[0]:           # the repo's first profile: the human's typed phrase sets it
+                steps.append(f"Choose the profile: type `Setup Profile {profile}` as your whole prompt in Claude "
+                             "Code (.aiops/config.json is human-owned; setup run by the agent leaves it at init's "
+                             "defaults). The phrase sets these keys and commits the file alone:\n"
+                             f"       {snippet}\n"
+                             f"       Or run in your own terminal, then confirm the diff: {command}")
+            else:
+                steps.append(f"Apply profile {profile} in your own terminal (.aiops/config.json is human-owned; setup "
+                             f"run by the agent leaves it as it is). Run, then confirm the diff:\n"
+                             f"       {command}\n"
+                             f"       It sets:\n       {snippet}")
         else:
             steps.append(f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
                          f"       {snippet}")
@@ -574,8 +582,9 @@ def set_first_profile(root, name):
     that file alone, unsigned. Never changes a profile that is set (no_profile_yet)."""
     from . import lifecycle
     if name not in PROFILES:
-        return False, (f"profile NOT set: unknown profile {name!r}. Type `Setup Profile solo`, `Setup Profile team` "
-                       "or `Setup Profile strict` as the whole prompt.")
+        return False, (f"profile NOT set: {f'unknown profile {name!r}' if name else 'no profile was named'}. The "
+                       "human types `Setup Profile solo`, `Setup Profile team` or `Setup Profile strict` as the "
+                       "whole prompt.")
     if not initialized(root):
         return False, "profile NOT set: this repo isn't set up yet (no .aiops/). Run /zouj-ai-sdlc:setup first."
     ok, why = no_profile_yet(root)

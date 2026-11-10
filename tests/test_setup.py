@@ -250,9 +250,16 @@ class Owned(SetupCase):
         steps = r.stdout.split("Human steps\n", 1)[1]
         self.assertIn("Change .claude/settings.json yourself", steps)
         self.assertIn('"zouj-ai-sdlc@zouj": true', steps)                           # the exact keys to add
-        self.assertIn("Apply profile solo in your own terminal", steps)
+        self.assertIn("Choose the profile: type `Setup Profile solo` as your whole prompt", steps)   # 0007: no profile yet
         self.assertIn('"profile": "solo"', steps)
         self.assertIn('"require_signed_approvals": false', steps)
+        cfg.write_text('{"main_branch": "trunk", "require_signed_approvals": true}\n')   # edited: not the first profile
+        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})
+        steps = r.stdout.split("Human steps\n", 1)[1]
+        self.assertIn("Apply profile solo in your own terminal", steps)
+        self.assertNotIn("Setup Profile", steps)
+        self.assertIn('"profile": "solo"', steps)
+        self.assertEqual(cfg.read_text(), '{"main_branch": "trunk", "require_signed_approvals": true}\n')
 
     def test_agent_creates_a_missing_config_with_init_defaults(self):
         """Round 4 MEDIUM: under the agent, a new config.json is what init writes (team); the profile is a human step."""
@@ -267,7 +274,8 @@ class Owned(SetupCase):
             cfg = json.loads((self.root / ".aiops" / "config.json").read_text())
             self.assertEqual(cfg, scaffold, case)                                    # no solo keys written
             steps = r.stdout.split("Human steps\n", 1)[1]
-            self.assertIn("Apply profile solo in your own terminal", steps, case)
+            self.assertIn("type `Setup Profile solo` as your whole prompt", steps, case)   # 0007: the first profile
+            self.assertIn("bin/sdlc setup --profile solo", steps, case)                   # the terminal way, still named
             self.assertIn('"require_signed_approvals": false', steps, case)
             (self.root / ".aiops" / "config.json").unlink()
         human = self.setup_run("--profile", "solo", "--yes")                       # a human run still applies it
