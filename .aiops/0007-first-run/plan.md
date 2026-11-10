@@ -43,7 +43,7 @@ starts. The hook path therefore reads no marker (spec R-2, AC-6), and the nested
 known gap in S12.
 
 ## Steps
-- [ ] **S1**: Add the parts manifest and its reader.
+- [x] **S1**: Add the parts manifest and its reader.
   - Files: `defaults/scaffold-parts` (create), `lib/sdlc_engine/lifecycle.py` (modify: `PARTS`, `parts()`,
     `part_of(rel)`, `parse_parts(value)`)
   - Test first: `tests/test_lifecycle.py::Parts::test_every_scaffold_file_has_one_part`,
@@ -198,3 +198,4 @@ known gap in S12.
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-10 | S1 | The manifest reader is `part_rules()` (the `(part, glob)` lines), not `parts()`; `PARTS` holds the five opt-in names. A fifth test, `Parts::test_parse_parts`, covers `parse_parts` | `parts` is used as an argument name throughout S2-S4 | S1 |

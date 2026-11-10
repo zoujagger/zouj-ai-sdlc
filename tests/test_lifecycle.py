@@ -591,5 +591,54 @@ class Compat(Adoption):
         self.assertFalse((self.root / STATE).exists())                           # nothing wrote install-state
 
 
+CORE = {".aiops/README.md", ".aiops/config.json", ".aiops/config/allowed-signers", ".aiops/config/legacy-approvals",
+        ".aiops/config/protected-paths", ".aiops/config/readonly-exempt", ".aiops/config/secret-paths",
+        ".aiops/config/test-paths", ".claude/settings.json", ".github/CODEOWNERS", ".github/pull_request_template.md",
+        ".github/workflows/aiops-gates.yml", ".github/workflows/ci.yml", "CLAUDE.md", "Makefile", "REVIEW.md"}
+
+
+class Parts(unittest.TestCase):
+    """defaults/scaffold-parts assigns every scaffold file to exactly one part (0007 S1, AC-15)."""
+
+    def setUp(self):
+        from sdlc_engine import lifecycle
+        self.lc = lifecycle
+
+    def test_every_scaffold_file_has_one_part(self):
+        from fnmatch import fnmatchcase
+        rules = self.lc.part_rules()
+        for rel in self.lc.scaffold_paths():
+            hits = sorted({part for part, glob in rules if fnmatchcase(rel, glob)})
+            self.assertEqual(len(hits), 1, f"{rel} is in {hits or 'no part'}: fix defaults/scaffold-parts")
+            self.assertEqual(self.lc.part_of(rel), hits[0])
+            self.assertIn(hits[0], ("core",) + self.lc.PARTS)
+
+    def test_every_manifest_line_matches_a_file(self):
+        from fnmatch import fnmatchcase
+        paths = self.lc.scaffold_paths()
+        for part, glob in self.lc.part_rules():
+            self.assertTrue(any(fnmatchcase(rel, glob) for rel in paths), f"{part} {glob} matches no scaffold file")
+
+    def test_never_declined_is_core(self):
+        for rel in self.lc.NEVER_DECLINED:
+            self.assertEqual(self.lc.part_of(rel), "core", rel)
+
+    def test_core_is_sixteen_files(self):
+        core = {rel for rel in self.lc.scaffold_paths() if self.lc.part_of(rel) == "core"}
+        self.assertEqual(core, CORE)
+        self.assertEqual(len(self.lc.scaffold_paths()) - len(core), 20)           # the five opt-in parts
+        self.assertEqual(self.lc.part_of("not/in/the/scaffold"), "core")          # unlisted counts as core at run time
+
+    def test_parse_parts(self):
+        self.assertEqual(self.lc.parse_parts("maintain,review"), (["maintain", "review"], None))
+        self.assertEqual(self.lc.parse_parts("all"), (sorted(self.lc.PARTS), None))
+        self.assertEqual(self.lc.parse_parts("deploy,deploy"), (["deploy"], None))
+        for bad in ("bogus", "core", "", "review,", "review,bogus"):
+            parts, why = self.lc.parse_parts(bad)
+            self.assertIsNone(parts, bad)
+            for name in self.lc.PARTS:
+                self.assertIn(name, why)                                          # the refusal lists the valid names
+
+
 if __name__ == "__main__":
     unittest.main()

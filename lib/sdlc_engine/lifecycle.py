@@ -12,6 +12,7 @@ import json
 import re
 import shlex
 import sys
+from fnmatch import fnmatchcase
 
 from . import approvals, cli
 from .machine import PLUGIN_ROOT, config
@@ -78,6 +79,36 @@ NEVER_DECLINED = {".github/workflows/aiops-gates.yml", ".github/CODEOWNERS", ".a
                   ".aiops/config/secret-paths", ".aiops/config/protected-paths"}
 
 STATUSES = ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new", "declined")
+
+PARTS = ("review", "maintain", "deploy", "governance", "issues")   # opt-in (`--with`); `core` is always installed
+PARTS_FILE = PLUGIN_ROOT / "defaults" / "scaffold-parts"
+
+
+def part_rules():
+    """[(part, glob)] from defaults/scaffold-parts: the part each scaffold file belongs to."""
+    out = []
+    for line in PARTS_FILE.read_text().splitlines():
+        part, _, glob = line.strip().partition(" ")
+        if part and not part.startswith("#") and glob.strip():
+            out.append((part, glob.strip()))
+    return out
+
+
+def part_of(rel, rules=None):
+    """The part scaffold path rel belongs to. A path no line matches is core, so a new file is never left out."""
+    rules = part_rules() if rules is None else rules
+    return next((part for part, glob in rules if fnmatchcase(rel, glob)), "core")
+
+
+def parse_parts(value):
+    """(sorted opt-in part names, None) for a `--with` value (comma-separated names, or `all`), or (None, why)."""
+    if value == "all":
+        return sorted(PARTS), None
+    names = value.split(",")
+    bad = [n for n in names if n not in PARTS]
+    if bad:
+        return None, f"unknown part {bad[0]!r}; --with takes a comma-separated list of {', '.join(PARTS)}, or all"
+    return sorted(set(names)), None
 
 
 def scaffold_paths():
