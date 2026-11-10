@@ -60,6 +60,24 @@ a gate (only `G-ENV-03` and `G-BASH-07` are allowable); `/zouj-ai-sdlc:configure
 install-state rows in `doctor`. The guard gaps found on the way were closed by intent `.aiops/0005-guard-gaps/`
 (0.2.0-alpha.4); the rest is intent 0006.
 
+### Next: adoption (approved by zoujagger on 2026-11-10)
+From a check against the playbook and a first-run review. Each engine or hook change is its own intent; 0006 stays the
+guard-gap backlog.
+- **Release hygiene.** Every version the README pins has a pushed tag, and CI checks it.
+- **0007, first run in five minutes.**
+  - The profile is chosen by a typed phrase, like an approval, so `solo` needs no terminal.
+  - `sdlc where` prints the terminal command.
+  - Setup writes a core scaffold, and the rest is opt-in (`--with review,maintain,deploy,governance`).
+  - Auto mode is documented for state 4.
+- **0008, macOS.** No GNU-only `realpath -m` in the hooks, and a CI matrix of ubuntu and macos (item 11 below, pulled
+  forward).
+- **0009, one-pass approval for small changes** (`/fix` and `risk: low`). One phrase opens every pending gate whose
+  artifact validates, still as three single-file approval commits. Who decides, and what CI audits, don't change.
+- **0010, evals in CI.** Weekly and on changes to skills, agents, hooks and CLAUDE.md; about 20 cases; an opt-in eval
+  workflow for consumers.
+- **Docs.** A shorter README with a walkthrough, the [adoption ladder](adoption.md), a managed-settings example that
+  keeps this plugin's hooks on, a nit cap in REVIEW.md, and a listing in Anthropic's plugin directory.
+
 ### Phase 3: beta, reach
 10. **Pinned distribution without npm.**
     - Publish `zouj-ai-sdlc` to PyPI, so `uvx zouj-ai-sdlc@0.2.0b1 setup` or `pipx run …` works.

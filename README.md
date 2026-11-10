@@ -25,10 +25,10 @@ Start from what you're doing. Every route runs the same playbook workflow, with 
 | You want to… | Run | Playbook stage |
 |---|---|---|
 | Try the workflow first | a throwaway repo: see **Just looking?** under Install | (any, risk-free) |
-| Set up this repo | `/zouj-ai-sdlc:setup` (pick `solo`, `team` or `strict`) | 1 Plan: formalise and share |
-| Build a feature or change | `/zouj-ai-sdlc:intent "<need>"` → spec → plan → implement | Trigger → Design → Build |
+| Set up this repo | `/zouj-ai-sdlc:setup` (pick `solo`, `team` or `strict`) | (once per repo, before the loop) |
+| Build a feature or change | `/zouj-ai-sdlc:intent "<need>"` → spec → plan → implement | Plan → Design → Build |
 | Fix a bug | `/zouj-ai-sdlc:fix "<bug>"` (failing test first) | Test |
-| Act on an alert or issue | `/zouj-ai-sdlc:triage alert:<metric>` → a new intent | Maintain → Trigger |
+| Act on an alert or issue | `/zouj-ai-sdlc:triage alert:<metric>` → a new intent | Maintain → Plan (a new intent) |
 | Get a branch reviewed | `/zouj-ai-sdlc:review`, then `/zouj-ai-sdlc:pr` | Deploy: AI review |
 | See where you are and what's next | `/zouj-ai-sdlc:status` | any |
 | Upgrade, repair or remove the setup | `sdlc list-installed`, then `sdlc upgrade`, `repair` or `uninstall --dry-run` | Maintain |
@@ -63,6 +63,18 @@ and prints the steps only you can do (signing, CODEOWNERS, commit). Rerun it any
 everything is in place. Run by Claude, setup scaffolds with the `team` default; `solo` or `strict` is applied by your
 own terminal run: `<plugin>/bin/sdlc setup --profile solo|team|strict [--dry-run] [--yes]`.
 
+The same install from a terminal, with no session open:
+```bash
+claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-alpha.3
+claude plugin install zouj-ai-sdlc@zouj
+```
+
+**Where is `<plugin>`?** Inside Claude Code, `sdlc` is on PATH. In your own terminal it isn't, so the commands only
+you can run (`setup --profile`, `approve`, `uninstall`) use the installed plugin's folder:
+`~/.claude/plugins/cache/zouj/zouj-ai-sdlc/<version>/`, for example
+`~/.claude/plugins/cache/zouj/zouj-ai-sdlc/0.2.0-alpha.3/bin/sdlc doctor`. Whenever a step needs your terminal,
+Claude prints the full command.
+
 **B. Just the plugin.** The same two `/plugin` commands, then `/zouj-ai-sdlc:init` (or
 `sdlc init --stack python|node|go`) in each repo.
 
@@ -91,6 +103,9 @@ directory.
 | `solo` | the typed phrase + an unsigned approval commit | one developer, trying it out |
 | `team` | an SSH-signed commit, a human per signature (passphrase key out of ssh-agent) | most teams |
 | `strict` | an `sk-` key touch per signature, plus CODEOWNERS on `/.aiops/` | regulated or high-risk repos |
+
+Not sure how far to go? The [adoption ladder](docs/adoption.md) goes one step at a time, from the plugin alone to
+`strict` with the Maintain loop.
 
 Without `.aiops/` the plugin's **SDLC gates are dormant** until you run setup or init. Its safety guards are on in
 every repo: secret reads, force-push, history rewrites, production deploys, and writes (Edit/Write and shell) to
@@ -195,6 +210,6 @@ make dev          # claude --plugin-dir .
 make evals        # behavioural evals against a live model
 ```
 Docs: [state machine](docs/state-machine.md) · [architecture](docs/architecture.md) · [playbook mapping](docs/sdlc.md) ·
-[governance](docs/governance.md) · [roadmap](docs/roadmap.md) · [worked example](docs/examples/0001-csv-export/).
+[governance](docs/governance.md) · [adoption ladder](docs/adoption.md) · [roadmap](docs/roadmap.md) · [worked example](docs/examples/0001-csv-export/).
 This repo dogfoods itself:
 see [`.aiops/0001-zouj-ai-sdlc-plugin/`](.aiops/0001-zouj-ai-sdlc-plugin/).
