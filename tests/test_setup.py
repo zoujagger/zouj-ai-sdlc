@@ -444,7 +444,7 @@ class Symlinks(SetupCase):
         (self.root / "ops").mkdir()
         (self.root / "ops" / "bands.yaml").symlink_to(out / "planted")            # dangling
         before = self.snapshot()
-        for args in (("init", "--with", "all"), ("setup", "--profile", "solo", "--yes")):
+        for args in (("init", "--with", "all"), ("setup", "--profile", "solo", "--with", "maintain", "--yes")):
             r = self.run_sdlc(*args, env={"CLAUDECODE": "1", "PATH": str(self.bin_with())})
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             self.assertIn("scripts", r.stdout + r.stderr)
@@ -811,6 +811,102 @@ class Feedback(RepoCase):
         self.assertIn("doctor:", text)                                   # the summary to paste
         self.assertIn("nothing was sent", text.lower())
         self.assertNotIn(str(self.root.parent), text)                    # no local paths beyond the repo name
+
+
+STATE = ".aiops/install-state.json"
+
+
+class Parts(SetupCase):
+    """`sdlc setup` writes the core scaffold by default; `--with` adds opt-in parts (0007 S3: AC-11, 12, 20)."""
+
+    def setUp(self):
+        super().setUp()
+        from sdlc_engine import lifecycle
+        self.lc = lifecycle
+        self.base = set(self.snapshot()[0])
+
+    def files(self):
+        return set(self.snapshot()[0])
+
+    def part(self, name):
+        return {rel for rel in self.lc.scaffold_paths() if self.lc.part_of(rel) == name}
+
+    def parts(self):
+        return json.loads((self.root / STATE).read_text()).get("parts")
+
+    def ok(self, *args, env=None):
+        r = self.setup_run(*args, env=env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r
+
+    def test_default_is_core_with_no_schedule_or_secret(self):
+        for env in (None, {"CLAUDECODE": "1"}):                                   # a human's run, and the agent's
+            with self.subTest(env=env):
+                self.ok("--profile", "team", "--yes", env=env)
+                created = self.files() - self.base
+                self.assertEqual(created, self.part("core") | {STATE, ".gitignore"})
+                self.assertEqual(self.parts(), [])
+                workflows = [rel for rel in created if rel.startswith(".github/workflows/")]
+                self.assertEqual(sorted(workflows), [".github/workflows/aiops-gates.yml", ".github/workflows/ci.yml"])
+                for rel in workflows:
+                    text = (self.root / rel).read_text()
+                    self.assertNotIn("schedule:", text, rel)
+                    self.assertNotIn("secrets.", text, rel)
+                for rel in created:
+                    (self.root / rel).unlink()
+                shutil.rmtree(self.root / ".aiops")
+
+    def test_dry_run_names_parts_left_out(self):
+        r = self.ok("--dry-run", "--profile", "team")
+        self.assertIn("+ CLAUDE.md", r.stdout)
+        self.assertNotIn("ops/bands.yaml", r.stdout)
+        self.assertNotIn("claude-maintain.yml", r.stdout)
+        line = next(ln for ln in r.stdout.splitlines() if "Not installed" in ln)
+        for name in self.lc.PARTS:
+            self.assertIn(name, line)
+        self.assertIn("sdlc setup --with", line)
+        self.assertEqual(self.files(), self.base)                                 # a dry run writes nothing
+        r = self.ok("--dry-run", "--profile", "team", "--with", "maintain,deploy")
+        self.assertIn("+ ops/bands.yaml", r.stdout)
+        self.assertIn("+ .github/workflows/deploy.yml", r.stdout)
+        line = next(ln for ln in r.stdout.splitlines() if "Not installed" in ln)
+        self.assertNotIn("maintain", line)
+        self.assertIn("review", line)
+        self.assertNotIn("Not installed", self.ok("--dry-run", "--profile", "team", "--with", "all").stdout)
+
+    def test_with_maintain_adds_only_maintain(self):
+        self.ok("--profile", "solo", "--yes")
+        before = self.files()
+        self.ok("--profile", "solo", "--with", "maintain", "--yes")
+        self.assertEqual(self.files() - before, self.part("maintain"))
+        self.assertEqual(self.parts(), ["maintain"])
+        before = self.files()
+        r = self.ok("--profile", "solo", "--yes")                                 # no --with: nothing added or removed
+        self.assertEqual(self.files(), before)
+        self.assertEqual(self.parts(), ["maintain"])
+        self.assertNotRegex(r.stdout, r"(?m)^  \+ ")                              # no file to create in the plan
+        self.ok("--profile", "solo", "--with", "all", "--yes")
+        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())
+        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+
+    def test_bogus_part_refused(self):
+        for args in (("--with", "bogus"), ("--with", "maintain,bogus"), ("--with",)):
+            r = self.setup_run("--profile", "solo", "--yes", *args)
+            self.assertEqual(r.returncode, 1, args)
+            self.assertEqual(r.stdout, "", args)                                  # refused before preflight
+            for name in self.lc.PARTS:
+                self.assertIn(name, r.stderr)
+            self.assertEqual(self.files(), self.base, args)
+
+    def test_rerun_after_partial_setup_installs_what_the_first_run_chose(self):
+        self.ok("--profile", "solo", "--with", "maintain", "--yes")               # a human's run: config has the profile
+        (self.root / STATE).unlink()                                              # it stopped before recording
+        for rel in ("CLAUDE.md", "ops/bands.yaml"):
+            (self.root / rel).unlink()
+        before = self.files()
+        self.ok("--profile", "solo", "--yes")
+        self.assertEqual(self.files() - before, {"CLAUDE.md", "ops/bands.yaml", STATE})
+        self.assertEqual(self.parts(), ["maintain"])
 
 
 if __name__ == "__main__":

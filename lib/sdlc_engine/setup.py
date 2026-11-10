@@ -253,16 +253,20 @@ def unreviewed(root):
 
 
 def uncommitted_scaffold(root):
-    """Every scaffold file (and .gitignore) on disk that no commit has as it is: what the commit step lists."""
-    rels = [rel for act, rel in cli.init_actions(root) if act != "symlink"] + [".gitignore"]
+    """Every scaffold file of the installed parts (and .gitignore) on disk that no commit has as it is: what the
+    commit step lists. A file of a part that isn't installed is the user's own and is left out."""
+    from . import lifecycle
+    parts = lifecycle.installed_parts(root, lifecycle.load(root))
+    rels = [rel for act, rel in cli.init_actions(root, parts=parts) if act != "symlink"] + [".gitignore"]
     return [rel for rel in rels if (root / rel).is_file() and _uncommitted(root, rel)]
 
 
-def plan(root, profile):
-    """[(mark, rel, note)]: `+` create, `~` change (shown as a diff), `=` unchanged, `!` an existing human-owned file
-    that no commit has (shown, for the human to review)."""
+def plan(root, profile, parts=None):
+    """[(mark, rel, note)] for the scaffold files of core and the opt-in `parts` (None: every part): `+` create, `~`
+    change (shown as a diff), `=` unchanged, `!` an existing human-owned file that no commit has (shown, for the
+    human to review)."""
     out, review = [], unreviewed(root)
-    for act, rel in cli.init_actions(root):
+    for act, rel in cli.init_actions(root, parts=parts):
         if act == "symlink":
             out.append(("✗", rel, f"{cli.symlink_on_path(root, rel)} is a symlink: remove it, setup won't write through links"))
         elif act == "create":
@@ -312,17 +316,25 @@ def _with_marketplace(settings):
 
 
 OPTIONS = {"--profile": PROFILES, "--stack": cli.STACKS, "--dry-run": None, "--yes": None}   # option: its values
+WITH = "--with"                               # its value is a list of opt-in parts (lifecycle.parse_parts)
 
 
 def parse(args):
     """({option: value, or True for a flag}, None), or (None, why) for an unknown option or value. The only parser:
-    every later step reads its result, so a value can't also count as a flag."""
+    every later step reads its result, so a value can't also count as a flag. `--with` holds the sorted part names."""
+    from . import lifecycle
     opts, i = {}, 0
     while i < len(args):
         name = args[i]
+        if name == WITH:
+            parts, why = lifecycle.parse_parts(args[i + 1] if i + 1 < len(args) else "")
+            if why:
+                return None, why
+            opts[name], i = sorted(set(opts.get(name, [])) | set(parts)), i + 2
+            continue
         if name not in OPTIONS:
             return None, (f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack python|node|go, "
-                          "--dry-run and --yes")
+                          f"--with {','.join(lifecycle.PARTS)} (or all), --dry-run and --yes")
         allowed = OPTIONS[name]
         if allowed is None:
             opts[name], i = True, i + 1
@@ -364,10 +376,15 @@ def main(root, args):
         print("setup stops: fix the ✗ rows above and run it again; nothing was written.")
         return 1
     show("Inventory", inventory(root))
-    actions = plan(root, profile)
+    from . import lifecycle
+    parts = lifecycle.installed_parts(root, lifecycle.load(root), opts.get(WITH, []))
+    actions = plan(root, profile, parts)
     print("Plan")
     for mark, rel, note in actions:
         print(f"  {mark} {rel}" + (f"  ({note})" if note else ""))
+    left_out = lifecycle.parts_line(parts)
+    if left_out:
+        print(f"  {left_out}")
     owned = owned_changes(root, profile)
     if owned:                                     # shown before any confirmation (and in --dry-run)
         print("Changes to human-owned files" + (": the agent can't apply these, they become your human steps"
@@ -400,7 +417,7 @@ def main(root, args):
         print("not confirmed: nothing was written. Re-run with --yes to apply without the question."
               if tty else "no terminal to confirm: nothing was written. Re-run with --yes to apply.")
         return 2
-    return apply(root, profile, actions, opts.get("--stack"), review)
+    return apply(root, profile, actions, opts.get("--stack"), review, parts)
 
 
 def _is_tty():
@@ -421,7 +438,7 @@ def _confirm():
         return False
 
 
-def apply(root, profile, actions, stack=None, review=()):
+def apply(root, profile, actions, stack=None, review=(), parts=None):
     creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
     created = {rel for _, rel in creates}
     written, changed, wired = [], [], None
@@ -442,7 +459,7 @@ def apply(root, profile, actions, stack=None, review=()):
                 written.append(rel)
                 changed.append(rel)
             pending = {}
-        lifecycle.record(root, written, profile=profile, stack=stack)
+        lifecycle.record(root, written, profile=profile, stack=stack, parts=parts)
     except OSError as exc:
         print(cli.write_failure(exc, written), file=sys.stderr)
         return 1

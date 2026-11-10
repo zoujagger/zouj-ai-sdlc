@@ -62,6 +62,8 @@ def playbook_violations(d, intent, before):
 
 
 class Playbook(SetupCase):
+    parts = "all"                                # the full scaffold; CoreWalk runs the same walk on the default (core)
+
     def repo(self, profile):
         d = self.root.parent / f"{self.root.name}.{profile}"
         d.mkdir()
@@ -74,9 +76,11 @@ class Playbook(SetupCase):
         git(d, "add", "-A")
         git(d, "commit", "-qm", "init")
         env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d)}
-        r = subprocess.run([sys.executable, SDLC, "setup", "--profile", profile, "--yes"], cwd=d, input="",
-                           capture_output=True, text=True, env=env)
+        with_parts = ["--with", self.parts] if self.parts else []
+        r = subprocess.run([sys.executable, SDLC, "setup", "--profile", profile, "--yes", *with_parts], cwd=d,
+                           input="", capture_output=True, text=True, env=env)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((d / "ops" / "bands.yaml").exists(), self.parts == "all")   # the scaffold under test
         # the human registers their key (human-owned) and commits the scaffold
         (d / ".aiops" / "config" / "allowed-signers").write_text(
             allowed_signer_line("owner@example.com", signing_key()))
@@ -128,6 +132,8 @@ class Playbook(SetupCase):
     def lifecycle_as_agent(self, d, intent, where):
         """The agent runs upgrade and repair mid-walk, with real work to do: no gate, artifact, lock or locked code
         may change. Locked (states 1-3), the code file is handed to the human; unlocked, it's written."""
+        if self.parts != "all":                  # the fixtures below are files of the maintain part
+            return
         self.make_stale(d)
         before = snapshot(d, intent)
         env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d), "CLAUDECODE": "1"}
@@ -164,6 +170,7 @@ class Playbook(SetupCase):
         pp = d / ".aiops" / "config" / "protected-paths"
         before = pp.read_text()
         pp.write_text(before + "docs/CODEOWNERS ownership is human-owned\n")
+        (d / "docs").mkdir(exist_ok=True)        # the core scaffold has no docs/: a delete needs a directory to judge
         try:
             for cmd in (c.format(d=d) for c in self.PROTECTED_TREE + ("rm -rf docs",)):
                 self.assertIsNotNone(guards.check_bash({"tool_input": {"command": cmd}, "cwd": str(d)}),
@@ -245,6 +252,11 @@ class Playbook(SetupCase):
     def test_strict(self):
         self.walk("strict")
 
+
+
+class CoreWalk(Playbook):
+    """The same walk, every profile, on the default scaffold: the 16 core files and no opt-in part (0007, AC-16)."""
+    parts = None
 
 
 class Mutation(Playbook):

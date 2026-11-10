@@ -61,7 +61,7 @@ known gap in S12.
     `::test_rerun_after_partial_core_setup_stays_core`, `::test_rerun_after_partial_with_maintain_completes_it` →
     fail: `--with` is ignored and a fresh init writes 36 files
   - Covers: AC-11, AC-12, AC-14, AC-20
-- [ ] **S3**: `sdlc setup --with`, the preview of left-out parts, and the playbook walk on a core-only repo.
+- [x] **S3**: `sdlc setup --with`, the preview of left-out parts, and the playbook walk on a core-only repo.
   - Files: `lib/sdlc_engine/setup.py` (modify: `OPTIONS` and `parse` accept `--with` through `parse_parts`, `plan`
     and `apply` take the parts, the dry-run names the parts left out), `tests/test_playbook.py` (modify:
     `repo(profile, parts="all")`, a `CoreWalk` class), `tests/test_setup.py` (modify: fresh-repo tests that expect
@@ -203,3 +203,6 @@ known gap in S12.
 | 2026-11-10 | S2 | "Template config" also covers a missing `config.json` (a setup that stopped before writing it). The check lives in `lifecycle.config_is_template`, with `parts_on_disk` and `parts_line` beside it | The first file written is `.aiops/README.md`, so `.aiops/` can exist without a config; S5 reuses the helper from `lifecycle` | S2 |
 | 2026-11-10 | S2 | Existing tests that remove the fixture's `.aiops/` and then run `sdlc init` (`tests/test_cli.py::Init`, the lifecycle suites, `tests/test_setup.py`) now pass `--with all`. So does `evals/_lib/repo.sh` | The plan expected only `SetupCase` and `Playbook.repo` to need it; 22 init tests rely on opt-in files (`ops/bands.yaml`, `deploy.yml`, `claude.yml`). Their meaning is unchanged: the full scaffold | S2 |
 | 2026-11-10 | S2 | `sdlc init` ends with a line naming the parts it left out | Spec R-17 asks for it in setup's preview; init is the other entry point | S2 |
+| 2026-11-10 | S3 | With no install-state, a `config.json` that is the template plus one profile's keys (a human's `setup --profile`) also reads the parts from disk (`lifecycle.config_written`). Test `Parts::test_rerun_after_partial_setup_installs_what_the_first_run_chose` | A human's run writes the profile before install-state, so its rerun after a failure would otherwise install every part (AC-20) | S3 |
+| 2026-11-10 | S3 | Only one existing setup test changed (`Symlinks`, now `--with maintain`), not every fresh-repo test. The commit command setup prints lists only files of installed parts | The other `SetupCase` tests assert core files only. A file at an opt-in path in a core-only repo is the user's own, not the scaffold's | S3 |
+| 2026-11-10 | S3 | `CoreWalk` skips the mid-walk `upgrade`/`repair` check (its fixtures are `maintain` files), and `protected_tree_blocked` creates `docs/` first | Until S4, `upgrade` would create the left-out parts; S4 adds the core check. A core-only repo has no `docs/`, and `rm -rf docs` on a missing directory has nothing to judge | S3 |

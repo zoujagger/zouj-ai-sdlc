@@ -133,17 +133,29 @@ def scaffold_paths(parts=None):
     return [rel for rel in paths if part_of(rel, rules) in keep]
 
 
-def config_is_template(root):
-    """True if .aiops/config.json is missing or still holds exactly the scaffold template's JSON: nobody has chosen
-    anything in this repo yet (a new repo, or a setup that stopped part-way)."""
+def config_written(root):
+    """What setup or init left in .aiops/config.json: "" for the untouched scaffold template (or no file yet: a run
+    that stopped before writing it), a profile name for the template with exactly that profile's keys (a human's
+    `setup --profile`), and None for anything else (edited by hand, a link, unreadable)."""
+    from .setup import PROFILE_CONFIG
     f = root / ".aiops" / "config.json"
     if not f.exists() and not f.is_symlink():
-        return True
+        return ""
     try:
-        return not f.is_symlink() and \
-            json.loads(f.read_text()) == json.loads((cli.TEMPLATES / "scaffold" / ".aiops" / "config.json").read_text())
+        if f.is_symlink():
+            return None
+        cfg = json.loads(f.read_text())
+        template = json.loads((cli.TEMPLATES / "scaffold" / ".aiops" / "config.json").read_text())
     except (OSError, ValueError):
-        return False
+        return None
+    if cfg == template:
+        return ""
+    return next((name for name, keys in PROFILE_CONFIG.items() if cfg == {**template, **keys}), None)
+
+
+def config_is_template(root):
+    """True if nobody has chosen a profile here: config.json is missing or still exactly the scaffold template."""
+    return config_written(root) == ""
 
 
 def parts_on_disk(root):
@@ -168,12 +180,13 @@ def parts_on_disk(root):
 def installed_parts(root, st, requested=()):
     """The opt-in parts installed here, sorted, plus the `requested` ones (`--with` only adds):
     - install-state names them (`parts`); state written before 0.2.0-alpha.4 has no such key and means every part
-    - with no install-state: a repo whose config.json is still the template (or missing) has the parts found on
-      disk, so a new repo gets core only and a rerun after a setup that stopped part-way installs what the first run
-      chose; a repo with an edited config was initialized before install-state existed and has every part."""
+    - with no install-state: a repo whose config.json is what setup writes (the template, with or without a
+      profile's keys, or no file yet) has the parts found on disk, so a new repo gets core only and a rerun after a
+      setup that stopped part-way installs what the first run chose; a repo with an edited config was initialized
+      before install-state existed and has every part."""
     if st is not None:
         base = [p for p in st["parts"] if p in PARTS] if isinstance(st.get("parts"), list) else PARTS
-    elif config_is_template(root):
+    elif config_written(root) is not None:
         base = parts_on_disk(root)
     else:
         base = PARTS
