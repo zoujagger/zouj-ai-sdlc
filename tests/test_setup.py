@@ -791,8 +791,11 @@ class NoSandbox(SetupCase):
             self.assertNotIn("--sandbox", text, rel)
             self.assertNotIn("sandbox <dir>", text, rel)
         readme = (root / "README.md").read_text()
-        for piece in ("git init", "sdlc setup --profile solo --yes", "/zouj-ai-sdlc:intent"):
-            self.assertIn(piece, readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0], piece)
+        recipe = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
+        for piece in ("git init", "/zouj-ai-sdlc:setup", "Setup Profile solo", "/zouj-ai-sdlc:intent"):
+            self.assertIn(piece, recipe, piece)
+        self.assertNotIn("<plugin>", recipe)                  # 0007 AC-18: solo is reached by the phrase, no terminal path
+        self.assertNotIn("setup --profile", recipe)
 
 
 class Feedback(RepoCase):

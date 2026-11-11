@@ -303,11 +303,12 @@ class ShellHooks(RepoCase):
             self.assertIn(piece, arch, piece)
         readme = (ROOT / "README.md").read_text()
         looking = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
-        for piece in ("bin/sdlc setup --profile solo --yes", "git add -A", "git commit"):
+        # 0007: the agent scaffolds and the human types the phrase, so the recipe has no terminal setup run
+        for piece in ("/zouj-ai-sdlc:setup solo", "Setup Profile solo", "git add", "git commit"):
             self.assertIn(piece, looking, piece)
+        self.assertNotIn("bin/sdlc setup --profile", looking)
         self.assertNotIn("--force", (ROOT / "templates" / "scaffold" / "Makefile").read_text())
-        # run by the agent (the skill), setup leaves a non-team profile to the human's terminal: the docs say so
-        self.assertNotIn("/zouj-ai-sdlc:setup solo", looking)
+        # a profile that is set still changes only in the human's terminal: the docs say so
         install_a = readme.split("**A. Guided", 1)[1].split("\n\n**B.", 1)[0]
         quick = (ROOT / "COMMANDS-QUICK-REF.md").read_text()
         skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()

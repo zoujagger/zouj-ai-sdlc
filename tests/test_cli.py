@@ -699,6 +699,40 @@ class Docs(unittest.TestCase):
         self.assertIn("Setup Profile", self.text("skills/configure/SKILL.md"))    # the first profile is the phrase
         self.assertIn("Setup Profile", self.text("skills/onboard/SKILL.md"))
 
+    def test_docs_document_where_and_with(self):
+        """0007 AC-18, spec R-22: the user docs name `sdlc where`, `--with` and the phrase; the ADR and the threat
+        model record the decision and its gap."""
+        for rel in ("README.md", "COMMANDS-QUICK-REF.md", "TROUBLESHOOTING.md"):
+            text = self.text(rel)
+            self.assertIn("sdlc where", text, rel)
+            self.assertIn("--with", text, rel)
+            self.assertIn("Setup Profile", text, rel)
+        readme = self.text("README.md")
+        install = readme.split("\n## Install", 1)[1].split("\n## ", 1)[0]
+        self.assertNotIn("Where is `<plugin>`?", install)                          # `sdlc where` answers it
+        for part in ("review", "maintain", "deploy", "governance", "issues"):
+            self.assertIn(f"`{part}`", install, part)
+        lifecycle = readme.split("\n## Lifecycle", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("parts", lifecycle)                                          # install-state records them
+        quick = self.text("COMMANDS-QUICK-REF.md")
+        self.assertIn("| `sdlc where` |", quick)
+        self.assertNotIn("`team` default", quick)                                  # the agent's setup sets no profile
+        adr = self.text("docs/adr/0003-first-profile-by-typed-phrase.md")
+        for piece in ("Status: Accepted", "Setup Profile", "chore(aiops): Setup Profile", "AIOps-Profile:", "unsigned"):
+            self.assertIn(piece, adr, piece)
+        arch = self.text("docs/architecture.md")
+        model = arch.split("\n## Threat model", 1)[1].split("\n## ", 1)[0]
+        rows = [line for line in model.splitlines() if "Setup Profile" in line]
+        self.assertTrue(any(line.startswith("| The first profile") for line in rows), rows)     # the phrase's own row
+        self.assertTrue(any("`sdlc setup`" in line.split("|")[1] for line in rows), rows)       # the setup row names it
+        gaps = arch.split("\n## Known gaps", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("claude -p", gaps)                       # a phrase typed into a session the agent starts
+        self.assertIn("Setup Profile", gaps)
+        self.assertIn("0003-first-profile-by-typed-phrase", arch)
+        for rel in ("docs/adoption.md", "docs/roadmap.md"):                        # on main since PR #17
+            self.assertIn("Setup Profile", self.text(rel), rel)
+        self.assertNotIn("<plugin>/bin/sdlc setup --profile solo", self.text("docs/adoption.md"))
+
     def test_profile_eval_case_is_complete(self):
         """0007 AC-21: the behavioural case exists, is listed, and its fixture is a scaffolded repo with no profile."""
         import os

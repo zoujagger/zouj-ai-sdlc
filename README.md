@@ -25,7 +25,7 @@ Start from what you're doing. Every route runs the same playbook workflow, with 
 | You want to… | Run | Playbook stage |
 |---|---|---|
 | Try the workflow first | a throwaway repo: see **Just looking?** under Install | (any, risk-free) |
-| Set up this repo | `/zouj-ai-sdlc:setup` (pick `solo`, `team` or `strict`) | (once per repo, before the loop) |
+| Set up this repo | `/zouj-ai-sdlc:setup`, then type `Setup Profile solo`, `team` or `strict` | (once per repo, before the loop) |
 | Build a feature or change | `/zouj-ai-sdlc:intent "<need>"` → spec → plan → implement | Plan → Design → Build |
 | Fix a bug | `/zouj-ai-sdlc:fix "<bug>"` (failing test first) | Test |
 | Act on an alert or issue | `/zouj-ai-sdlc:triage alert:<metric>` → a new intent | Maintain → Plan (a new intent) |
@@ -33,6 +33,7 @@ Start from what you're doing. Every route runs the same playbook workflow, with 
 | See where you are and what's next | `/zouj-ai-sdlc:status` | any |
 | Upgrade, repair or remove the setup | `sdlc list-installed`, then `sdlc upgrade`, `repair` or `uninstall --dry-run` | Maintain |
 | Understand a block | `sdlc why <id>` (the id is in `BLOCKED [G-…]`) | any |
+| Run a human-only command in your own terminal | `sdlc where` prints it with the plugin's full path | any |
 | Not sure | `/zouj-ai-sdlc:help-me "<what you want>"` | any |
 
 All commands: [COMMANDS-QUICK-REF.md](COMMANDS-QUICK-REF.md). Stuck? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) or
@@ -60,8 +61,14 @@ Pick **one** path:
 ```
 Setup checks the prerequisites, asks for a profile, previews every change and the gates, applies after you confirm,
 and prints the steps only you can do (signing, CODEOWNERS, commit). Rerun it any time: it changes nothing when
-everything is in place. Run by Claude, setup scaffolds with the `team` default; `solo` or `strict` is applied by your
-own terminal run: `<plugin>/bin/sdlc setup --profile solo|team|strict [--dry-run] [--yes]`.
+everything is in place.
+
+**You set the profile, by typing it.** Run by Claude, setup scaffolds the repo and leaves `.aiops/config.json` with
+no profile. It then asks you to type `Setup Profile solo` (or `team`, or `strict`) as your whole prompt. That sets the
+repo's first profile and commits `.aiops/config.json` alone, as `chore(aiops): Setup Profile <name>`. Claude can't
+do it for you: a tool call can't author a prompt, and setup run by Claude never changes that file. The phrase works
+once per repo, while the config is untouched and nothing is approved. Changing a profile later is a run in your own
+terminal: `sdlc setup --profile solo|team|strict [--dry-run] [--yes]`.
 
 The same install from a terminal, with no session open:
 ```bash
@@ -69,14 +76,30 @@ claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-alpha.3
 claude plugin install zouj-ai-sdlc@zouj
 ```
 
-**Where is `<plugin>`?** Inside Claude Code, `sdlc` is on PATH. In your own terminal it isn't, so the commands only
-you can run (`setup --profile`, `approve`, `uninstall`) use the installed plugin's folder:
-`~/.claude/plugins/cache/zouj/zouj-ai-sdlc/<version>/`, for example
-`~/.claude/plugins/cache/zouj/zouj-ai-sdlc/0.2.0-alpha.3/bin/sdlc doctor`. Whenever a step needs your terminal,
-Claude prints the full command.
+**In your own terminal.** Inside Claude Code, `sdlc` is on PATH. In your own terminal it isn't, and a few commands
+are yours alone (`setup --profile` on a repo that has a profile, `approve`, `close`, `unlock`, `uninstall`). Run
+`sdlc where` in Claude Code (or ask Claude to): its first line is the command to paste, with the absolute paths,
+for example `/usr/bin/python3 -I ~/.claude/plugins/cache/zouj/zouj-ai-sdlc/<version>/bin/sdlc`. That is what
+`<plugin>/bin/sdlc` stands for in these docs. When a human step is pending, `sdlc status` and the session card show
+the same line as `Your terminal:`.
+
+**Core by default, the rest opt-in.** Setup and `init` install the core scaffold: `.aiops/`, CLAUDE.md, REVIEW.md, the
+Makefile contract, the project settings, CODEOWNERS, the PR template and the two workflows the gates need
+(`aiops-gates.yml`, `ci.yml`). Nothing in it runs on a schedule or needs a secret. Add the rest by part, now or later,
+with `sdlc setup --with <part>[,<part>…]` (or `--with all`):
+
+| Part | Adds | Needs |
+|---|---|---|
+| `review` | Claude reviews pull requests and answers `@claude` mentions | `ANTHROPIC_API_KEY` (or the Claude GitHub App) |
+| `maintain` | control bands (`ops/bands.yaml`), the Maintain and weekly scan workflows, runbook, postmortem and retro folders | the secret, and real metric queries |
+| `deploy` | the deploy workflow and release notes | `make deploy` wired, GitHub Environments |
+| `governance` | policy examples, branch-protection notes, the ADR folder, Dependabot | nothing |
+| `issues` | issue forms and automated triage | the secret, for triage |
+
+`--with` only adds. A rerun without it keeps the parts you have, and the setup preview names the ones left out.
 
 **B. Just the plugin.** The same two `/plugin` commands, then `/zouj-ai-sdlc:init` (or
-`sdlc init --stack python|node|go`) in each repo.
+`sdlc init [--stack python|node|go] [--with <parts>]`) in each repo, then `Setup Profile <name>`.
 
 **C. For a team, declaratively.** Commit this to the project's `.claude/settings.json` (`init` and `setup` write it
 for you); Claude Code then offers the plugin to everyone who opens the repo:
@@ -90,11 +113,11 @@ for you); Claude Code then offers the plugin to everyone who opens the repo:
 ```
 
 **Just looking?** Try it in a throwaway repo, so no real project is touched:
-`mkdir /tmp/sdlc-try && cd /tmp/sdlc-try && git init -q && git commit -q --allow-empty -m init`. Set it up with
-`<plugin>/bin/sdlc setup --profile solo --yes` in that terminal (solo needs your own run: setup run by Claude keeps
-the team default), then commit the scaffold: `git add -A && git commit -m "chore: adopt zouj-ai-sdlc"`.
-Start with `/zouj-ai-sdlc:intent "greet people in French"` in `claude`, walk the five states, then delete the
-directory.
+`mkdir /tmp/sdlc-try && cd /tmp/sdlc-try && git init -q && git commit -q --allow-empty -m init`, then start `claude`
+there. Run `/zouj-ai-sdlc:setup solo` and confirm its preview. When it asks, type `Setup Profile solo` as your whole
+prompt: that sets the profile, with no signing key and no command to find. Commit the scaffold with the command
+setup prints (`git add … && git commit -m "chore: adopt zouj-ai-sdlc"`).
+Start with `/zouj-ai-sdlc:intent "greet people in French"`, walk the five states, then delete the directory.
 
 **Profiles** change only how a human approval is proven; the workflow and every gate are the same:
 
@@ -112,12 +135,13 @@ every repo: secret reads, force-push, history rewrites, production deploys, and 
 secrets outside the repo, your shell startup files, PATH, global git config and the installed plugin.
 
 ## Lifecycle: upgrade, repair, remove
-`init` and `setup` record what they wrote in `.aiops/install-state.json`: the plugin version, the CI ref, the profile
-and a hash of every file. The engine owns that file; the agent can't edit it, and CODEOWNERS covers it.
+`init` and `setup` record what they wrote in `.aiops/install-state.json`: the plugin version, the CI ref, the opt-in
+parts and a hash of every file. The engine owns that file; the agent can't edit it, and CODEOWNERS covers it. The
+profile is read from `.aiops/config.json`, the one place that sets it.
 
 | Command | What it does |
 |---|---|
-| `sdlc list-installed` | Each installed file: `current`, `stale` (an older plugin wrote it), `modified` (yours now), `missing`, `unmanaged`, `dropped`, `new`, `declined` (you removed it before adoption: never re-created). Read-only |
+| `sdlc list-installed` | Each installed file: `current`, `stale` (an older plugin wrote it), `modified` (yours now), `missing`, `unmanaged`, `dropped`, `new`, `declined` (you removed it before adoption: never re-created). Ends with the profile and the parts that aren't installed. Read-only |
 | `sdlc repair [--dry-run] [--yes]` | Restores missing files. Never touches one you modified |
 | `sdlc upgrade [--dry-run] [--yes]` | After you update the plugin with `/plugin`: replaces stale files (diff shown), creates new ones, keeps your modified files except for the CI ref, pins every literal `ZOUJ_SDLC_REF` and the zouj marketplace `ref` (nothing else, every change shown as a diff first) to the plugin's full commit sha, and lists migrations (e.g. `legacy-approvals`, which only you run) |
 | `sdlc uninstall --dry-run`, then `sdlc uninstall` | Removes the plugin's unmodified files, install-state and its `.gitignore` lines. Never `.aiops/NNNN-*`: the audit trail stays. **Human only**: refused inside Claude Code |
@@ -125,7 +149,9 @@ and a hash of every file. The engine owns that file; the agent can't edit it, an
 Repos set up by 0.2.0-alpha.1 or alpha.2 have no install-state. The first `upgrade` or `repair` adopts them: files
 equal to a released scaffold become managed, the rest count as modified and are never touched. Run by Claude, these
 commands never write a human-owned file (workflows, `.claude/settings.json`, `.aiops/config*`, CODEOWNERS) or code
-under the read-only lock: they print your terminal command instead.
+under the read-only lock: they print your terminal command instead. A file of a part you didn't install is never
+`new` or `missing`, and `upgrade` and `repair` never create it. Install-state written before 0.2.0-alpha.4 names no
+parts and reads as every part, as before.
 
 **Blocked by mistake?** Every block names its rule (`BLOCKED [G-ENV-03] by guard-bash: …`); `sdlc why <id>` explains
 it. Two heuristic rules (`G-ENV-03` env/printenv, `G-BASH-07` sudo and friends) accept a human-owned exact-command
@@ -175,12 +201,12 @@ Local hooks are a strong deterrent, not a sandbox. The CI audit plus CODEOWNERS 
 | Tests / evals | `tests/`, `evals/` | deterministic guard tests (`make test`) · behavioural evals (`make evals`, the `claude plugin eval` format) |
 
 ## Configuration (per repo, human-owned)
-- `.aiops/config.json`: `lock_when_idle` (default true), `commit_approvals`, `main_branch`, `require_signed_approvals` (default **true**).
+- `.aiops/config.json`: `profile` (set once by the typed `Setup Profile <name>`, changed by `sdlc setup --profile` in your terminal), `lock_when_idle` (default true), `commit_approvals`, `main_branch`, `require_signed_approvals` (default **true**).
 - `.aiops/config/allowed-signers` (keys allowed to approve) and `legacy-approvals` (pre-signing approvals the audit still accepts).
 - `.aiops/config/{readonly-exempt,protected-paths,secret-paths,test-paths}` extend the plugin's `defaults/`.
 - `SDLC_HOOK_PROFILE=spike` lifts the read-only lock and `make check` for throwaway exploration. The approval and merge gates still hold.
 - The active intent comes from the branch (`feat/NNNN-*`), else `sdlc use NNNN`, else `$AIOPS_INTENT`.
-- Unattended state 4: plugins can't grant permissions, so add the allow-rules from `.aiops/README.md` to `.claude/settings.json`.
+- Unattended state 4: plugins can't grant permissions. Start the session in auto mode (`claude --permission-mode auto`; a user setting, which Claude Code ignores in project settings), or add the allow-rules from `.aiops/README.md` to `.claude/settings.json`. The guards run either way.
 
 ## Approver setup (signed approvals)
 ```bash
@@ -198,8 +224,8 @@ sign approvals.
 
 `sdlc doctor` checks the setup. Under the default `approval_key_policy: "human"`, `sdlc approve` refuses before
 stamping anything unless each signature needs you: a passphrase key not loaded in ssh-agent, or an `sk-` key (touch).
-Approve in your own terminal with `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan` (Claude
-prints the exact path), which asks for the passphrase. Typing `Plan Approved NNNN` in Claude works with an `sk-` key.
+Approve in your own terminal with `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan` (`sdlc where`
+and the status card print the exact path), which asks for the passphrase. Typing `Plan Approved NNNN` in Claude works with an `sk-` key.
 With a passphrase key, Claude is told the exact terminal command instead.
 
 ## Develop

@@ -64,11 +64,13 @@ install-state rows in `doctor`. The guard gaps found on the way were closed by i
 From a check against the playbook and a first-run review. Each engine or hook change is its own intent; 0006 stays the
 guard-gap backlog.
 - **Release hygiene.** Every version the README pins has a pushed tag, and CI checks it.
-- **0007, first run in five minutes.**
-  - The profile is chosen by a typed phrase, like an approval, so `solo` needs no terminal.
+- **0007, first run in five minutes** (built as intent `.aiops/0007-first-run/`, 0.2.0-alpha.4).
+  - A repo's first profile is set by a typed phrase, `Setup Profile solo|team|strict`, like an approval, so `solo`
+    needs no terminal ([ADR 0003](adr/0003-first-profile-by-typed-phrase.md)).
   - `sdlc where` prints the terminal command.
-  - Setup writes a core scaffold, and the rest is opt-in (`--with review,maintain,deploy,governance`).
+  - Setup writes a core scaffold, and the rest is opt-in (`--with review,maintain,deploy,governance,issues`).
   - Auto mode is documented for state 4.
+  - A behavioural eval, `profile-by-phrase`.
 - **0008, macOS.** No GNU-only `realpath -m` in the hooks, and a CI matrix of ubuntu and macos (item 11 below, pulled
   forward).
 - **0009, one-pass approval for small changes** (`/fix` and `risk: low`). One phrase opens every pending gate whose
