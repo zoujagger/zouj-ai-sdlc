@@ -28,6 +28,13 @@ We aim to acknowledge reports within 3 business days.
     human-owned escape hatch; its cost is that anything running as you can sign approvals
     ([approval isolation](docs/architecture.md#approval-isolation)).
   - Approval commits are made with a pinned `ssh-keygen`, no hooks and no repo-local signing config.
+- **The profile** (how an approval is proven) lives in the human-owned `.aiops/config.json`. A repo's first
+  profile is set by the human typing `Setup Profile solo|team|strict` as their whole prompt, only while the
+  config is the untouched template and nothing is approved. It is committed alone and unsigned, as
+  `chore(aiops): Setup Profile <name>`; it opens no gate, and CI reads the config from the target branch. Later
+  changes are made in the human's own terminal. Known gap: a session the agent starts can type a phrase too
+  ([ADR 0003](docs/adr/0003-first-profile-by-typed-phrase.md)); under `team` and `strict` an approval still
+  needs the human's signature.
 - **Trust model of the plugin itself:** enabling the plugin trusts github.com/zoujagger/zouj-ai-sdlc at that ref. Its
   hooks run as the user on every tool call, and `bin/sdlc` is what the human runs to approve. The scaffold's marketplace
   snippet (`.claude/settings.json`) and the README commands therefore pin a release tag, like the CI's

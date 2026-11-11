@@ -1,6 +1,6 @@
 {
   "name": "zouj-ai-sdlc",
-  "version": "0.2.0-alpha.3",
+  "version": "0.2.0-alpha.4",
   "description": "Agentic SDLC orchestration modeled on Anthropic's AI-Native SDLC Playbook: a 5-state machine (intent → spec → read-only plan → autonomous TDD → review) over Git-versioned Markdown artifacts, with human-only gates enforced by hooks.",
   "author": {
     "name": "zoujagger"

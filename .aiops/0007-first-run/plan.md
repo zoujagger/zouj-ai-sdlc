@@ -146,7 +146,7 @@ known gap in S12.
     looking?" paragraph holds `git init`, `Setup Profile solo` and `/zouj-ai-sdlc:intent`, and no `<plugin>`),
     `tests/test_cli.py::Docs::test_docs_document_where_and_with` → fail on today's README
   - Covers: AC-18
-- [ ] **S13**: Release 0.2.0-alpha.4 (0005 and 0007).
+- [x] **S13**: Release 0.2.0-alpha.4 (0005 and 0007).
   - Files: `.claude-plugin/plugin.json`, `README.md`, `SECURITY.md`, `CHANGELOG.md`, `docs/architecture.md` (the
     version in "Known gaps") (modify), `defaults/scaffold-history.json` (regenerate),
     `tests/test_shell_hooks.py` (the pinned version, line 396)
@@ -218,3 +218,5 @@ known gap in S12.
 | 2026-11-11 | S12 | Main was merged into the branch (`42f9d50`), not rebased onto | PR #17 had merged, but a rebase rewrites the four signed approval commits of this intent: their signatures would be lost and the CI audit would refuse the gates. The merge brings in the same five doc files with no conflict | S12 |
 | 2026-11-11 | S12 | `docs/architecture.md` changed in three more places: the hook diagram and module list name `setup.set_first_profile` and the parts manifest, a design-choice bullet covers the core scaffold, and the Known gaps intro says its last entry comes from 0007 and is new with the phrase. README also gained a parts table and the `Your terminal:` card line; `docs/adoption.md` lists the workflows by part | The intro said every gap was found in a 0005 review and none is weaker than alpha.3, which is not true of the nested-session phrase; the rest keeps the page in step with S1-S8 | S12 |
 | 2026-11-11 | S12 | `tests/test_shell_hooks.py::test_docs_match_what_shipped` changed too: it pinned the old recipe (`bin/sdlc setup --profile solo --yes`, and no `/zouj-ai-sdlc:setup solo`) | Written in 0003 for the behaviour AC-18 replaces. It now asks for the skill and the phrase, and still checks that path A, the quick reference and the setup skill send a set profile's change to the human's terminal | S12 |
+| 2026-11-11 | S13 | `SECURITY.md` and `docs/architecture.md` had no version to move. SECURITY.md gained a bullet on the profile phrase and its accepted gap; the Known gaps intro was already corrected in S12 | SECURITY.md never pinned a version, and "no weaker than 0.2.0-alpha.3" stays true of the 0005 gaps. The policy page should name the one hook that writes a human-owned file | S13 |
+| 2026-11-11 | S13 | `Docs::test_changelog_has_the_release` also checks the README pins, the `[Unreleased]` link and that `scaffold-history.json` has the alpha.4 entry and no `unreleased` one. CHANGELOG `[0.2.0-alpha.4]` has its own Known issues and Upgrading sections | AC-19 names all of them; each earlier release has both sections | S13 |

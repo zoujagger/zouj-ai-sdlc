@@ -733,6 +733,27 @@ class Docs(unittest.TestCase):
             self.assertIn("Setup Profile", self.text(rel), rel)
         self.assertNotIn("<plugin>/bin/sdlc setup --profile solo", self.text("docs/adoption.md"))
 
+    def test_changelog_has_the_release(self):
+        """0007 AC-19: the release section names both intents, and every pin in the shipped docs matches plugin.json."""
+        import re
+        version = json.loads(self.text(".claude-plugin/plugin.json"))["version"]
+        self.assertEqual(version, "0.2.0-alpha.4")
+        log = self.text("CHANGELOG.md")
+        section = log.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
+        for piece in (".aiops/0005-guard-gaps/", ".aiops/0007-first-run/", "Setup Profile", "sdlc where", "--with",
+                      "G-FILE-05", "G-FILE-06", "### Upgrading from 0.2.0-alpha.3"):
+            self.assertIn(piece, section, piece)
+        unreleased = log.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        self.assertNotIn("Planned as", unreleased)                                 # nothing is left waiting there
+        self.assertIn(f"[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{version}...HEAD", log)
+        readme = self.text("README.md")
+        self.assertEqual(set(re.findall(r"0\.2\.0-alpha\.\d+", readme.split("\n## Lifecycle", 1)[0])), {version})
+        self.assertEqual(readme.count(f"@v{version}"), 2)                          # both marketplace commands
+        self.assertIn(f'"ref": "v{version}"', readme)
+        history = json.loads(self.text("defaults/scaffold-history.json"))
+        self.assertIn(version, history)
+        self.assertNotIn("unreleased", history)                                    # the tree is the release now
+
     def test_profile_eval_case_is_complete(self):
         """0007 AC-21: the behavioural case exists, is listed, and its fixture is a scaffolded repo with no profile."""
         import os

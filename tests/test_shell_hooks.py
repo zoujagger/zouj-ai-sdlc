@@ -394,7 +394,7 @@ class ShellHooks(RepoCase):
     def test_version_matches_changelog(self):
         import re
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
-        self.assertEqual(version, "0.2.0-alpha.3")                               # 0004: safe lifecycle (alpha)
+        self.assertEqual(version, "0.2.0-alpha.4")                               # 0005 guard gaps + 0007 first run
         log = (ROOT / "CHANGELOG.md").read_text()
         released = re.findall(r"^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]", log, re.M)
         self.assertEqual(released[0], version, "the newest CHANGELOG release must match plugin.json")
