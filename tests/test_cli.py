@@ -699,6 +699,39 @@ class Docs(unittest.TestCase):
         self.assertIn("Setup Profile", self.text("skills/configure/SKILL.md"))    # the first profile is the phrase
         self.assertIn("Setup Profile", self.text("skills/onboard/SKILL.md"))
 
+    def test_profile_eval_case_is_complete(self):
+        """0007 AC-21: the behavioural case exists, is listed, and its fixture is a scaffolded repo with no profile."""
+        import os
+        import subprocess
+        import tempfile
+        case = self.root / "evals" / "profile-by-phrase"
+        for rel in ("case.yaml", "fixture.sh", "prompt.md", "graders/asks-for-phrase.md", "graders/config-unchanged.md"):
+            self.assertTrue((case / rel).is_file(), rel)
+        self.assertIn("name: profile-by-phrase", (case / "case.yaml").read_text())
+        self.assertIn("scaffold_script: fixture.sh", (case / "case.yaml").read_text())
+        self.assertIn("solo", (case / "prompt.md").read_text())
+        self.assertIn("Setup Profile solo", (case / "graders" / "asks-for-phrase.md").read_text())
+        unchanged = (case / "graders" / "config-unchanged.md").read_text()
+        self.assertIn(".aiops/config.json", unchanged)
+        self.assertIn("require_signed_approvals", unchanged)                       # solo would set it to false
+        self.assertIn("| profile-by-phrase |", self.text("evals/README.md"))
+        with tempfile.TemporaryDirectory() as tmp:
+            work, home = os.path.join(tmp, "work"), os.path.join(tmp, "home")
+            os.mkdir(work)
+            os.mkdir(home)
+            env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION",
+                                                                    "CLAUDE_PROJECT_DIR", "GIT_CONFIG_GLOBAL")}
+            r = subprocess.run(["bash", str(case / "fixture.sh")], cwd=work, capture_output=True, text=True,
+                               env={**env, "HOME": home})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            template = json.loads(self.text("templates/scaffold/.aiops/config.json"))
+            with open(os.path.join(work, ".aiops", "config.json")) as f:
+                self.assertEqual(json.load(f), template)
+            self.assertFalse(os.path.exists(os.path.join(work, "ops", "bands.yaml")))      # the default: core only
+            self.assertEqual(os.listdir(home), [])                                 # nothing written to the operator's home
+            status = subprocess.run(["git", "status", "--porcelain"], cwd=work, capture_output=True, text=True, env=env)
+            self.assertEqual(status.stdout, "")                                    # the scaffold is committed
+
     def test_skills_name_the_part_they_need(self):
         for rel, part in (("skills/intent/SKILL.md", "maintain"), ("skills/triage/SKILL.md", "maintain"),
                           ("skills/deploy/SKILL.md", "deploy")):

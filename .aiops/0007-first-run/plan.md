@@ -128,7 +128,7 @@ known gap in S12.
     `::test_skills_name_where_and_with`, `::test_skills_name_the_part_they_need` → fail: the skills send `solo` to
     a terminal and never mention parts
   - Covers: AC-18
-- [ ] **S11**: The behavioural eval for the phrase.
+- [x] **S11**: The behavioural eval for the phrase.
   - Files: `evals/profile-by-phrase/case.yaml`, `fixture.sh`, `prompt.md`, `graders/asks-for-phrase.md`,
     `graders/config-unchanged.md` (create), `evals/_lib/repo.sh` (modify: `scaffold_only`, a repo after
     `sdlc init` with the template config and no intent), `evals/README.md` (modify)
@@ -214,3 +214,4 @@ known gap in S12.
 | 2026-11-10 | S7 | The manual run in a `make dev` session (Risks, first row) is not done: this session doesn't have the plugin loaded | Left for the human before the merge; `PhraseWalk` drives the same hook with the markers every session's hooks see | S7 |
 | 2026-11-10 | S8 | The helper is `terminal_lines` (a list). At a gate that needs signing, the card line is the full approve command (`… approve 0001 intent`), not the bare prefix. The doctor row needed no change: it already read `config.json` | The full command is what the human pastes; it starts with the prefix AC-10 names. With no profile, a second card line names the phrase (spec R-11) | S8 |
 | 2026-11-10 | S9 | The scaffold's `.aiops/README.md` also gained two bullets (Profile, Parts) and a pointer to `sdlc where` | It is the one consumer-facing page that explains the gates, and editing it once means one `scaffold-history.json` regeneration before the release | S9 |
+| 2026-11-11 | S11 | `make evals` was not run as planned. With the Bash grant the eval tool refuses every run on this machine ("sandbox required but unavailable … socat not installed"; an API key was not the obstacle). The single case ran with `--case profile-by-phrase --runs 1 --allow-tools Write Edit`: with the plugin 1.00 (asks-for-phrase PASS ×3, config-unchanged ✓), without 0.50 (asks-for-phrase FAIL ×3), Δ +0.50, $0.23 | Installing `socat` needs sudo, which is the human's. Left to the human before the merge: `sudo apt install socat`, then `make evals`, for the run with Bash that AC-21 names | S11 |
