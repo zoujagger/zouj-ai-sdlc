@@ -5,9 +5,9 @@ status: Approved
 spec: ./spec.md
 created: 2026-11-10
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-10T10:24:21Z
-approved-via: cli
-approved-sha256: 2aae560fecc6cfdfdcf91619f8e556272bed565a478c79d9bc5d73b8b39988aa
+approved-at: 2026-11-13T11:20:14Z
+approved-via: prompt
+approved-sha256: 0942404d231de13a599a22e745f5be4b77808f057d28539bd7007864a4f3aaf7
 ---
 
 # Plan: First run in five minutes (profile by /setup, terminal command, core scaffold)
