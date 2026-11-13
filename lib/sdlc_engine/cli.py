@@ -133,7 +133,7 @@ def terminal_lines(root, st=None):
     if setup.no_profile_yet(root)[0]:
         return [
             f"- Your terminal: {lifecycle.human_command('').rstrip()}",
-            "- No profile chosen yet: the human types `Setup Profile solo|team|strict` as the whole prompt",
+            "- No profile chosen yet: the human types `/zouj-ai-sdlc:setup solo|team|strict` as the whole prompt",
         ]
     if st is not None and st.waiting_on == "human" and st.state in (1, 2, 3):
         cfg = config(root)

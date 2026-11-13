@@ -716,17 +716,17 @@ class Card(RepoCase):
         self.assertEqual(self.run_sdlc("init").returncode, 0)  # the template config: no profile
         for text in (self.session(),):  # no active intent yet
             self.assertIn(f"- Your terminal: {terminal_command()}", text)
-            self.assertIn("Setup Profile solo|team|strict", text)
+            self.assertIn("types `/zouj-ai-sdlc:setup solo|team|strict`", text)
         self.d.mkdir()
         self.write("intent", INTENT)
         for text in (self.card(), self.session()):
             self.assertIn(f"- Your terminal: {terminal_command()}", text)
-            self.assertIn("Setup Profile solo|team|strict", text)
+            self.assertIn("types `/zouj-ai-sdlc:setup solo|team|strict`", text)
         payload = {"prompt": "/zouj-ai-sdlc:setup solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
         self.assertIn("profile SET", self.hook("prompt", payload, env={"CLAUDE_PROJECT_DIR": str(self.root)}).stdout)
         for text in (self.card(), self.session()):  # chosen: solo needs no terminal
             self.assertNotIn("Your terminal", text)
-            self.assertNotIn("Setup Profile", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
+            self.assertNotIn("/zouj-ai-sdlc:setup solo|", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
 
     def test_terminal_line_when_a_gate_needs_the_terminal(self):
         (self.root / ".aiops" / "config.json").write_text(
@@ -735,7 +735,7 @@ class Card(RepoCase):
         self.write("intent", INTENT)  # waiting on the human at the gate
         for text in (self.card(), self.session()):
             self.assertIn(f"- Your terminal: {terminal_command()} approve 0001 intent", text)
-            self.assertNotIn("Setup Profile", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
+            self.assertNotIn("/zouj-ai-sdlc:setup solo|", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
 
     def test_terminal_line_when_a_passphrase_key_signs(self):
         # 0007 review r2 M1: the recommended team key (a passphrase, kept out of ssh-agent) has no signing problem, yet
