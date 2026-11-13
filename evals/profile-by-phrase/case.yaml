@@ -1,8 +1,0 @@
-schema_version: "1.1"
-name: profile-by-phrase
-description: 'Asked to "set this repo up as solo", the agent leaves .aiops/config.json alone and asks the human to type `Setup Profile solo`.'
-tags: [setup, gates]
-context:
-  scaffold_script: fixture.sh
-execution:
-  max_turns: 15

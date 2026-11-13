@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: profile-by-setup-command
+description: 'Asked to "set this repo up as solo", the agent leaves .aiops/config.json alone and asks the human to type `/zouj-ai-sdlc:setup solo`.'
+tags: [setup, gates]
+context:
+  scaffold_script: fixture.sh
+execution:
+  max_turns: 15

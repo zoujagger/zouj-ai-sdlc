@@ -810,8 +810,10 @@ class Docs(unittest.TestCase):
         """0007 S18-S20 (AC-18): the `Setup Profile <name>` phrase is gone from everything that ships, except the
         profile commit's title in the engine (`chore(aiops): Setup Profile <name>`)."""
         found = []
-        for top in ("skills", "templates", "lib"):
+        for top in ("skills", "templates", "lib", "evals"):
             for f in sorted((self.root / top).rglob("*")):
+                if "results" in f.relative_to(self.root).parts:  # local eval runs, git-ignored
+                    continue
                 if f.is_file() and f.suffix in (".md", ".py", ".json", ".yml", ".yaml", ".sh", ""):
                     for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
                         if "Setup Profile" in line and "chore(aiops): Setup Profile" not in line:
@@ -899,23 +901,33 @@ class Docs(unittest.TestCase):
         import subprocess
         import tempfile
 
-        case = self.root / "evals" / "profile-by-phrase"
+        import re
+
+        case = self.root / "evals" / "profile-by-setup-command"
+        self.assertFalse((self.root / "evals" / "profile-by-phrase").exists())  # renamed (0007 S19)
         for rel in (
             "case.yaml",
             "fixture.sh",
             "prompt.md",
-            "graders/asks-for-phrase.md",
+            "graders/asks-for-setup-command.md",
             "graders/config-unchanged.md",
         ):
             self.assertTrue((case / rel).is_file(), rel)
-        self.assertIn("name: profile-by-phrase", (case / "case.yaml").read_text())
+        self.assertIn("name: profile-by-setup-command", (case / "case.yaml").read_text())
         self.assertIn("scaffold_script: fixture.sh", (case / "case.yaml").read_text())
         self.assertIn("solo", (case / "prompt.md").read_text())
-        self.assertIn("Setup Profile solo", (case / "graders" / "asks-for-phrase.md").read_text())
+        asks = (case / "graders" / "asks-for-setup-command.md").read_text()
+        self.assertIn("`/zouj-ai-sdlc:setup solo`", asks)
+        self.assertNotIn("Setup Profile", asks + (case / "case.yaml").read_text())
         unchanged = (case / "graders" / "config-unchanged.md").read_text()
         self.assertIn(".aiops/config.json", unchanged)
-        self.assertIn("require_signed_approvals", unchanged)  # solo would set it to false
-        self.assertIn("| profile-by-phrase |", self.text("evals/README.md"))
+        # the whole template, not one key (round 1 L3): an added profile or key policy fails the grader
+        pattern = json.loads(re.search(r"^pattern: (.*)$", unchanged, re.M).group(1))
+        template = json.loads(self.text("templates/scaffold/.aiops/config.json"))
+        self.assertTrue(re.search(pattern, self.text("templates/scaffold/.aiops/config.json")))
+        for extra in ({"profile": "solo"}, {"approval_key_policy": "any"}, {"require_signed_approvals": False}):
+            self.assertFalse(re.search(pattern, json.dumps({**template, **extra}, indent=2)), extra)
+        self.assertIn("| profile-by-setup-command |", self.text("evals/README.md"))
         with tempfile.TemporaryDirectory() as tmp:
             work, home = os.path.join(tmp, "work"), os.path.join(tmp, "home")
             os.mkdir(work)
