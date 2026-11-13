@@ -2,7 +2,8 @@
 ## First run in five minutes (profile by phrase, terminal command, core scaffold)
 
 **Intent:** `.aiops/0007-first-run/` ([intent](intent.md) · [spec](spec.md) · [plan](plan.md) · [review](review.md))
-**Review:** PASS, 88/100 at `ccef62e` (round 2; round 1 was PASS 86/100, and its one MEDIUM was fixed first)
+**Review:** PASS, 92/100 at `7437154` (round 3). Rounds 1 (86) and 2 (88) also passed; their MEDIUM, M1 and L1
+were fixed before the merge
 
 ### What and why
 A newcomer on 0.2.0-alpha.3 couldn't finish the guided setup inside Claude Code. The profile they picked became a
@@ -23,7 +24,7 @@ reached. This PR adds:
 It ships with intent 0005 as **0.2.0-alpha.4**.
 
 **Reading the diff:** commit `7d8d4d0` is a style-only `ruff format` of `lib/` and `tests/` (+5123/−2069). For the
-feature alone, read `git diff origin/main 87d3ac8` plus `git show ccef62e`.
+feature alone, read `git diff origin/main 87d3ac8` plus `git show ccef62e 7437154`.
 
 ### Acceptance criteria
 - [x] AC-1: the phrase sets the first profile and commits the config alone (`tests/test_setup.py::FirstProfile::test_sets_and_commits_config_alone`, `tests/test_cli.py::ProfilePhrase::test_whole_prompt_sets_the_profile`)
@@ -61,21 +62,24 @@ The plan's Deviation log has 24 rows. The main ones:
   - A style-only `ruff format` commit. It leaves `bin/sdlc` out of `make format`, because ruff broke its sh/python
     header.
   - The history check that closes the round 1 MEDIUM.
+- **Review r2:** the card names the terminal approve command at a passphrase-key gate (M1), and a terminal
+  `setup --profile team` on a new config writes what the phrase writes (L1).
 
 ### Risks and rollback
 - **No migration.** Install-state without `parts` reads as every part, and no existing repo's files change.
 - **Accepted residual.** An agent that starts its own session (`claude -p "Setup Profile solo"`) can set the
   profile in a repo with the template config and nothing approved. It leaves a visible commit, and CI reads the
   config from the base branch. Recorded in `docs/architecture.md` Known gaps.
-- **Open review findings, none blocking:**
-  - M1: the card line is missing at a passphrase-key gate.
-  - L1: a terminal `setup --profile team` on a new config writes nothing.
+- **Open review findings (round 3), none blocking:**
+  - MEDIUM (accepted residual): no pre-bash deterrent yet against `claude -p "<phrase>"`; the reviewer recommends
+    adding one rather than waiting for 0006.
   - LOWs:
-    - the reflog/branch-deletion path past the history check
     - R-2 condition 1 (the session's repo) isn't enforced
-    - the `--with` wording in the threat model
-    - the eval grader is weak
-    - `git log` runs on every status call
+    - the scaffold commit message names `team` before a profile is chosen
+    - `record()` doesn't save `parts` when no file was written
+    - the history scan runs on every status call and ignores `AIOps-Profile:`
+  - NITs: repeated `--with` in `init`, `--with all,<part>`, the eval grader, the bare `python3` fallback, one long
+    CHANGELOG line.
 - **Before the merge:** run the phrase by hand once in a `make dev` session (S7), and check `gh pr checks`, because
   shellcheck didn't run locally.
 - **After the merge:** tag `v0.2.0-alpha.4` on the merge commit. Until then the README's pin doesn't resolve.
