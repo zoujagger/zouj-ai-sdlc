@@ -688,6 +688,50 @@ class ShellHooks(RepoCase):
         )
         self.assertEqual(r.returncode, 0, r.stderr)  # no python needed when the repo isn't initialized
 
+    def test_prompt_hook_dormant_except_the_setup_command(self):
+        # 0007 S14 (AC-5): without .aiops/, only the typed `/zouj-ai-sdlc:setup <profile>` reaches the engine; every
+        # other prompt exits 0 with no output before python starts. A fake plugin's bin/sdlc logs each start.
+        import shutil
+        import tempfile
+
+        shutil.rmtree(self.root / ".aiops")
+        with tempfile.TemporaryDirectory() as tmp:
+            plugin, log = pathlib.Path(tmp) / "plugin", pathlib.Path(tmp) / "started.log"
+            (plugin / "bin").mkdir(parents=True)
+            (plugin / "bin" / "sdlc").write_text(
+                f"import sys\nopen({str(log)!r}, 'a').write(sys.stdin.read() + '\\n')\n"
+            )
+            env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(plugin)}
+
+            def prompt(text):
+                payload = json.dumps({"prompt": text, "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"})
+                return subprocess.run(
+                    [str(HOOKS / "engine.sh"), "prompt"],
+                    input=payload,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    cwd=self.root,
+                )
+
+            for text in (
+                "Intent Approved 0001",
+                "Setup Profile solo",
+                "/setup solo",
+                "/zouj-ai-sdlc:setup",
+                "/zouj-ai-sdlc:setup solo now",
+                "please run /zouj-ai-sdlc:setup solo",
+                "/zouj-ai-sdlc:setup solo\nand more",
+            ):
+                r = prompt(text)
+                self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""), text)
+                self.assertFalse(log.exists(), f"python started for {text!r}")
+            for text in ("/zouj-ai-sdlc:setup solo", "  /zouj-ai-sdlc:setup team  ", "/zouj-ai-sdlc:setup fast"):
+                log.unlink(missing_ok=True)
+                self.assertEqual(prompt(text).returncode, 0, text)
+                self.assertTrue(log.exists(), f"the engine never saw {text!r}")
+                self.assertEqual(json.loads(log.read_text())["prompt"], text)
+
     def test_engine_wrapper_stays_on_when_aiops_is_tracked_but_deleted(self):
         import shutil
         from helpers import INTENT, git

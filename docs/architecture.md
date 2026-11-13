@@ -32,7 +32,9 @@ lib/sdlc_engine/
 - **Gates dormant by default.** The SDLC gate hooks exit 0 when the repo has no `.aiops/`, so installing the plugin
   user-wide is safe. The safety guards (secret reads, force-push, history, production, and Edit/Write and shell writes to secrets
   outside the repo, the toolchain and the installed plugin) are always on: in a repo without `.aiops/`,
-  `engine.sh` still runs `pre-bash`, and `check_bash` runs only those safety checks (`gates=False`).
+  `engine.sh` still runs `pre-bash`, and `check_bash` runs only those safety checks (`gates=False`). One prompt is
+  the exception: the human's typed `/zouj-ai-sdlc:setup <profile>`, matched on the raw payload in `engine.sh` before
+  python starts, sets up the repo and its first profile (ADR 0003). Every other prompt there exits 0 at once.
 - **Fail closed.** If the gate guard crashes, it blocks the call and says so, because a guard that errors must never silently allow.
 - **Stdlib only.** Hooks run on every tool call, so the engine needs no `pip install` and starts fast.
 - **Approval through the prompt.** A tool call can't author a user prompt, so a phrase typed as the whole prompt is the
