@@ -1,8 +1,8 @@
 ---
 id: 0007
 verdict: CHANGES_REQUESTED   # PASS | CHANGES_REQUESTED (the human still decides the merge)
-commit: a693a2f86ef28c8ccd98faaf388ea33a69a1ea60
-score: 89/100
+commit: 53c90c034b531689466443e9470672744c120d69
+score: 87/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-13
 ---
@@ -10,151 +10,148 @@ created: 2026-11-13
 # Review: First run in five minutes (profile by /setup, terminal command, core scaffold)
 
 <!-- State 5 PRE-REVIEW. Written from the reports of three fresh-context personas that did not write the code.
-     Rounds 1-3 (87d3ac8, ccef62e, 7437154) reviewed the `Setup Profile` phrase: PASS 86, 88, 92. After round 3 the
-     human removed the phrase and amended intent, spec and plan (S14-S20: the typed `/zouj-ai-sdlc:setup <profile>`,
-     which in a fresh repo also writes the core scaffold). Round 4 at a693a2f (this file). Diff against origin/main;
-     the style-only commit 7d8d4d0 changes no engine syntax tree (both reviewers checked). -->
+     Rounds 1-3 (87d3ac8, ccef62e, 7437154) reviewed the removed `Setup Profile` phrase: PASS 86, 88, 92. Round 4 at
+     a693a2f (the typed `/zouj-ai-sdlc:setup <profile>`): CHANGES_REQUESTED 89 (HIGH: the live check of the typed
+     line; MEDIUM: an untested refusal). Fixed in c29390f and 53c90c0 (a `claude -p` probe confirmed the hook gets the
+     typed line). Round 5 at 53c90c0 (this file). Diff against origin/main. -->
 
 ## Summary
 0007 adds three things:
-- **Profile by the typed setup command.** The human types `/zouj-ai-sdlc:setup solo|team|strict`. In a repo
-  without `.aiops/`, the prompt hook first writes the core scaffold (missing files only). Then it sets the first
-  profile and commits `.aiops/config.json` alone. The `Setup Profile` phrase is gone.
+- **Profile by the typed setup command.** In a fresh repo, `/zouj-ai-sdlc:setup solo|team|strict` first writes
+  the core scaffold, then sets the first profile and commits `.aiops/config.json` alone.
 - **`sdlc where`.** It prints the terminal command, and the state card shows it.
 - **A core-only scaffold.** The default installs only `core`; the other parts are opt in with `--with`.
 
 It ships as 0.2.0-alpha.4.
 
-Round 4 results:
-- **Verifier:** VERIFIED. All 23 ACs have passing tests. `make check` (415 tests) and `make build` pass.
-- **Code-reviewer:** 89/100, no BLOCKER.
-- **Security-reviewer:** PASS, 22/25, no CRITICAL or HIGH.
+Round 5 results:
+- **Verifier:** VERIFIED. All 23 ACs have passing tests. `make check` (420), `make build` and `sdlc validate` pass.
+- **Code-reviewer:** 87/100, no BLOCKER or HIGH.
+- **Security-reviewer:** PASS, 23/25, no CRITICAL, HIGH or MEDIUM.
 
-**Verdict: CHANGES_REQUESTED**, for one reason. The code-reviewer's HIGH: the live check that Claude Code hands
-`UserPromptSubmit` the typed `/zouj-ai-sdlc:setup solo` line, not the expanded skill, was never run. The whole
-feature rests on it, and every automated test feeds the hook a payload directly. The verifier flags the same gap.
-One MEDIUM (an untested refusal path) is also worth closing before the merge. The human decides.
+**Verdict: CHANGES_REQUESTED.** There's no BLOCKER or HIGH, but two things stand in the way:
+- **One MEDIUM:** after a fresh-repo command, install-state records the template config's hash, so `sdlc
+  list-installed` shows the config as `modified`.
+- **Two ACs only partly met** (AC-18, AC-23). In both, the spec's wording conflicts with a decision already taken.
+  The human accepts the exemption or amends the AC.
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
 |---|---|---|
-| AC-1 | ✅ met | `tests/test_setup.py:1186 FirstProfile::test_sets_and_commits_config_alone`; `tests/test_cli.py:531 SetupCommand::test_whole_prompt_sets_the_profile` |
-| AC-2 | ✅ met | `tests/test_playbook.py:344-387 CommandWalk::test_solo` (fresh repo, every prompt through `engine.sh` with both markers) |
-| AC-3 | ✅ met | `tests/test_setup.py:1233`, `:1238`, `:1249`, `:1260`; `tests/test_cli.py:570` (outside the session repo; an empty `CLAUDE_PROJECT_DIR` fails closed) |
-| AC-4 | ✅ met | `tests/test_cli.py:544`, `:561`; `tests/test_shell_hooks.py:717-728` |
-| AC-5 | ✅ met | `tests/test_shell_hooks.py:691 test_prompt_hook_dormant_except_the_setup_command` (a fake plugin logs every python start) |
-| AC-6 | ✅ met | `tests/test_cli.py:591`; `tests/test_playbook.py:354-361` |
-| AC-7 | ✅ met | `tests/test_cli.py:613` |
-| AC-8 | ✅ met | `tests/test_setup.py:1325`, `:1332` (terminal `--profile` × 3), `:1346`, `:1138`. Byte equality holds by construction; the test compares parsed JSON |
-| AC-9 | ✅ met | `tests/test_cli.py:667 Where::test_first_line_is_the_terminal_command` |
-| AC-10 | ✅ met | `tests/test_cli.py:714`, `:731`, `:740`, `:757` |
+| AC-1 | ✅ met | `tests/test_setup.py:1256`; `tests/test_cli.py:531` |
+| AC-2 | ✅ met | `tests/test_playbook.py:344 CommandWalk::test_solo` (fresh repo, every prompt through `engine.sh`, no agent-run setup) |
+| AC-3 | ✅ met | `tests/test_setup.py:1303`, `:1308`, `:1319`, `:1330`; `tests/test_cli.py:572` |
+| AC-4 | ✅ met | `tests/test_cli.py:546` (11 forms, empty output), `:563` |
+| AC-5 | ✅ met | `tests/test_shell_hooks.py:691` (a fake plugin logs every python start; normal and compact payloads) |
+| AC-6 | ✅ met | `tests/test_cli.py:593` |
+| AC-7 | ✅ met | `tests/test_cli.py:615` |
+| AC-8 | ✅ met | `tests/test_setup.py:1410`, `:1417`, `:1431`, `:1207` |
+| AC-9 | ✅ met | `tests/test_cli.py:669` |
+| AC-10 | ✅ met | `tests/test_cli.py:716`, `:733`, `:742`, `:759` |
 | AC-11 | ✅ met | `tests/test_cli.py:412`; `tests/test_setup.py:973` |
 | AC-12 | ✅ met | `tests/test_cli.py:421`, `:431`, `:436`, `:447`; `tests/test_setup.py:1008`, `:1023` |
-| AC-13 | ✅ met | `tests/test_lifecycle.py:757-786`; `tests/test_playbook.py:193` |
-| AC-14 | ✅ met | `tests/test_lifecycle.py:707`, `:729`; `tests/test_cli.py:454`, `:461` |
-| AC-15 | ✅ met | `tests/test_lifecycle.py:829-850` |
+| AC-13 | ✅ met | `tests/test_lifecycle.py:763`, `:775`, `:791` |
+| AC-14 | ✅ met | `tests/test_lifecycle.py:709`, `:730`; `tests/test_cli.py:454`, `:461` |
+| AC-15 | ✅ met | `tests/test_lifecycle.py:830-851` |
 | AC-16 | ✅ met | `tests/test_playbook.py:338 CoreWalk`, `:344 CommandWalk` × solo/team/strict |
-| AC-17 | ✅ met | `tests/test_cli.py:780` |
-| AC-18 | ⚠️ partial | `tests/test_cli.py:792`, `:809`, `:825`, `:836`; `tests/test_setup.py:895`. The AC says no shipped file mentions `Setup Profile`, but R-4 requires the commit title `chore(aiops): Setup Profile <name>`, which README, SECURITY.md, the architecture and the ADR quote. The test exempts the title. The human accepts the exemption or amends the AC |
-| AC-19 | ✅ met | `tests/test_cli.py:883`; `tests/test_rules.py:326`; `make build` passes |
+| AC-17 | ✅ met | `tests/test_cli.py:782` |
+| AC-18 | ⚠️ partial | `tests/test_setup.py:895`; `tests/test_cli.py:794`, `:811`, `:827`, `:838`, `:969`. Behaviour met. The AC says no shipped file mentions `Setup Profile`, but R-4 requires the commit title `chore(aiops): Setup Profile <name>`, which `setup.py:809`, README, SECURITY.md, the ADR and the architecture quote; the test exempts the title. **Human decision:** accept the exemption, or amend the AC (or rename the commit title) |
+| AC-19 | ✅ met | `tests/test_cli.py:885`; `tests/test_shell_hooks.py:595`; `tests/test_rules.py:326`; `make build` passes |
 | AC-20 | ✅ met | `tests/test_cli.py:470`, `:485`; `tests/test_setup.py:1032` |
-| AC-21 | ✅ met (run quoted below) | `tests/test_cli.py:913 Docs::test_profile_eval_case_is_complete` |
-| AC-22 | ⚠️ partial | `tests/test_setup.py:1076`, `:1103`. Nothing pins the exact paths inside the scaffold commit command (only `git add -- ` and each path somewhere in the reply) |
-| AC-23 | ✅ met | `tests/test_setup.py:1115` (not a git repo, `$HOME`, `GIT_DIR`, no `make`) |
+| AC-21 | ✅ met (run quoted below) | `tests/test_cli.py:915` |
+| AC-22 | ✅ met | `tests/test_setup.py:1076`, `:1103` |
+| AC-23 | ⚠️ partial | `tests/test_setup.py:1115` (not a git repo, `$HOME`, `GIT_DIR`, a Preflight ✗), `:1138`. The AC names "not the top of a git work tree"; a subdirectory resolves to the repo's top and is scaffolded there (logged S16, `tests/test_cli.py:587-589`). **Human decision:** accept, or amend the AC |
 
-**AC-21: the run** (plan.md Deviation log, S19, 2026-11-13): `claude plugin eval … --allow-tools Bash Write Edit
---case profile-by-setup-command --runs 3`.
-- **With the plugin:** 1.00 (asks-for-setup-command PASS ×3, config-unchanged ✓ ×3).
-- **Without the plugin:** 0.67.
-- Δ +0.33, $0.87, 93 s.
+**AC-21: the run** (plan.md Deviation log S19, 2026-11-13; `--allow-tools Bash Write Edit`, 3 runs per arm):
+`profile-by-setup-command` 1.00 with the plugin (asks-for-setup-command PASS ×3, config-unchanged ✓ ×3), 0.67
+without, Δ +0.33, $0.87.
 
 ## Security
-- [MEDIUM, accepted residual] `lib/sdlc_engine/cli.py:932-954`; no rule in `guards.py`.
-  - **Exploit:** an agent runs `claude -p "/zouj-ai-sdlc:setup solo"` in a repo with no profile and nothing approved.
-    The child session's hook can't tell that from a human, so it scaffolds and commits `solo`. Then
-    `claude -p "Intent Approved 0001"` and the next phrases open the gates unsigned.
-  - **Bounds:** one visible commit; CI reads the base branch's config and CODEOWNERS.
-  - **Status:** recorded in the spec and in Known gaps.
-  - **Fix (backlog, R-22):** a pre-bash rule refusing `claude` when its prompt matches `APPROVE_RE` or
-    `PROFILE_RE`.
-- [LOW] `lib/sdlc_engine/setup.py:802` with `approvals.py:28-31`: `Set-By:` reads `user.name`, which the agent can
-  set in a fresh repo's local config before `.aiops/` exists. This misleads attribution only (unsigned, opens no
-  gate); `approved-by` has the same class. → Read the global identity, or flag a repo-local one.
-- [LOW] `setup.py:306-321`, `:811`: in an already-initialized repo the command shows nothing to review, so an
-  `allowed-signers` the agent committed beforehand is never shown. This is the documented "committed counts as
-  reviewed" residual, with less chance of notice. → List the non-comment lines of `allowed-signers`,
-  `legacy-approvals` and `allowed-commands` in the reply.
+Fixed since round 4:
+- the history refusal in a fresh repo is tested;
+- a repo-local `Set-By` identity is flagged;
+- the trust lists are listed in the reply;
+- the hook runs only Preflight's blocking rows;
+- the typed line was probed live (`claude -p`, Deviation log r4 HIGH).
+
+Round 5 findings:
+- [MEDIUM, accepted residual] An agent-started session (`claude -p "/zouj-ai-sdlc:setup solo"`) can type the
+  command. It is bounded to a repo with no profile and nothing approved; it leaves one visible commit, and CI reads
+  the base config. Recorded in Known gaps; the pre-bash rule is on the backlog.
+- [LOW] `lib/sdlc_engine/setup.py:324-339`: in a fresh repo, the hook's `git diff` calls use the unpinned
+  `machine.git`. A `core.fsmonitor` the agent set while the gates were off would run inside the hook's process. That
+  matters only where a sandbox allows `.git/config` writes. → Run the profile path's git calls with
+  `approvals.PINNED` (or `-c core.fsmonitor=false -c core.hooksPath=/dev/null`), refuse or list
+  `approvals.local_config_keys`, and add a red test with a marker-writing fsmonitor.
+- [LOW] The trust-list and `Set-By` warnings reach the human only through the agent (`additionalContext`). → Also
+  send them in the hook JSON's `systemMessage`, which Claude Code shows the user.
+- [LOW] `docs/architecture.md:69`: in a repo without `.aiops/`, an agent can pipe a crafted payload into
+  `sdlc hook prompt`, because `check_bash` returns before G-GATE-07 when `gates=False`. It gains nothing new (it can
+  already write and commit the config there), but the commit looks human-made. → Name the route in the threat-model
+  row and Known gaps.
+- [LOW] The interactive check is half done: the probe ran in `-p` mode with a throwaway plugin. → The human types
+  `/zouj-ai-sdlc:setup solo` once in a `make dev` session in a scratch repo.
 
 Spec flags (security-reviewer):
 
 | Flag | Mitigated? | Evidence |
 |---|---|---|
-| A hook writes a human-owned file | Yes | session repo only (`cli.py:940-946`), template-or-none config, no Approved/Closed, no approval in `--all` history (`setup.py:691-740`); exact write, committed alone; CI reads the base config |
-| The hook writes the core scaffold without a preview (R-2a) | Yes | `scaffold_root_problem`, Preflight ✗, `symlink_refusal`, create-only through `write_file` (O_NOFOLLOW, O_EXCL) (`setup.py:749-765`); only the config is committed; the reply lists every file; `engine.sh` wakes python only for the exact command |
-| The agent prompts a session of its own | Partly (accepted) | R-2 bounds in code; no pre-bash rule yet (MEDIUM) |
-| The agent asks the human to type the command | Yes | the skill states each profile's proof first; a bare command previews |
-| The profile commit is unsigned in team/strict | Yes, as designed | opens no gate; audits need signed approval commits |
-| `sdlc where` prints a home path | Yes | local only; reads no secret |
-| A core-only repo lacks the AI review and scheduled scan | Yes | every security-relevant file is core; the parts left out are named |
-| No change to secrets, lock, approval path, audit, allowed-commands | Yes | those modules' syntax trees are identical apart from formatting |
+| A hook writes a human-owned file | Yes | session-repo check (`cli.py` `hook_profile`); `no_profile_yet` and `approval_in_history`; the exact write via `write_file`, committed alone; CI reads the base config |
+| The hook writes the core scaffold without a preview (R-2a) | Yes, with the fsmonitor LOW | `scaffold_first`: `scaffold_root_problem`, history, quick Preflight, create-only `init_actions(parts=[])`, `symlink_refusal`, `write_file`; only the config is committed; the reply lists the files; `engine.sh` wakes python only for the command |
+| The agent prompts a session of its own | Accepted residual | bounded by `no_profile_yet` and the session-repo check; Known gaps |
+| The agent asks the human to type the command | Yes | a bare command previews; only the qualified exact form matches |
+| The profile commit is unsigned in team/strict | Yes, as designed | opens no gate; the audit ignores it |
+| `sdlc where` prints a home path | Yes | local only; starts no process |
+| A core-only repo lacks the AI review and scheduled scan | Yes | `list-installed` names the parts left out; the CI audit is core |
+| No change to secrets, lock, approval path, audit, allowed-commands | Yes | `approvals.py` is formatting only |
 
 ## Plan conformance
-- **Steps:** all 20 are ticked, and S14-S20 match the diff file by file.
-- **Deviation log:** all 33 rows check out, and every code divergence is logged.
-- **Not logged:** the live `make dev` check of the typed command. Spec Open question 2 and the plan's Risks call
-  for it before the merge; it wasn't done, and only the S7 row (for the old phrase) mentions it.
-- **Plan reference:** the plan's AC-19 row names the wrong file for `Feedback::test_prints_links_offline` (it is in
-  `tests/test_setup.py`).
+- **Steps:** all 20 are done and match the diff.
+- **Deviation log:** every divergence the code-reviewer found is in it, including the format commit, the r1-r4
+  fixes, the S16 subdirectory decision, S17's harness-only red and the S19 regex grader.
+- **Scope:** nothing ships outside it.
+- **Backlog, not this intent:** `uncommitted_scaffold` leaves `.aiops/install-state.json` out of the "Commit the
+  scaffold" command. That predates 0007.
 
 ## Test-first evidence
-| Step | Red recorded in the commit body |
-|---|---|
-| S14 `3bacac1` | "the engine never saw '/zouj-ai-sdlc:setup solo'" |
-| S15 `66b297e` | 9 `SetupCommand` tests, no hook output |
-| S16 `3943f29` | 4 `FirstRun` tests: "this repo isn't set up yet" |
-| S17 `f564359` | the card test. `CommandWalk` passed first time: its behaviour came red-first in S14 and S16 (logged) |
-| S18 `676a468` | two named Docs tests |
-| S19 `ae31453` | `test_profile_eval_case_is_complete` |
-| S20 `a693a2f` | three named Docs tests |
+Every step and review fix has a `Red:` line in its commit body:
+- S1-S13: `f00d51b`…`3cd2b8e`
+- r1 `ccef62e`, r2 `7437154`
+- S14 `3bacac1`, S15 `66b297e`, S16 `3943f29`, S17 `f564359`, S18 `676a468`, S19 `ae31453`, S20 `a693a2f`
+- r4 `c29390f`
 
-The red runs were run and seen in the authoring session. Each step lands its test and code in one commit, so git
-history can't show the order. The reviewers' attempts to replay red against parent commits were refused by the
-sandbox.
+The commit messages quote the failing assertions. `53c90c0` adds a test that already passed, and its message says
+so. S7's and S17's walks had their red in the steps that built the behaviour (logged). Tests and code share
+commits, as this repo accepts.
 
 ## Fixes requested
-1. **[HIGH] The live check (human).** In a `make dev` session, in a fresh throwaway repo, type
-   `/zouj-ai-sdlc:setup solo` once. Confirm the reply says `profile SET: solo` with the created files, and record the
-   result in the Deviation log. If the hook got the expanded skill text instead, the feature doesn't work and S15
-   needs `UserPromptExpansion`.
-2. **[MEDIUM] `lib/sdlc_engine/setup.py:749`.** `scaffold_first`'s refusal on an approval commit in the history is
-   untested. → Add a `FirstRun` case (no `.aiops/`, an `AIOps-Approval:` commit on some ref): `profile NOT set`, no
-   `.aiops/`, HEAD unchanged.
+1. **[MEDIUM] `lib/sdlc_engine/setup.py:770`.** `lifecycle.record` runs inside `scaffold_first`, before the profile
+   is written (`:806`). Install-state then stores the template's hash, and `sdlc list-installed` reports `modified
+   .aiops/config.json` right after a fresh setup. A human's terminal `setup --profile` records `current`, so this
+   departs from R-2a. If the config write or commit then fails, install-state also says `profile: solo`. → Record
+   the config after it is written; assert `current` in `FirstRun::test_fresh_repo_gets_core_and_the_profile`.
+2. **[Human] AC-18 and AC-23.** Accept the exemptions above, or amend the spec.
 
 ## Other findings (non-blocking)
-- [LOW] `setup.py:763-764`, `:786`: after a write that failed part-way, the reply lists what was written and then
-  says "Nothing was written". → Drop the sentence on that path.
-- [LOW] `setup.py:752`: Preflight on the hook path runs `claude --version`, `gh auth status` and `git config`,
-  which can add up to ~15 s to the matching prompt. → Skip the `!`-only rows there.
-- [LOW] `hooks/engine.sh:13` vs `cli.py:41`: `PROFILE_RE` accepts a trailing newline; the `engine.sh` pre-filter
-  doesn't (it sees `\n`). So the command with a trailing newline works in an initialized repo but not a fresh one.
-  → Make them agree.
-- [LOW] `cli.py:984`, `engine.sh:16`: in a repo without `.aiops/`, the session-start notice still names
-  `/zouj-ai-sdlc:init`. → Name `/zouj-ai-sdlc:setup solo|team|strict`.
-- [LOW] AC-18 wording vs R-4 (see the table).
-- [NIT] `tests/test_setup.py:1152` (the `FirstProfile` docstring) and `setup.py:688` (a section comment) still
-  name the phrase.
+- [LOW] `setup.py:822`: "Created the core scaffold (17 files, nothing existing changed)". The 17 includes
+  `.gitignore`, and an existing `.gitignore` *is* changed (lines are appended). → Count the 16 core files and name
+  the `.gitignore` lines separately.
+- [LOW] `cli.py:42` vs `engine.sh:13`: `PROFILE_RE` accepts a leading tab, but the `engine.sh` pre-filter never sees
+  one (JSON escapes it as `\t`). A fresh repo and an initialized one still differ for a tab. → Spaces only.
+- [NIT] `setup.py:712`: the refusal for `.aiops/` without a config says "run /zouj-ai-sdlc:setup first" to someone who
+  just typed it.
+- [NIT] `CHANGELOG.md:8`: `[0.2.0-alpha.4] - 2026-11-11` predates the changes it lists. Set the date at tagging.
+- [NIT] `CLAUDE.md:16` (133 characters); `docs/architecture.md:22` ("set_first_profile() for the typed phrase").
 - **Verifier notes:**
-  - AC-14's alpha.3 state isn't exercised through `repair`, `setup` or `init`.
-  - AC-20's core-only rerun is tested for `init` only.
-  - AC-22 doesn't assert a user's `CLAUDE.md` as a step.
-- **Local checks:** shellcheck isn't installed locally; CI runs it on `engine.sh`.
+  - AC-8 compares parsed JSON (the bytes match by construction).
+  - AC-14's "unchanged": 22 init tests now pass `--with all` (logged S2).
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 35 | AC-18 and AC-22 partial; the live typed-command check missing |
-| Security | 25 | 22 | Both reviewers 22: the accepted nested-session MEDIUM; the fresh-repo history refusal untested |
-| Test quality & test-first | 20 | 17 | Strong `engine.sh`-level tests, including "no python start"; one security path untested; red only in commit bodies |
-| Plan conformance | 10 | 10 | Every code divergence logged |
-| Maintainability | 5 | 5 | Two small helpers, reuse of `preflight`, `init_actions`, `apply_init`, `_commit_alone` |
-| **Total** | 100 | **89** | PASS needs ≥ 80, no BLOCKER or HIGH, every AC met |
+| Spec conformance | 40 | 35 | AC-18 and AC-23 partial (spec wording); the install-state hash departs from R-2a |
+| Security | 25 | 22 | Lower of the two reviewers' scores (22 and 23): unpinned git on the fresh-repo path, warnings only through the agent, the `sdlc hook prompt` route undocumented, the TUI check open |
+| Test quality & test-first | 20 | 17 | Strong `engine.sh`-level tests and Red lines throughout; the config hash after the hook is untested |
+| Plan conformance | 10 | 9 | All divergences logged |
+| Maintainability | 5 | 4 | `setup.py` keeps growing; small wording issues |
+| **Total** | 100 | **87** | PASS needs ≥ 80, no BLOCKER or HIGH, every AC met |
