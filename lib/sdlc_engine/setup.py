@@ -630,13 +630,15 @@ def steps_for_human(root, profile, pending, review=(), install=True):
             "Give /.aiops/ a real owner (strict requires it): in .github/CODEOWNERS replace the @your-org/... "
             "placeholders, at least:\n       /.aiops/ @<approver>"
         )
-    # The profile. A repo with no profile yet gets it from the human's typed phrase, whichever profile it is (the
-    # default, team, differs from the template by no key but is still recorded); a set profile changes in a terminal.
+    # The profile. A repo with no profile yet gets it from the human's typed `/zouj-ai-sdlc:setup <profile>`, whichever
+    # profile it is (the default, team, differs from the template by no key but is still recorded); a set profile
+    # changes in a terminal.
     first = no_profile_yet(root)[0]
     if first or ".aiops/config.json" in pending:
         current = config(root)["profile"]
         command = f"{shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}"
-        if current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):  # solo < team < strict
+        # a downgrade only from a profile that is set: with none yet, `current` is just the engine default
+        if not first and current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):  # solo<team<strict
             steps.append(
                 f"Downgrade requested by the agent's run ({current} to {profile}): approvals would be "
                 f"proven by {PROOF[profile]} instead of {PROOF[current]}. Skip the next step unless you "
@@ -645,9 +647,9 @@ def steps_for_human(root, profile, pending, review=(), install=True):
         if first:
             snippet = json.dumps(PROFILE_CONFIG[profile], indent=2).replace("\n", "\n       ")
             steps.append(
-                f"Choose the profile: type `Setup Profile {profile}` as your whole prompt in Claude "
+                f"Choose the profile: type `/zouj-ai-sdlc:setup {profile}` as your whole prompt in Claude "
                 "Code (.aiops/config.json is human-owned; setup run by the agent leaves it at init's "
-                "defaults). The phrase sets these keys and commits the file alone:\n"
+                "defaults). The typed command sets these keys and commits the file alone:\n"
                 f"       {snippet}\n"
                 f"       Or run in your own terminal, then confirm the diff: {command}"
             )
@@ -677,7 +679,7 @@ def steps_for_human(root, profile, pending, review=(), install=True):
         paths = " ".join(shlex.quote(f) for f in files)
         steps.append(
             f'Commit the scaffold:\n       git add -- {paths} && git commit -m "chore: adopt zouj-ai-sdlc '
-            f'(profile {config(root)["profile"]})" -- {paths}'
+            f'(profile {profile if first else config(root)["profile"]})" -- {paths}'  # the one being set, or the real one
         )
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     return steps
@@ -688,7 +690,7 @@ def steps_for_human(root, profile, pending, review=(), install=True):
 
 def no_profile_yet(root):
     """(True, "") while this repo has no profile and nothing depends on one, else (False, why). That is when the
-    human's typed phrase `Setup Profile <name>` may set the first profile:
+    human's typed `/zouj-ai-sdlc:setup <name>` may set the first profile:
     - .aiops/config.json is a regular file that still equals the scaffold template (no `profile` key, nothing edited)
     - no artifact is Approved or Closed, and no commit on any ref carries an `AIOps-Approval:` trailer: no gate has
       been opened under the default yet.
@@ -733,7 +735,7 @@ def no_profile_yet(root):
 
 
 def set_first_profile(root, name):
-    """(ok, message) for the human's typed phrase `Setup Profile <name>` (the prompt hook calls this in-process, as
+    """(ok, message) for the human's typed `/zouj-ai-sdlc:setup <name>` (the prompt hook calls this in-process, as
     it does approvals.approve). Sets this repo's first profile: writes the template's keys plus the profile's into
     .aiops/config.json, exactly what a terminal `sdlc setup --profile <name>` writes into a new config, and commits
     that file alone, unsigned. Never changes a profile that is set (no_profile_yet)."""
@@ -742,15 +744,15 @@ def set_first_profile(root, name):
     if name not in PROFILES:
         return False, (
             f"profile NOT set: {f'unknown profile {name!r}' if name else 'no profile was named'}. The "
-            "human types `Setup Profile solo`, `Setup Profile team` or `Setup Profile strict` as the "
-            "whole prompt."
+            "human types `/zouj-ai-sdlc:setup solo`, `/zouj-ai-sdlc:setup team` or `/zouj-ai-sdlc:setup strict` "
+            "as the whole prompt."
         )
     if not initialized(root):
         return False, "profile NOT set: this repo isn't set up yet (no .aiops/). Run /zouj-ai-sdlc:setup first."
     ok, why = no_profile_yet(root)
     if not ok:
         return False, (
-            f"profile NOT set: {why}. The typed phrase only sets a repo's first profile. To change one, "
+            f"profile NOT set: {why}. The typed setup command only sets a repo's first profile. To change one, "
             f"the human runs in their own terminal: `{lifecycle.human_command(f'setup --profile {name}')}`."
         )
     rel = ".aiops/config.json"

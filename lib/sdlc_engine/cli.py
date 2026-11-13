@@ -35,8 +35,10 @@ from .schema import validate
 
 TEMPLATES = PLUGIN_ROOT / "templates"
 APPROVE_RE = re.compile(r"^\s*(intent|spec|plan)\s+approved(?:\s+(\d{1,4}))?\s*[.!]?\s*$", re.I)
-# The human's whole prompt `Setup Profile solo|team|strict` sets a repo's first profile (setup.set_first_profile).
-PROFILE_RE = re.compile(r"^\s*setup\s+profile(?:\s+([a-z0-9_-]+))?\s*[.!]?\s*$", re.I)
+# The human's whole prompt `/zouj-ai-sdlc:setup solo|team|strict` sets a repo's first profile (setup.set_first_profile).
+# Claude Code hands UserPromptSubmit a typed skill command as typed. Qualified only: a bare `/setup` may be another
+# plugin's skill. The name is matched in any case; the command exactly.
+PROFILE_RE = re.compile(r"^\s*/zouj-ai-sdlc:setup[ \t]+([A-Za-z0-9_-]+)\s*$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 HUMAN_ONLY = (
     "refusing: this is a human gate and it is running inside Claude Code. Run it in your own terminal, "
@@ -928,15 +930,22 @@ def _pre(check):
 
 
 def hook_profile(data, m):
-    """The human typed `Setup Profile <name>` as the whole prompt: set this repo's first profile. Like an approval,
-    it runs in-process and reads no CLAUDECODE / CLAUDE_CODE_CHILD_SESSION marker: Claude Code sets both for the
-    hooks of every session, so they say nothing about who typed the prompt. Dormant without .aiops/."""
-    root = project_root(data.get("cwd"))
-    if not initialized(root):
-        return 0
-    from . import setup
+    """The human typed `/zouj-ai-sdlc:setup <name>` as the whole prompt: set this repo's first profile (and, in a repo
+    without .aiops/, its core scaffold first). Like an approval, it runs in-process and reads no CLAUDECODE /
+    CLAUDE_CODE_CHILD_SESSION marker: Claude Code sets both for the hooks of every session, so they say nothing
+    about who typed the prompt. It acts only on the session's repo (CLAUDE_PROJECT_DIR); unknown, it refuses."""
+    from . import lifecycle, setup
 
-    _ok, msg = setup.set_first_profile(root, (m.group(1) or "").lower())
+    root, name = project_root(data.get("cwd")), m.group(1).lower()
+    session = os.environ.get("CLAUDE_PROJECT_DIR") or ""
+    if not session or project_root(session) != root:
+        msg = (
+            f"profile NOT set: the setup command acts only on the session's repo ({session or 'unknown'}), and the "
+            f"prompt's working directory resolves to {root}. Nothing was written. Type it from the session's repo, "
+            f"or run in your own terminal there: `{lifecycle.human_command(f'setup --profile {name}')}`."
+        )
+    else:
+        _ok, msg = setup.set_first_profile(root, name)
     out(
         json.dumps(
             {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": f"zouj-ai-sdlc {msg}"}}

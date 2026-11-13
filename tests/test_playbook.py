@@ -373,10 +373,10 @@ class PhraseWalk(Playbook):
             env={**env, "CLAUDECODE": "1"},
         )  # the agent's run
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn(f"type `Setup Profile {profile}` as your whole prompt", r.stdout)
+        self.assertIn(f"type `/zouj-ai-sdlc:setup {profile}` as your whole prompt", r.stdout)
         template = json.loads((ROOT / "templates" / "scaffold" / ".aiops" / "config.json").read_text())
         self.assertEqual(json.loads((d / ".aiops" / "config.json").read_text()), template)  # no profile yet
-        self.assertIn(f"profile SET: {profile}", self.typed(d, f"Setup Profile {profile}"))
+        self.assertIn(f"profile SET: {profile}", self.typed(d, f"/zouj-ai-sdlc:setup {profile}"))
         self.assertEqual(
             git(d, "show", "--name-only", "--format=%s", "HEAD").split("\n"),
             [f"chore(aiops): Setup Profile {profile}", "", ".aiops/config.json"],

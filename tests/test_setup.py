@@ -286,7 +286,7 @@ class Owned(SetupCase):
         self.assertIn("Change .claude/settings.json yourself", steps)
         self.assertIn('"zouj-ai-sdlc@zouj": true', steps)  # the exact keys to add
         self.assertIn(
-            "Choose the profile: type `Setup Profile solo` as your whole prompt", steps
+            "Choose the profile: type `/zouj-ai-sdlc:setup solo` as your whole prompt", steps
         )  # 0007: no profile yet
         self.assertIn('"profile": "solo"', steps)
         self.assertIn('"require_signed_approvals": false', steps)
@@ -294,7 +294,7 @@ class Owned(SetupCase):
         r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})
         steps = r.stdout.split("Human steps\n", 1)[1]
         self.assertIn("Apply profile solo in your own terminal", steps)
-        self.assertNotIn("Setup Profile", steps)
+        self.assertNotIn("/zouj-ai-sdlc:setup solo", steps)
         self.assertIn('"profile": "solo"', steps)
         self.assertEqual(cfg.read_text(), '{"main_branch": "trunk", "require_signed_approvals": true}\n')
 
@@ -311,7 +311,7 @@ class Owned(SetupCase):
             cfg = json.loads((self.root / ".aiops" / "config.json").read_text())
             self.assertEqual(cfg, scaffold, case)  # no solo keys written
             steps = r.stdout.split("Human steps\n", 1)[1]
-            self.assertIn("type `Setup Profile solo` as your whole prompt", steps, case)  # 0007: the first profile
+            self.assertIn("type `/zouj-ai-sdlc:setup solo` as your whole prompt", steps, case)  # 0007: first profile
             self.assertIn("bin/sdlc setup --profile solo", steps, case)  # the terminal way, still named
             self.assertIn('"require_signed_approvals": false', steps, case)
             (self.root / ".aiops" / "config.json").unlink()
@@ -324,9 +324,17 @@ class Owned(SetupCase):
 
     def test_agent_downgrade_is_labelled_and_the_commit_names_the_real_profile(self):
         """Round 7 LOW/MINOR: a weaker profile the agent asked for is called a downgrade, and the suggested commit
-        message names the profile config.json actually has."""
-        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})  # fresh repo: team written
+        message names the profile config.json actually has. 0007 review r3: with no profile set yet, nothing is a
+        downgrade and the message names the profile the human is about to set."""
+        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})  # fresh repo: the template
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        steps = r.stdout.split("Human steps\n", 1)[1]
+        self.assertNotIn("Downgrade", steps)
+        self.assertIn('"chore: adopt zouj-ai-sdlc (profile solo)"', steps)
+        self.assertNotIn("(profile team)", steps)
+        cfg = self.root / ".aiops" / "config.json"  # a profile already set: team
+        cfg.write_text(json.dumps({**json.loads(cfg.read_text()), "profile": "team", "approval_key_policy": "human"}))
+        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1"})
         steps = r.stdout.split("Human steps\n", 1)[1]
         self.assertIn("Downgrade requested by the agent's run (team to solo)", steps)
         self.assertIn('"chore: adopt zouj-ai-sdlc (profile team)"', steps)
