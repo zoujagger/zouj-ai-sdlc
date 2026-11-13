@@ -703,8 +703,12 @@ class ShellHooks(RepoCase):
             )
             env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(plugin)}
 
-            def prompt(text):
-                payload = json.dumps({"prompt": text, "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"})
+            def prompt(text, compact=False):
+                # compact: Claude Code's own payload has no space after the colon (probe, 2026-11-13)
+                payload = json.dumps(
+                    {"prompt": text, "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"},
+                    separators=(",", ":") if compact else None,
+                )
                 return subprocess.run(
                     [str(HOOKS / "engine.sh"), "prompt"],
                     input=payload,
@@ -731,6 +735,11 @@ class ShellHooks(RepoCase):
                 self.assertEqual(prompt(text).returncode, 0, text)
                 self.assertTrue(log.exists(), f"the engine never saw {text!r}")
                 self.assertEqual(json.loads(log.read_text())["prompt"], text)
+            log.unlink(missing_ok=True)
+            self.assertEqual(prompt("Intent Approved 0001", compact=True).stdout, "")
+            self.assertFalse(log.exists())
+            self.assertEqual(prompt("/zouj-ai-sdlc:setup solo", compact=True).returncode, 0)
+            self.assertTrue(log.exists(), "the engine never saw the compact payload Claude Code sends")
 
     def test_engine_wrapper_stays_on_when_aiops_is_tracked_but_deleted(self):
         import shutil
