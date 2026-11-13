@@ -1042,6 +1042,111 @@ class Parts(SetupCase):
 CONFIG = ".aiops/config.json"
 
 
+class FirstRun(SetupCase):
+    """In a repo without .aiops/, the human's typed `/zouj-ai-sdlc:setup <p>` writes the core scaffold, then sets the
+    first profile (0007 S16: spec R-2a, AC-8, AC-22, AC-23). Driven through the prompt hook, as Claude Code runs it."""
+
+    def repo(self, name):
+        d = self.root.parent / f"{self.root.name}.{name}"
+        d.mkdir()
+        git(d, "init", "-q", "-b", "main")
+        for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com")):
+            git(d, "config", key, value)
+        (d / "README.md").write_text("# app\n")
+        git(d, "add", "README.md")
+        git(d, "commit", "-qm", "init")
+        return d
+
+    def typed(self, text, d=None, env=None):
+        d = d or self.root
+        payload = {"prompt": text, "cwd": str(d), "hook_event_name": "UserPromptSubmit"}
+        env = {"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(d), "PATH": str(self.bin_with()), **(env or {})}
+        r = subprocess.run(
+            [sys.executable, SDLC, "hook", "prompt"],
+            cwd=d,
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            env={**self.env, **env},
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)  # a prompt hook never blocks
+        return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+
+    def test_fresh_repo_gets_core_and_the_profile(self):
+        from sdlc_engine import lifecycle, setup
+
+        d = self.repo("fresh")
+        head = git(d, "rev-parse", "HEAD")
+        ctx = self.typed("/zouj-ai-sdlc:setup solo", d)
+        self.assertIn("profile SET: solo", ctx)
+        core = lifecycle.scaffold_paths([])
+        self.assertEqual(len(core), 16)
+        for rel in core:
+            self.assertTrue((d / rel).is_file(), rel)
+            self.assertIn(rel, ctx)  # every created file is listed
+        for rel in set(lifecycle.scaffold_paths()) - set(core):
+            self.assertFalse((d / rel).exists(), rel)  # no opt-in part
+        self.assertIn(".aiops/state/", (d / ".gitignore").read_text())
+        state = json.loads((d / ".aiops" / "install-state.json").read_text())
+        self.assertEqual((state["parts"], state["profile"]), ([], "solo"))
+        template = json.loads((cli.TEMPLATES / "scaffold" / CONFIG).read_text())
+        self.assertEqual(json.loads((d / CONFIG).read_text()), {**template, **setup.PROFILE_CONFIG["solo"]})
+        self.assertEqual(git(d, "rev-parse", "HEAD~1"), head)  # exactly one commit
+        self.assertEqual(git(d, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
+        status = git(d, "status", "--porcelain")
+        self.assertIn("?? CLAUDE.md", status)  # the rest is the human's to review and commit
+        self.assertIn("git add -- ", ctx)
+        self.assertIn('"chore: adopt zouj-ai-sdlc (profile solo)"', ctx)
+        self.assertIn(setup.PROOF["solo"], ctx)
+
+    def test_existing_files_are_never_changed(self):
+        d = self.repo("owned")
+        (d / "CLAUDE.md").write_text("my own instructions\n")
+        (d / ".claude").mkdir()
+        (d / ".claude" / "settings.json").write_text('{"permissions": {"allow": ["Bash(ls)"]}}\n')
+        before = {rel: (d / rel).read_bytes() for rel in ("CLAUDE.md", ".claude/settings.json", "README.md")}
+        ctx = self.typed("/zouj-ai-sdlc:setup team", d)
+        self.assertIn("profile SET: team", ctx)
+        self.assertEqual({rel: (d / rel).read_bytes() for rel in before}, before)
+        self.assertIn("Change .claude/settings.json yourself", ctx)  # the merge is the human's step
+        self.assertTrue((d / "REVIEW.md").is_file())  # missing core files are still created
+
+    def test_refused_where_setup_would_stop(self):
+        plain = self.root.parent / f"{self.root.name}.plain"  # not a git repo
+        plain.mkdir()
+        nomake = self.root.parent / f"{self.root.name}.nomake"  # a PATH with git but no make: a Preflight ✗
+        nomake.mkdir()
+        (nomake / "git").symlink_to(shutil.which("git"))
+        cases = {
+            "not a git repo": (plain, {}, "not the top of a git repository"),
+            "home": (self.repo("home"), {"HOME": str(self.root.parent / f"{self.root.name}.home")}, "home"),
+            "GIT_DIR": (self.repo("gitdir"), {"GIT_DIR": str(self.root / ".git")}, "GIT_DIR"),
+            "no make": (self.repo("nomakerepo"), {"PATH": str(nomake)}, "make"),
+        }
+        for case, (d, env, needle) in cases.items():
+            head = git(d, "rev-parse", "HEAD") if (d / ".git").exists() else None
+            ctx = self.typed("/zouj-ai-sdlc:setup solo", d, env)
+            self.assertIn("profile NOT set", ctx, case)
+            self.assertIn(needle, ctx, case)
+            self.assertIn("Nothing was written", ctx, case)
+            self.assertFalse((d / ".aiops").exists(), case)
+            self.assertFalse((d / "CLAUDE.md").exists(), case)
+            if head:
+                self.assertEqual(git(d, "rev-parse", "HEAD"), head, case)
+
+    def test_team_and_strict_steps(self):
+        from sdlc_engine import setup
+
+        for name, needles in (("team", ("ssh-keygen -t ed25519 ", "allowed-signers")), ("strict", ("CODEOWNERS",))):
+            d = self.repo(f"steps-{name}")
+            ctx = self.typed(f"/zouj-ai-sdlc:setup {name}", d)
+            self.assertIn(f"profile SET: {name}", ctx)
+            self.assertIn(setup.PROOF[name], ctx)
+            for needle in needles:
+                self.assertIn(needle, ctx, name)
+            self.assertEqual(json.loads((d / CONFIG).read_text())["profile"], name)
+
+
 class FirstProfile(SetupCase):
     """setup.set_first_profile: what the typed phrase `Setup Profile <name>` does (0007 S5: AC-1, AC-3, AC-8)."""
 
@@ -1178,11 +1283,22 @@ class FirstProfile(SetupCase):
         self.assertFalse((self.root / rel).exists())
         self.refused("solo", "approval commit", "history")
 
-    def test_refused_without_aiops(self):
+    def test_without_aiops_scaffolds_unless_tracked(self):
+        # 0007 S16 (R-2a): with no .aiops/ the command writes the core scaffold first. A .aiops/ that git tracks
+        # but that was deleted still counts as initialized: the command refuses rather than recreating it.
+        git(self.root, "add", "--", ".aiops")
+        git(self.root, "commit", "-qm", "scaffold")
         shutil.rmtree(self.root / ".aiops")
         ok, msg = self.S.set_first_profile(self.root, "solo")
-        self.assertFalse(ok)
-        self.assertIn("/zouj-ai-sdlc:setup", msg)
+        self.assertFalse(ok, msg)
+        self.assertIn(CONFIG, msg)
+        self.assertFalse((self.root / ".aiops").exists())
+        git(self.root, "rm", "-rq", "--cached", "--", ".aiops")
+        git(self.root, "commit", "-qm", "unscaffold")
+        ok, msg = self.S.set_first_profile(self.root, "solo")
+        self.assertTrue(ok, msg)
+        self.assertIn("Created the core scaffold", msg)
+        self.assertEqual(self.cfg()["profile"], "solo")
 
     def test_symlinked_config_refused(self):
         target = self.root.parent / f"{self.root.name}.target.json"

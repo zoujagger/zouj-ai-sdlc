@@ -721,17 +721,48 @@ def no_profile_yet(root):
                     f".aiops/{d.name}/{kind}.md is already {status}: a gate has been opened under the "
                     "default profile, so changing it now is a deliberate change"
                 )
-    # The agent may set any artifact back to Draft (G-GATE-05), so the files alone can't prove "nothing approved":
-    # an approval commit in the history of any ref (the 0007 review's MEDIUM) refuses too. Fail closed.
+    why = approval_in_history(root)
+    return (False, why) if why else (True, "")
+
+
+def approval_in_history(root):
+    """Why the history rules out a first profile, else None. The agent may set any artifact back to Draft (G-GATE-05),
+    so the files alone can't prove "nothing approved": an approval commit in the history of any ref (the 0007
+    review's MEDIUM) refuses too. Fail closed."""
     found = git(root, "log", "--all", "-1", "--format=%h %s", f"--grep=^{approvals.TRAILER}: ")
     if found is None:
-        return False, "git couldn't list this repo's history, so an earlier approval can't be ruled out"
+        return "git couldn't list this repo's history, so an earlier approval can't be ruled out"
     if found:
-        return False, (
+        return (
             f"an approval commit is in this repo's history ({found}): a gate has been opened under the default "
             "profile, so changing it now is a deliberate change, even if the artifact is back to Draft"
         )
-    return True, ""
+    return None
+
+
+def scaffold_first(root, name):
+    """(created, None) after writing the core scaffold into a repo with no .aiops/, as a human's terminal
+    `sdlc setup --profile <name> --yes` would with no --with (spec R-2a), or ([], why) with nothing written. Only
+    missing files are created; an existing file is never changed (its difference becomes a human step)."""
+    from . import lifecycle
+
+    problem = cli.scaffold_root_problem(root) or approval_in_history(root)
+    if problem:
+        return [], problem
+    stops = [f"{label} ({fix})" for status, label, fix in preflight(root, name) if status == "✗"]
+    if stops:
+        return [], "setup's preflight stops: " + "; ".join(stops)
+    actions = cli.init_actions(root, parts=[])
+    links = cli.symlink_refusal(root, actions)
+    if links:
+        return [], links
+    written = []
+    try:
+        cli.apply_init(root, actions, written)
+        lifecycle.record(root, written, profile=name, parts=[])
+    except OSError as exc:
+        return [], cli.write_failure(exc, written)
+    return written, None
 
 
 def set_first_profile(root, name):
@@ -747,8 +778,14 @@ def set_first_profile(root, name):
             "human types `/zouj-ai-sdlc:setup solo`, `/zouj-ai-sdlc:setup team` or `/zouj-ai-sdlc:setup strict` "
             "as the whole prompt."
         )
-    if not initialized(root):
-        return False, "profile NOT set: this repo isn't set up yet (no .aiops/). Run /zouj-ai-sdlc:setup first."
+    created = []
+    if not initialized(root):  # a fresh repo: the core scaffold first (spec R-2a)
+        created, why = scaffold_first(root, name)
+        if why:
+            return False, (
+                f"profile NOT set: {why}. Nothing was written. Fix it and type the command again, or run in your own "
+                f"terminal: `{lifecycle.human_command(f'setup --profile {name}')}`."
+            )
     ok, why = no_profile_yet(root)
     if not ok:
         return False, (
@@ -771,8 +808,16 @@ def set_first_profile(root, name):
             if done[1]
             else ""
         )
-    steps = steps_for_human(root, name, {}, install=False)
+    pending, review = (owned_changes(root, name), unreviewed(root)) if created else ({}, ())
+    steps = steps_for_human(root, name, pending, review, install=False)
+    made = (
+        f"Created the core scaffold ({len(created)} files, nothing existing changed):\n"
+        + "\n".join(f"  + {rel}" for rel in created)
+        + "\n"
+        if created
+        else ""
+    )
     return True, (
-        f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n"
+        f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n{made}"
         "Relay the remaining human steps:\n" + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1))
     )
