@@ -6,9 +6,9 @@ risk: medium           # the prompt hook writes the core scaffold in a fresh rep
 intent: ./intent.md
 created: 2026-11-10
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-10T10:24:16Z
-approved-via: cli
-approved-sha256: 06cadc76654df4ec3301cf68ab397eaf56f2b628b9339b3838860cb44a49f473
+approved-at: 2026-11-13T11:17:28Z
+approved-via: prompt
+approved-sha256: a8995f25fa597e27178ce55402df81953eb3579a0ab3633dc74f67874f1f8fd5
 ---
 
 # Spec: First run in five minutes (profile by /setup, terminal command, core scaffold)
