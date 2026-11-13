@@ -229,7 +229,8 @@ command and for the core scaffold. Ships with intent 0005 as **0.2.0-alpha.4**.
 - **AC-18**: Given the shipped docs and skills, then README's "Just looking?" recipe reaches `solo` with
   `/zouj-ai-sdlc:setup solo` and no `<plugin>` path; `skills/setup` follows R-21 and never tells the human to open a
   terminal for `solo`; README, COMMANDS-QUICK-REF.md and TROUBLESHOOTING.md document `sdlc where` and `--with`; no
-  shipped file outside `.aiops/` and the CHANGELOG mentions `Setup Profile`.
+  shipped file outside `.aiops/` and the CHANGELOG mentions `Setup Profile`, except where it names R-4's commit
+  title `chore(aiops): Setup Profile <name>` (amended after the round 5 review: R-4 requires that title).
 - **AC-19**: Given the release, then `plugin.json` is `0.2.0-alpha.4`, the README pins and the scaffold's pinned ref
   match it, CHANGELOG has `[0.2.0-alpha.4]` naming 0005 and 0007, `scaffold-history.json` has the alpha.4 entry, and
   `make check` and `claude plugin validate .` pass.
