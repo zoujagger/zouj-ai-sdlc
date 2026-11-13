@@ -789,17 +789,34 @@ class Docs(unittest.TestCase):
         self.assertNotIn("defaultMode", json.dumps(settings))  # the plugin sets no permission mode
         self.assertNotIn("allow", settings["permissions"])
 
-    def test_setup_skill_asks_for_the_phrase(self):
+    def test_setup_skill_asks_for_the_command(self):
+        """0007 S18 (R-21): the skill reads the hook's reminder first; with none, it asks for the typed command."""
         skill = self.text("skills/setup/SKILL.md")
-        self.assertIn("`Setup Profile <profile>`", skill)
+        self.assertIn("`/zouj-ai-sdlc:setup <profile>`", skill)
         self.assertIn("whole prompt", skill)
         self.assertIn("`team` included", skill)  # every profile is recorded
-        self.assertLess(skill.index("--yes"), skill.index("`Setup Profile <profile>`"))  # scaffold, then the phrase
+        for reminder in ("profile SET", "profile NOT set"):
+            self.assertIn(reminder, skill)
+        self.assertLess(skill.index("profile SET"), skill.index("--dry-run"))  # the reminder first, then a preview
+        self.assertIn("`/setup", skill)  # a bare /setup sets nothing: the skill names the qualified form
         self.assertNotIn("For `solo` or `strict`, the printed human step is", skill)  # no terminal step for solo
         self.assertNotIn("run `<plugin>/bin/sdlc setup --profile solo` in their own terminal", skill)
         self.assertRegex(skill, r"(?i)never.*(type|typing|simulat)")  # the agent doesn't type it
-        using = self.text("skills/using-zouj-ai-sdlc/SKILL.md")
-        self.assertIn("Setup Profile", using)  # the bootstrap knows the phrase
+        self.assertNotRegex(skill, r"sdlc setup --profile <profile> --yes")  # the agent never applies a profile
+        for rel in ("skills/using-zouj-ai-sdlc/SKILL.md", "skills/configure/SKILL.md", "skills/init/SKILL.md"):
+            self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", self.text(rel), rel)
+
+    def test_no_shipped_file_names_the_phrase(self):
+        """0007 S18-S20 (AC-18): the `Setup Profile <name>` phrase is gone from everything that ships, except the
+        profile commit's title in the engine (`chore(aiops): Setup Profile <name>`)."""
+        found = []
+        for top in ("skills", "templates", "lib"):
+            for f in sorted((self.root / top).rglob("*")):
+                if f.is_file() and f.suffix in (".md", ".py", ".json", ".yml", ".yaml", ".sh", ""):
+                    for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
+                        if "Setup Profile" in line and "chore(aiops): Setup Profile" not in line:
+                            found.append(f"{f.relative_to(self.root)}:{n}")
+        self.assertEqual(found, [])
 
     def test_skills_name_where_and_with(self):
         for rel in ("skills/setup/SKILL.md", "skills/configure/SKILL.md", "skills/using-zouj-ai-sdlc/SKILL.md"):
@@ -809,8 +826,8 @@ class Docs(unittest.TestCase):
         setup = self.text("skills/setup/SKILL.md")
         for part in ("review", "maintain", "deploy", "governance", "issues"):
             self.assertIn(part, setup, part)
-        self.assertIn("Setup Profile", self.text("skills/configure/SKILL.md"))  # the first profile is the phrase
-        self.assertIn("Setup Profile", self.text("skills/onboard/SKILL.md"))
+        self.assertIn("/zouj-ai-sdlc:setup <profile>", self.text("skills/configure/SKILL.md"))  # the first profile
+        self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", self.text("skills/onboard/SKILL.md"))
 
     def test_docs_document_where_and_with(self):
         """0007 AC-18, spec R-22: the user docs name `sdlc where`, `--with` and the phrase; the ADR and the threat

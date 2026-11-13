@@ -28,8 +28,9 @@ The human applies the change: by the typed phrase for a repo's first profile, in
    setup for `team` and `strict`, a real CODEOWNERS owner for `strict`) and the Gates summary, verbatim. Nothing is
    written.
 4. **Hand over.** How the human applies it depends on what the preview's human steps say:
-   - **No profile is set yet** (the step reads "Choose the profile"): ask them to type `Setup Profile <profile>` as
-     their whole prompt, and wait for the `profile SET` reminder. Never type it for them.
+   - **No profile is set yet** (the step reads "Choose the profile"): ask them to type `/zouj-ai-sdlc:setup <profile>`
+     (one of `/zouj-ai-sdlc:setup solo|team|strict`) as their whole prompt, and wait for the `profile SET` reminder.
+     Never type it for them.
    - **A profile is set:** give them the command to run in their own terminal, exactly:
 
      `<python> -I <plugin>/bin/sdlc setup --profile <profile>`

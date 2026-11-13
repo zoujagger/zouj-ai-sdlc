@@ -12,8 +12,8 @@ The `sdlc` engine derives each intent's state from these files and git. Run `sdl
   signing settings are refused). Add the key to `config/allowed-signers` (`<email> namespaces="git" <public key>`) and
   land it through a reviewed PR. `sdlc doctor` checks the setup.
 - **Profile:** how an approval is proven: `solo` (the typed phrase and an unsigned commit), `team` (an SSH-signed
-  commit) or `strict` (an `sk-` key touch). A human sets the first one by typing `Setup Profile solo|team|strict` as
-  the whole prompt. Changing it later is `sdlc setup --profile <name>` in your own terminal.
+  commit) or `strict` (an `sk-` key touch). A human sets the first one by typing `/zouj-ai-sdlc:setup solo|team|strict`
+  as the whole prompt. Changing it later is `sdlc setup --profile <name>` in your own terminal.
 - **A human for each signature** (`approval_key_policy: "human"`, the default): use a passphrase-protected key that
   isn't loaded in ssh-agent, or an `sk-` key. Approve in your terminal with the command the refusal prints
   (`/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan`). `sdlc where` prints that command's path.

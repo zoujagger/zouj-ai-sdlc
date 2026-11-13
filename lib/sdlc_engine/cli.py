@@ -123,7 +123,7 @@ def card(root, st):
 
 def terminal_lines(root, st=None):
     """The card lines for a pending human step, [] when there is none:
-    - no profile chosen yet: the command for the human's own terminal, and the phrase that sets the profile
+    - no profile chosen yet: the command for the human's own terminal, and the typed setup command that sets it
     - the intent waits on the human at a gate (states 1-3) and signing needs a terminal: the approve command. That is
       a signing problem, or the `human` key policy: its key has a passphrase and stays out of ssh-agent, and the
       prompt hook has no terminal to ask for it (0007 review r2 M1).
