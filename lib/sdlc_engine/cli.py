@@ -37,9 +37,9 @@ TEMPLATES = PLUGIN_ROOT / "templates"
 APPROVE_RE = re.compile(r"^\s*(intent|spec|plan)\s+approved(?:\s+(\d{1,4}))?\s*[.!]?\s*$", re.I)
 # The human's whole prompt `/zouj-ai-sdlc:setup solo|team|strict` sets a repo's first profile (setup.set_first_profile).
 # Claude Code hands UserPromptSubmit a typed skill command as typed. Qualified only: a bare `/setup` may be another
-# plugin's skill. The name is matched in any case; the command exactly. Only spaces and tabs around it, as the
-# engine.sh pre-filter accepts (a newline arrives there JSON-escaped), so a fresh repo and an initialized one agree.
-PROFILE_RE = re.compile(r"^[ \t]*/zouj-ai-sdlc:setup[ \t]+([A-Za-z0-9_-]+)[ \t]*\Z")
+# plugin's skill. The name is matched in any case; the command exactly. Only spaces around it, as the engine.sh
+# pre-filter sees them (a newline or a tab arrives there JSON-escaped), so a fresh repo and an initialized one agree.
+PROFILE_RE = re.compile(r"^ */zouj-ai-sdlc:setup +([A-Za-z0-9_-]+) *\Z")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 HUMAN_ONLY = (
     "refusing: this is a human gate and it is running inside Claude Code. Run it in your own terminal, "
@@ -946,10 +946,16 @@ def hook_profile(data, m):
             f"or run in your own terminal there: `{lifecycle.human_command(f'setup --profile {name}')}`."
         )
     else:
-        _ok, msg = setup.set_first_profile(root, name)
+        _ok, msg = setup.set_first_profile(root, name, cwd=data.get("cwd"))
+    # The agent relays the steps; the result and its warnings also go straight to the human (systemMessage), so an
+    # agent that planted a signer or an identity can't keep them from the person they warn.
+    notice = msg.split("Relay the remaining human steps", 1)[0].strip()
     out(
         json.dumps(
-            {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": f"zouj-ai-sdlc {msg}"}}
+            {
+                "systemMessage": f"zouj-ai-sdlc {notice}",
+                "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": f"zouj-ai-sdlc {msg}"},
+            }
         )
     )
     return 0

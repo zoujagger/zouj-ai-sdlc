@@ -1058,9 +1058,9 @@ class FirstRun(SetupCase):
         git(d, "commit", "-qm", "init")
         return d
 
-    def typed(self, text, d=None, env=None):
+    def typed(self, text, d=None, env=None, cwd=None, full=False):
         d = d or self.root
-        payload = {"prompt": text, "cwd": str(d), "hook_event_name": "UserPromptSubmit"}
+        payload = {"prompt": text, "cwd": str(cwd or d), "hook_event_name": "UserPromptSubmit"}
         env = {"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(d), "PATH": str(self.bin_with()), **(env or {})}
         r = subprocess.run(
             [sys.executable, SDLC, "hook", "prompt"],
@@ -1071,7 +1071,8 @@ class FirstRun(SetupCase):
             env={**self.env, **env},
         )
         self.assertEqual(r.returncode, 0, r.stderr)  # a prompt hook never blocks
-        return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+        out = json.loads(r.stdout)
+        return out if full else out["hookSpecificOutput"]["additionalContext"]
 
     def test_fresh_repo_gets_core_and_the_profile(self):
         from sdlc_engine import lifecycle, setup
@@ -1099,6 +1100,54 @@ class FirstRun(SetupCase):
         self.assertIn("git add -- ", ctx)
         self.assertIn('"chore: adopt zouj-ai-sdlc (profile solo)"', ctx)
         self.assertIn(setup.PROOF["solo"], ctx)
+        # 0007 r5: 16 core files counted on their own, the .gitignore lines named apart
+        self.assertIn("Created the core scaffold (16 files", ctx)
+        self.assertIn(".gitignore", ctx.split("Created the core scaffold", 1)[1])
+        # 0007 r5 MEDIUM: install-state records the config as written, profile included, as a terminal run does
+        recorded = json.loads((d / ".aiops" / "install-state.json").read_text())["files"][CONFIG]["sha256"]
+        self.assertEqual(recorded, lifecycle.sha256_file(d / CONFIG))
+        r = subprocess.run(
+            [sys.executable, SDLC, "list-installed"], cwd=d, capture_output=True, text=True, env=self.env
+        )
+        self.assertNotIn("modified", r.stdout, r.stdout)
+
+    def test_hook_tells_the_human_directly(self):
+        # 0007 r5 security LOW: the result and its warnings reach the human through systemMessage, not only through
+        # the agent's context
+        d = self.repo("notice")
+        out = self.typed("/zouj-ai-sdlc:setup solo", d, full=True)
+        notice = out.get("systemMessage", "")
+        self.assertIn("profile SET: solo", notice)
+        self.assertIn("this repo's own git config", notice)  # repo() sets a repo-local identity
+        self.assertNotIn("Relay the remaining human steps", notice)  # the steps are the agent's to relay
+
+    def test_refused_below_the_top_of_the_work_tree(self):
+        # 0007 r5 (AC-23): in a fresh repo the scaffold is written only when the prompt's directory is the top
+        d = self.repo("subdir")
+        (d / "src").mkdir()
+        head = git(d, "rev-parse", "HEAD")
+        ctx = self.typed("/zouj-ai-sdlc:setup solo", d, cwd=d / "src")
+        self.assertIn("profile NOT set", ctx)
+        self.assertIn("top of", ctx)
+        self.assertIn("Nothing was written", ctx)
+        self.assertFalse((d / ".aiops").exists())
+        self.assertEqual(git(d, "rev-parse", "HEAD"), head)
+
+    def test_refused_with_code_running_repo_config(self):
+        # 0007 r5 security LOW: a repo-local key outside the allow-list (core.fsmonitor here, set while the gates
+        # were off) is refused before any git command that would run it
+        d = self.repo("fsmonitor")
+        marker = self.root.parent / f"{self.root.name}.fsmonitor-ran"
+        script = self.root.parent / f"{self.root.name}.fsmonitor.sh"
+        script.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        script.chmod(0o755)
+        git(d, "config", "core.fsmonitor", str(script))
+        marker.unlink(missing_ok=True)
+        ctx = self.typed("/zouj-ai-sdlc:setup solo", d)
+        self.assertIn("profile NOT set", ctx)
+        self.assertIn("core.fsmonitor", ctx)
+        self.assertFalse(marker.exists())
+        self.assertFalse((d / ".aiops").exists())
 
     def test_existing_files_are_never_changed(self):
         d = self.repo("owned")

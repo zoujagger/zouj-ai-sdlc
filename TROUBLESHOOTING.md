@@ -23,6 +23,11 @@ its fix. If you're stuck, `sdlc feedback` prints the issue links and a summary t
   a submodule). Type it from the repo you opened Claude Code in.
 - **"setup's preflight stops" / "not the top of a git repository" / "your home directory":** nothing was written.
   Fix what it names (`git init`, install `make`, open Claude Code in the project repo), then type the command again.
+- **"only at the top of the work tree":** in a repo with no `.aiops/` yet, open Claude Code at the repo's top, not in
+  a subdirectory, then type the command again.
+- **"this repo's own git config sets …":** a repo-local key that can run code (such as `core.fsmonitor` or
+  `core.hooksPath`) is set. Check you set it yourself, remove it with `git config --local --unset <key>`, and type
+  the command again.
 - **"a profile is already set here":** the command sets a repo's **first** profile only. To change one, run
   `sdlc setup --profile <name>` in your own terminal (`sdlc where` prints the command with its full path), then
   commit `.aiops/config.json` through a reviewed PR.

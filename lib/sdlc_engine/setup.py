@@ -709,7 +709,10 @@ def no_profile_yet(root):
     if f.is_symlink():
         return False, ".aiops/config.json is a symlink; a profile is written only to a regular file"
     if not f.is_file():
-        return False, "there is no .aiops/config.json to set it in (run /zouj-ai-sdlc:setup first)"
+        return False, (
+            "there is no .aiops/config.json to set it in, though .aiops/ exists (ask Claude to run `sdlc setup --yes`, "
+            "which recreates the missing scaffold files, then type the command again)"
+        )
     written = lifecycle.config_written(root)
     if written:
         return False, f"a profile is already set here ({written})"
@@ -773,21 +776,37 @@ def scaffold_first(root, name):
     return written, None
 
 
-def set_first_profile(root, name):
+def set_first_profile(root, name, cwd=None):
     """(ok, message) for the human's typed `/zouj-ai-sdlc:setup <name>` (the prompt hook calls this in-process, as
     it does approvals.approve). Sets this repo's first profile: writes the template's keys plus the profile's into
     .aiops/config.json, exactly what a terminal `sdlc setup --profile <name>` writes into a new config, and commits
-    that file alone, unsigned. Never changes a profile that is set (no_profile_yet)."""
+    that file alone, unsigned. Never changes a profile that is set (no_profile_yet). `cwd` is the prompt's
+    directory: a fresh repo is scaffolded only from its top (AC-23)."""
     from . import lifecycle
 
+    terminal = lifecycle.human_command(f"setup --profile {name}")
     if name not in PROFILES:
         return False, (
             f"profile NOT set: {f'unknown profile {name!r}' if name else 'no profile was named'}. The "
             "human types `/zouj-ai-sdlc:setup solo`, `/zouj-ai-sdlc:setup team` or `/zouj-ai-sdlc:setup strict` "
             "as the whole prompt."
         )
+    keys = approvals.local_config_keys(root)  # before any git command that could run one of them (core.fsmonitor)
+    if keys:
+        return False, (
+            f"profile NOT set: this repo's own git config sets {', '.join(keys)}, which can run code or change how "
+            "git behaves, so the hook won't run git here. Nothing was written. Remove them "
+            f"(`git config --local --unset <key>`) and type the command again, or run in your own terminal: "
+            f"`{terminal}`."
+        )
     created = []
     if not initialized(root):  # a fresh repo: the core scaffold first (spec R-2a)
+        if cwd and Path(cwd).resolve() != root.resolve():
+            return False, (
+                f"profile NOT set: setup writes the scaffold only at the top of the work tree ({root}), and the "
+                f"prompt's directory is {cwd}. Nothing was written. Open Claude Code at the repo's top and type the "
+                f"command again, or run in your own terminal there: `{terminal}`."
+            )
         created, why = scaffold_first(root, name)
         if why:
             return False, (
@@ -806,6 +825,8 @@ def set_first_profile(root, name):
         cli.write_file(root, rel, (json.dumps({**template, **PROFILE_CONFIG[name]}, indent=2) + "\n").encode())
     except OSError as exc:
         return False, f"profile NOT set: {rel} could not be written ({exc}). Nothing changed."
+    if created:  # install-state records the config as written, profile included, as a terminal run does (r5)
+        lifecycle.record(root, [rel], profile=name)
     title = f"chore(aiops): Setup Profile {name}"
     done = approvals._commit_alone(root, rel, title, f"AIOps-Profile: {name}\nSet-By: {approvals.approver(root)}", [])
     if done is None:
@@ -818,9 +839,12 @@ def set_first_profile(root, name):
         )
     pending, review = (owned_changes(root, name), unreviewed(root)) if created else ({}, ())
     steps = steps_for_human(root, name, pending, review, install=False)
+    files = [f for f in created if f != ".gitignore"]
     made = (
-        f"Created the core scaffold ({len(created)} files, nothing existing changed):\n"
-        + "\n".join(f"  + {rel}" for rel in created)
+        f"Created the core scaffold ({len(files)} files; no existing file changed"
+        + (", and the engine-state lines were added to .gitignore" if ".gitignore" in created else "")
+        + "):\n"
+        + "\n".join(f"  + {f}" for f in files)
         + "\n"
         if created
         else ""

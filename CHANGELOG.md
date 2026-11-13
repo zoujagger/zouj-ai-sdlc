@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-## [0.2.0-alpha.4] - 2026-11-11
+## [0.2.0-alpha.4] - 2026-11-13
 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
 

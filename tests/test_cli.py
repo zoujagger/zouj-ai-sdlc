@@ -538,9 +538,10 @@ class SetupCommand(RepoCase):
         self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
         from sdlc_engine import cli
 
-        for text in ("/zouj-ai-sdlc:setup TEAM", "  /zouj-ai-sdlc:setup  strict  ", "\t/zouj-ai-sdlc:setup solo"):
-            self.assertTrue(cli.PROFILE_RE.match(text), text)  # spaces and tabs around it; the name in any case
-        for text in ("/zouj-ai-sdlc:setup solo\n", "\n/zouj-ai-sdlc:setup solo"):  # 0007 r4: as engine.sh decides
+        for text in ("/zouj-ai-sdlc:setup TEAM", "  /zouj-ai-sdlc:setup  strict  "):
+            self.assertTrue(cli.PROFILE_RE.match(text), text)  # spaces around it; the name in any case
+        # 0007 r4/r5: only what engine.sh can see in the raw JSON (a newline or a tab arrives escaped there)
+        for text in ("/zouj-ai-sdlc:setup solo\n", "\n/zouj-ai-sdlc:setup solo", "\t/zouj-ai-sdlc:setup solo"):
             self.assertFalse(cli.PROFILE_RE.match(text), repr(text))  # a fresh repo never sees a newline form
 
     def test_command_with_other_text_is_ignored(self):
@@ -877,6 +878,7 @@ class Docs(unittest.TestCase):
         self.assertTrue(any("`sdlc setup`" in line.split("|")[1] for line in rows), rows)  # the setup row names it
         gaps = arch.split("\n## Known gaps", 1)[1].split("\n## ", 1)[0]
         self.assertIn('claude -p "/zouj-ai-sdlc:setup solo"', gaps)  # a command typed into a session the agent starts
+        self.assertIn("sdlc hook prompt", gaps)  # 0007 r5: a crafted payload in a repo without .aiops/
         self.assertIn("0003-first-profile-by-typed-setup-command", arch)
         for rel in ("docs/adoption.md", "docs/roadmap.md"):  # on main since PR #17
             self.assertIn("/zouj-ai-sdlc:setup", self.text(rel), rel)
