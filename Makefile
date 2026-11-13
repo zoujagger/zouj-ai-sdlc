@@ -9,8 +9,8 @@ SHELLS := $(wildcard hooks/*.sh) bin/sdlc-worktree
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-format: ## Format Python with ruff when installed (no-op otherwise)
-	@if command -v ruff >/dev/null; then ruff format -q lib tests bin/sdlc; fi
+format: ## Format Python with ruff when installed (no-op otherwise). Not bin/sdlc: its sh/python header must stay as is
+	@if command -v ruff >/dev/null; then ruff format -q lib tests; fi
 
 lint: ## bash -n + shellcheck (if installed) on hooks; ruff (if installed) on the engine
 	@for f in $(SHELLS); do bash -n "$$f" || exit 1; done

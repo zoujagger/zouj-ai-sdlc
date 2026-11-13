@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # /zouj-ai-sdlc:deploy: up to the production gate
 
-1. Preconditions: the PR is merged, CI is green on `main`, and the `CHANGELOG.md` `[Unreleased]` section is filled in.
+1. Preconditions: the PR is merged, CI is green on `main`, and the `CHANGELOG.md` `[Unreleased]` section is filled in. The Makefile's `deploy` and `rollback` targets are core; the `deploy` GitHub workflow is the opt-in `deploy` part. If `.github/workflows/deploy.yml` is missing, say so and name `sdlc setup --with deploy`.
 2. **Staging.** Run `make deploy ENV=staging` (or the staging deploy MCP tool, if configured). Then run the smoke checks and report.
 3. **Rollback readiness.** Confirm that `make rollback ENV=staging` works (it should have been exercised in staging) and print the exact prod rollback command.
 4. **Production handoff.** The agent can't deploy to production. `guard-deploy.sh` blocks it. Produce a handoff note covering: what's shipping (intents and PRs), the staging evidence, the risks, the rollback command, and the monitoring to watch (`ops/bands.yaml` metrics).

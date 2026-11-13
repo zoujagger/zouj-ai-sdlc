@@ -1,13 +1,14 @@
 """Static shell parsing shared by the gate guard (guards.py) and the always-on secret scan (secret_scan.py).
 Stdlib only and free of engine state, so a hook can import it without loading the engine."""
+
 import re
 import shlex
 
 # the delimiter is a bash word: any run of non-metacharacters, quotes and escapes included (0005 review round 6)
 HEREDOC_MARK_RE = re.compile(r"""(?<!<)<<(-?)(?!<)[ \t]*((?:[^\s;&|()<>'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+)""")
-RESET = "\x00reset"   # tokenize(): a second reading of the command starts here, from the session's cwd
+RESET = "\x00reset"  # tokenize(): a second reading of the command starts here, from the session's cwd
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", ";;", "{", "}", "!", "\n"}
-RESERVED = {"if", "then", "else", "elif", "do", "while", "until", "time", "!", "{"}   # what `!`/`{` may follow
+RESERVED = {"if", "then", "else", "elif", "do", "while", "until", "time", "!", "{"}  # what `!`/`{` may follow
 
 
 def _delimiter(raw):
@@ -20,7 +21,7 @@ def _delimiter(raw):
             i += 2
         elif c in "'\"":
             j = raw.index(c, i + 1)
-            out.append(raw[i + 1:j])
+            out.append(raw[i + 1 : j])
             i = j + 1
         else:
             out.append(c)
@@ -38,7 +39,9 @@ def _command_position(words):
         else:
             break
     return k == len(words) or words[-1].endswith("()") or (len(words) <= 2 and words[0] in ("coproc", "function"))
-ESCAPED = {"\x01": r"\(", "\x02": r"\)", "\x03": r"\;"}   # `find \( … \) -exec … \;`: literal words
+
+
+ESCAPED = {"\x01": r"\(", "\x02": r"\)", "\x03": r"\;"}  # `find \( … \) -exec … \;`: literal words
 
 
 def _arith_end(line, i, pair="()"):
@@ -55,7 +58,7 @@ def _heredoc_marks(line, comments=True):
     """[(start, end, delimiter, quoted)] of `<<WORD` markers that are real: outside quotes ('…', "…", $'…'), comments and
     arithmetic ($((…)), ((…)), $[…], where `<<` is a shift). Substitutions nested in "…" ("$(…)", "${…}", "`…`")
     are followed, so a quote inside them doesn't end the outer one (0005 review round 6)."""
-    marks, i, stack = [], 0, []          # stack: the open contexts, innermost last: ' " $' $( ${ ` (
+    marks, i, stack = [], 0, []  # stack: the open contexts, innermost last: ' " $' $( ${ ` (
     while i < len(line):
         c, top = line[i], (stack[-1] if stack else None)
         if top in ("'", "$'"):
@@ -73,12 +76,15 @@ def _heredoc_marks(line, comments=True):
             stack.pop()
             i += 1
             continue
-        if line.startswith("$((", i) or line.startswith("$[", i) or (
-                top != '"' and line.startswith("((", i) and (i == 0 or line[i - 1] in " \t;&|(")):
+        if (
+            line.startswith("$((", i)
+            or line.startswith("$[", i)
+            or (top != '"' and line.startswith("((", i) and (i == 0 or line[i - 1] in " \t;&|("))
+        ):
             i = _arith_end(line, i + 1 if c == "$" else i, "[]" if line.startswith("$[", i) else "()")
             continue
         if line.startswith("$(", i) or line.startswith("${", i):
-            stack.append(line[i:i + 2])
+            stack.append(line[i : i + 2])
             i += 2
             continue
         if c == "`":
@@ -102,7 +108,7 @@ def _heredoc_marks(line, comments=True):
         elif c in "'\"":
             stack.append(c)
         elif comments and c == "#" and (i == 0 or line[i - 1] in " \t;&|(") and top in (None, "$(", "(", "`"):
-            break                                   # the rest of the line is a comment
+            break  # the rest of the line is a comment
         elif top in (None, "$(", "(", "`") and (m := HEREDOC_MARK_RE.match(line, i)):
             delim, quoted = _delimiter(m.group(2))
             marks.append((m.start(), m.end(), delim, quoted))
@@ -126,7 +132,7 @@ def strip_heredocs(cmd):
             j = i
             while j < len(lines) and lines[j].strip() != delim:
                 j += 1
-            i = j + 1 if j < len(lines) else i   # no delimiter line: read the rest as commands (fail closed)
+            i = j + 1 if j < len(lines) else i  # no delimiter line: read the rest as commands (fail closed)
     return "\n".join(out)
 
 
@@ -160,7 +166,7 @@ def _prescan(cmd, comments=True):
                 continue
             if quote == "$'":
                 if c == "\\" and j + 1 < len(line):
-                    buf.append(line[j:j + 2])
+                    buf.append(line[j : j + 2])
                     j += 2
                     continue
                 buf.append(c)
@@ -169,10 +175,10 @@ def _prescan(cmd, comments=True):
                 continue
             if c == "\\":
                 if j + 1 < len(line):
-                    buf.append(line[j:j + 2])
+                    buf.append(line[j : j + 2])
                     j += 2
                     continue
-                cont = True                                # backslash-newline (unquoted or in "…"): join
+                cont = True  # backslash-newline (unquoted or in "…"): join
                 break
             if quote == '"':
                 buf.append(c)
@@ -182,7 +188,7 @@ def _prescan(cmd, comments=True):
             prev = (logical + "".join(buf))[-1:]
             if comments and c == "#" and prev in ("", " ", "\t", ";", "&", "|", "("):
                 if comments:
-                    break                                  # a comment, to the end of the line
+                    break  # a comment, to the end of the line
             if line.startswith("$'", j):
                 quote = "$'"
                 buf.append("$'")
@@ -195,7 +201,7 @@ def _prescan(cmd, comments=True):
         logical += "".join(buf)
         if cont:
             continue
-        if quote is not None:                              # a quoted word spans the newline
+        if quote is not None:  # a quoted word spans the newline
             logical += "\n"
             continue
         marks = _heredoc_marks(logical, comments)
@@ -203,7 +209,7 @@ def _prescan(cmd, comments=True):
             logical = logical[:start] + " " + logical[end:]
         out.append(logical)
         logical = ""
-        for _start, _end, delim, quoted in marks:          # skip each body, through its delimiter line
+        for _start, _end, delim, quoted in marks:  # skip each body, through its delimiter line
             j, found = i, False
             while j < len(lines):
                 body = lines[j]
@@ -214,7 +220,7 @@ def _prescan(cmd, comments=True):
                 if body.strip() == delim:
                     found = True
                     break
-            i = j if found else i                          # no delimiter line: read the rest (fail closed)
+            i = j if found else i  # no delimiter line: read the rest (fail closed)
     if logical:
         out.append(logical)
     return "\n".join(out)
@@ -222,21 +228,34 @@ def _prescan(cmd, comments=True):
 
 def _ansi_c(body):
     """The text of a $'…' body: the escapes bash decodes, the rest literal."""
-    simple = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "v": "\v",
-              "\\": "\\", "'": "'", '"': '"', "?": "?"}
+    simple = {
+        "n": "\n",
+        "t": "\t",
+        "r": "\r",
+        "a": "\a",
+        "b": "\b",
+        "e": "\x1b",
+        "E": "\x1b",
+        "f": "\f",
+        "v": "\v",
+        "\\": "\\",
+        "'": "'",
+        '"': '"',
+        "?": "?",
+    }
     out, i = [], 0
     while i < len(body):
         c = body[i]
         if c == "\\" and i + 1 < len(body):
             n = body[i + 1]
-            m = re.match(r"x([0-9a-fA-F]{1,2})|([0-7]{1,3})|u([0-9a-fA-F]{1,4})|U([0-9a-fA-F]{1,8})", body[i + 1:])
+            m = re.match(r"x([0-9a-fA-F]{1,2})|([0-7]{1,3})|u([0-9a-fA-F]{1,4})|U([0-9a-fA-F]{1,8})", body[i + 1 :])
             if n in simple:
                 out.append(simple[n])
                 i += 2
                 continue
             if m:
                 cp = int(next(g for g in m.groups() if g), 8 if m.group(2) else 16)
-                out.append(chr(cp) if cp <= 0x10FFFF else body[i:i + 1 + m.end()])   # invalid: kept literal
+                out.append(chr(cp) if cp <= 0x10FFFF else body[i : i + 1 + m.end()])  # invalid: kept literal
                 i += 1 + m.end()
                 continue
             out.append(n)
@@ -258,10 +277,10 @@ def _mark_escapes(cmd):
             quote = None if c == "'" else quote
             i += 1
             continue
-        if quote is None and cmd.startswith("$'", i):   # $'…': backslash escapes inside; re-quote it plainly for shlex
+        if quote is None and cmd.startswith("$'", i):  # $'…': backslash escapes inside; re-quote it plainly for shlex
             j, body = i + 2, []
             while j < len(cmd) and cmd[j] != "'":
-                body.append(cmd[j:j + 2] if cmd[j] == "\\" else cmd[j])
+                body.append(cmd[j : j + 2] if cmd[j] == "\\" else cmd[j])
                 j += 2 if cmd[j] == "\\" else 1
             out.append(shlex.quote(_ansi_c("".join(body))))
             i = j + 1
@@ -290,7 +309,7 @@ OPERATORS = (";;", "&&", "||", "|&", ";", "&", "|", "(", ")")
 def _split_punct(tok):
     """`);`, `)&&`, `)|`… (shlex merges adjacent punctuation) as their separate operators. Redirections, which
     segments() reads as one token, and `;;` stay whole."""
-    if tok and set(tok) <= set("();&|<>") and set(tok) & set("<>"):   # `)>file`: the `)` is an operator
+    if tok and set(tok) <= set("();&|<>") and set(tok) & set("<>"):  # `)>file`: the `)` is an operator
         k = 0
         while k < len(tok) and tok[k] in "();|":
             k += 1
@@ -314,13 +333,13 @@ def tokenize(cmd):
 
 
 def _tokens(cmd):
-    cmd = _mark_escapes(cmd)                           # keep escaped ( ) ; as words, not separators
+    cmd = _mark_escapes(cmd)  # keep escaped ( ) ; as words, not separators
     lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     lex.commenters = ""
     try:
         toks = list(lex)
-    except ValueError:   # unbalanced quotes ($'…' confuses shlex): split crudely but keep command boundaries
+    except ValueError:  # unbalanced quotes ($'…' confuses shlex): split crudely but keep command boundaries
         toks = re.findall(r"[;&|]+|[^\s;&|]+", cmd.replace("\n", " ; "))
     for mark, text in ESCAPED.items():
         toks = [t.replace(mark, text) for t in toks]
@@ -347,10 +366,10 @@ def scoped_segments(tokens, cases=True, flat=False):
     replacement, and callers judge every reading. The guard doesn't apply scope events (cd and assignments persist,
     as on main). For a line with a `)`, a second flat reading drops an assignment-only command ended by `)`, which
     main's tokenizer did for `d=x);`; the first records it, as main did for `d=x )`."""
-    out, words, redirs, i, opened = [], [], [], 0, []   # opened: "(", "case-word", "pat" (in a pattern) or "case"
+    out, words, redirs, i, opened = [], [], [], 0, []  # opened: "(", "case-word", "pat" (in a pattern) or "case"
     saw_case = False
 
-    redirected = False                                 # any redirection in this command, fd duplications included
+    redirected = False  # any redirection in this command, fd duplications included
 
     def flush():
         nonlocal words, redirs, redirected
@@ -371,18 +390,18 @@ def scoped_segments(tokens, cases=True, flat=False):
             opened = []
         elif not cases and t in KEYWORD:
             words.append(word(t))
-        elif top == "pat" and t == ")":                  # the end of a case pattern list: its words are judged
-            opened[-1] = "case"                          # anyway, so a misread case hides nothing (round 8)
+        elif top == "pat" and t == ")":  # the end of a case pattern list: its words are judged
+            opened[-1] = "case"  # anyway, so a misread case hides nothing (round 8)
             flush()
         elif top == "pat" and t == "(" and not (i and tokens[i - 1].endswith(("$", "<", ">"))):
-            pass                                         # the optional `(` before a pattern
+            pass  # the optional `(` before a pattern
         elif top == "pat" and t == "|":
-            flush()                                      # between alternative patterns
-        elif t == "\x04" and command_position and not redirected:   # `>&2 case` is a command (round 8)
+            flush()  # between alternative patterns
+        elif t == "\x04" and command_position and not redirected:  # `>&2 case` is a command (round 8)
             saw_case = True
             words.append("case")
             opened.append("case-word")
-        elif t == "\x06" and top == "case-word":       # the case word may span lines and substitutions
+        elif t == "\x06" and top == "case-word":  # the case word may span lines and substitutions
             words, redirs = [], []
             opened[-1] = "pat"
         elif t == "\x05" and command_position and not redirected and top in ("case", "pat"):
@@ -391,9 +410,9 @@ def scoped_segments(tokens, cases=True, flat=False):
         elif t in (";;", ";&", ";;&") and top == "case":
             flush()
             opened[-1] = "pat"
-        elif t in SEPARATORS and (t not in ("!", "{", "}") or command_position):   # `!`/`{`/`}` only in command
-            if flat and t == ")" and not redirs and _assignment_only(words):         # position: `find . ! -name x`
-                words = []                       # main's reading: `d=x)` set nothing outside (round-9 re-check)
+        elif t in SEPARATORS and (t not in ("!", "{", "}") or command_position):  # `!`/`{`/`}` only in command
+            if flat and t == ")" and not redirs and _assignment_only(words):  # position: `find . ! -name x`
+                words = []  # main's reading: `d=x)` set nothing outside (round-9 re-check)
             flush()
             if flat:
                 pass
@@ -406,7 +425,7 @@ def scoped_segments(tokens, cases=True, flat=False):
         elif set(t) <= set("<>&|") and ">" in t:
             redirected = True
             if words and words[-1].isdigit():
-                words.pop()            # the "2" in 2>file
+                words.pop()  # the "2" in 2>file
             target = word(tokens[i + 1]) if i + 1 < len(tokens) else ""
             i += 1
             if not (t.endswith("&") and target.lstrip("-").isdigit()) and target not in SEPARATORS:
@@ -417,10 +436,10 @@ def scoped_segments(tokens, cases=True, flat=False):
     flush()
     if not cases:
         return out
-    if saw_case:                        # case tracking reads dequoted words (`'a()' case`), so a line with a case is
+    if saw_case:  # case tracking reads dequoted words (`'a()' case`), so a line with a case is
         out = out + [(RESET, None)] + scoped_segments(tokens, cases=False)  # also judged with every `)` a scope end
-    if any(r is None and w in ("(", ")") for w, r in out):   # main both recorded (`d=x )`) and dropped (`d=x);`)
-        out = out + [(RESET, None)] + scoped_segments(tokens, cases=False, flat=True)   # an assignment before `)`
+    if any(r is None and w in ("(", ")") for w, r in out):  # main both recorded (`d=x )`) and dropped (`d=x);`)
+        out = out + [(RESET, None)] + scoped_segments(tokens, cases=False, flat=True)  # an assignment before `)`
     return out
 
 

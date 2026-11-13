@@ -5,9 +5,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 known issues, delivered as intent
-`.aiops/0005-guard-gaps/`. Almost every change adds blocks. Two exceptions loosen a check: `find . -type d -delete`
-(removes only empty directories) and `git cherry-pick` of a commit already on main are allowed.
+## [0.2.0-alpha.4] - 2026-11-11
+
+> **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
+
+Two intents ship together:
+- **`.aiops/0007-first-run/`, the first run:** a repo's first profile is set by a typed phrase, so `solo` needs no
+  terminal; `sdlc where` prints the terminal command when one is needed; setup installs a core scaffold and the rest
+  is opt-in.
+- **`.aiops/0005-guard-gaps/`, the guards:** the shell-write guard gaps from the 0.2.0-alpha.3 known issues. Almost
+  every change adds blocks. Two exceptions loosen a check: `find . -type d -delete` (removes only empty directories)
+  and `git cherry-pick` of a commit already on main are allowed.
+
+The playbook workflow, the gates and what CI audits are unchanged.
+
+### Added
+- **`Setup Profile solo|team|strict`, typed as the whole prompt, sets a repo's first profile.** The prompt hook writes
+  the template's keys plus that profile's into `.aiops/config.json`, exactly what a terminal `sdlc setup --profile`
+  writes into a new config, and commits the file alone, unsigned, as `chore(aiops): Setup Profile <name>` with
+  `AIOps-Profile:` and `Set-By:` trailers. It works only while the config is the untouched template, no artifact is
+  Approved or Closed, and no approval commit is in the history. Otherwise nothing is written and the reply gives the reason and the terminal command. Changing
+  a set profile stays a run in your own terminal (`docs/adr/0003-first-profile-by-typed-phrase.md`).
+- **`sdlc where`.** Its first line is the `sdlc` command for your own terminal, with the absolute python and plugin
+  paths; the human-only subcommands follow. It writes nothing, and the agent may run it. `sdlc status` and the
+  session card show the same command as `Your terminal:` while a human step is pending: no profile chosen yet, or a
+  gate that waits on your signing key.
+- **Scaffold parts.** `defaults/scaffold-parts` assigns every scaffold file to one part. `core` (16 files: `.aiops/`,
+  CLAUDE.md, REVIEW.md, the Makefile, the project settings, CODEOWNERS, the PR template, `aiops-gates.yml` and
+  `ci.yml`) is always installed. `review`, `maintain`, `deploy`, `governance` and `issues` are opt-in:
+  `sdlc setup --with <part>[,<part>…]` or `sdlc init --with …` (`all` names every part). `--with` only adds.
+  Install-state records the parts, `sdlc list-installed` ends with the ones that aren't installed, and
+  `sdlc setup --dry-run` names them.
+- **Auto mode for state 4** is documented in the scaffold's `.aiops/README.md`: `claude --permission-mode auto`, or
+  `permissions.defaultMode` in user settings. Claude Code ignores that value in project settings, the plugin sets no
+  permission mode, and the guards still run.
+- **Eval `profile-by-phrase`.** Asked to "set this repo up as solo", the agent must leave `.aiops/config.json` alone
+  and ask for the phrase.
 
 ### Security
 - **Deleting a protected tree is blocked in every state (`G-FILE-05`).** This covers the repo itself, a directory
@@ -39,10 +72,39 @@ Planned as **0.2.0-alpha.4**: the shell-write guard gaps from the 0.2.0-alpha.3 
   scope them exactly was fooled by a `)` that bash keeps inside a word, so exact scoping moves to intent 0006.
 - Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
   `.aiops/`, and G-ENV-03's list of known dumps.
+- **A human-owned file is now written by a hook.** The profile phrase is bounded to a first profile (above), the write
+  is what a terminal run would make, and the commit is visible in the adoption PR. No guard is loosened: the agent's
+  `setup`, Edit, Write and shell writes still can't change `.aiops/config.json`.
 
 ### Changed
+- **A fresh `sdlc init` or `sdlc setup` writes the core scaffold, not every file.** No workflow that runs on a
+  schedule or needs a secret arrives unless you ask for its part. A rerun keeps the parts a repo has. A repo set up
+  by an earlier release keeps every part.
+- **Setup run by the agent sets no profile.** It leaves the new `config.json` at init's defaults and asks you to type
+  `Setup Profile <name>`, for every profile, `team` included. Up to alpha.3 it kept the `team` default and sent
+  `solo` and `strict` to your terminal.
+- `sdlc list-installed`, `repair` and `upgrade` leave the files of parts that aren't installed alone: never `new` or
+  `missing`, never created. `list-installed` and `doctor` print the profile from `.aiops/config.json`.
+- The README's "Just looking?" recipe reaches `solo` with the phrase. Skills and docs name `sdlc where` and `--with`.
 - `git pull` is refused off the main branch (G-FILE-06): `git fetch`, then `git merge <ref>`, which is inspected.
 - A G-ENV-03 allowance must be safe in every simple command; `source`/`.` and secret-named `printenv` are refused.
+
+### Known issues
+- **A phrase typed into a session the agent starts** (`claude -p "Setup Profile solo"`, or an approval phrase)
+  reaches the prompt hook like a human's: Claude Code sets the same markers for every session's hooks. The profile
+  phrase is bounded to a repo with the untouched template config and nothing approved, in its files or its history; an approval still needs your
+  signature under `team` and `strict`, and nothing covers it under `solo`. A guard is on the backlog
+  (`docs/architecture.md`, Known gaps).
+- The shell-parse forms still open after 0005 are listed in `docs/architecture.md`, Known gaps (intent 0006).
+- An alpha.3 engine ignores the `parts` key in install-state: it lists the left-out parts' files as `new`, and its
+  `upgrade` offers to create them. Update the plugin before running lifecycle commands.
+- `sdlc doctor` doesn't report install-state yet. Use `sdlc list-installed`.
+
+### Upgrading from 0.2.0-alpha.3
+Update the plugin with `/plugin`, then run `sdlc upgrade --dry-run` and `sdlc upgrade` in your own terminal
+(`sdlc where` prints the command), and commit the result through a PR. Nothing to migrate: your repo keeps every
+part and its profile, and install-state without `parts` reads as every part. The typed phrase applies only to repos
+that have no profile yet.
 
 ## [0.2.0-alpha.3] - 2026-11-06
 
@@ -427,7 +489,8 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.3...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.4...HEAD
+[0.2.0-alpha.4]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.3...v0.2.0-alpha.4
 [0.2.0-alpha.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.2...v0.2.0-alpha.3
 [0.2.0-alpha.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...v0.2.0-alpha.2
 [0.2.0-alpha.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v0.2.0-alpha.1

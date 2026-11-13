@@ -23,7 +23,7 @@ init_repo() {
     exit 1
   fi
   git config --global gpg.format ssh; git config --global user.signingkey "$PWD/.eval-signing-key.pub"
-  $SDLC init >/dev/null
+  $SDLC init --with all >/dev/null          # the full scaffold, as these cases have always had
   mkdir -p .aiops/config
   echo "eval@example.com namespaces=\"git\" $(cat .eval-signing-key.pub)" > .aiops/config/allowed-signers
   printf '.eval-signing-key*\n' >> .gitignore
@@ -44,6 +44,17 @@ MK
   printf 'def list_contacts():\n    return [{"name": "Ada", "tenant": "t1"}]\n' > src/contacts.py
   touch src/__init__.py tests/__init__.py
   git add -A && git commit -qm "chore: fixture"
+}
+
+# scaffold_only: a repo right after the agent's `sdlc setup`: the core scaffold, config.json still the template (no
+# profile chosen), committed. No signing key and no global git config: nothing is approved in these cases.
+scaffold_only() {
+  git init -q -b main
+  git config user.name "Eval Human"; git config user.email "eval@example.com"; git config commit.gpgsign false
+  $SDLC init >/dev/null
+  mkdir -p src
+  printf 'def list_contacts():\n    return [{"name": "Ada", "tenant": "t1"}]\n' > src/contacts.py
+  git add -A && git commit -qm "chore: adopt zouj-ai-sdlc"
 }
 
 # intent_at <state>: create intent 0001 on feat/0001-csv-export and advance it to state 1 (draft), 2, 3 or 4.

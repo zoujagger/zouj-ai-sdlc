@@ -5,6 +5,7 @@ excluded) is checked against `secret-paths` after `~`/`$HOME` and glob expansion
 readers and Grep/Glob are refused on a directory that directly contains a secret directory (`~` holds `.ssh`).
 Stdlib only, no engine state: one python start per call instead of a subshell per word.
 """
+
 import glob
 import json
 import os
@@ -20,12 +21,18 @@ GLOB_CHARS = re.compile(r"[*?\[]")
 SUBST_RE = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 HOME_RE = re.compile(r"\$\{HOME\}|\$HOME\b")
 HARMLESS = {"echo", "printf", "ls", "test", "[", "[[", "mkdir", "which", "type", "true", "false", ":"}
-MESSAGE_OPTS = {"-m", "--message", "--body", "-b", "--title", "--notes", "--subject"}   # values are prose, not paths
-MESSAGE_SUBS = {"git": {"commit", "tag", "notes", "merge"}, "gh": {"pr", "issue", "release"},   # …for these only
-                "glab": {"mr", "issue", "release"}, "hg": {"commit"}, "svn": {"commit", "ci"}, "jj": {"describe", "new"}}
-PATTERN_FIRST = {"grep", "egrep", "fgrep", "rg", "ag", "ack"}                             # first operand is a regex
-RECURSIVE = {"rg", "ag", "ack", "tar", "zip", "rsync"}                                   # always read whole trees
-RECURSIVE_FLAG = {"grep", "egrep", "fgrep", "cp", "scp", "chmod", "du"}                  # with -r/-R
+MESSAGE_OPTS = {"-m", "--message", "--body", "-b", "--title", "--notes", "--subject"}  # values are prose, not paths
+MESSAGE_SUBS = {
+    "git": {"commit", "tag", "notes", "merge"},
+    "gh": {"pr", "issue", "release"},  # …for these only
+    "glab": {"mr", "issue", "release"},
+    "hg": {"commit"},
+    "svn": {"commit", "ci"},
+    "jj": {"describe", "new"},
+}
+PATTERN_FIRST = {"grep", "egrep", "fgrep", "rg", "ag", "ack"}  # first operand is a regex
+RECURSIVE = {"rg", "ag", "ack", "tar", "zip", "rsync"}  # always read whole trees
+RECURSIVE_FLAG = {"grep", "egrep", "fgrep", "cp", "scp", "chmod", "du"}  # with -r/-R
 TEMPLATES = (".env.example", ".env.sample", ".env.template")
 FIND_READS = {"-exec", "-execdir", "-ok", "-okdir", "-print0", "-fprint", "-fprint0", "-fprintf", "-fls"}
 
@@ -81,8 +88,8 @@ def _expand(word, cwd):
     w = word[1:] if word[:1] in "<>" else word
     if w.startswith("--") and "=" in w:
         w = w.split("=", 1)[1]
-    w = re.sub(r"^[\w.-]+=(?=[@<])", "", w)                 # curl -F file=@.env / f=<.env, gh api -F body=@.env
-    w = w[1:] if w[:1] in "@<" else w                       # curl --data-binary @.env
+    w = re.sub(r"^[\w.-]+=(?=[@<])", "", w)  # curl -F file=@.env / f=<.env, gh api -F body=@.env
+    w = w[1:] if w[:1] in "@<" else w  # curl --data-binary @.env
     w = os.path.expanduser(HOME_RE.sub(os.path.expanduser("~"), w.rstrip(")")))
     if not w or "$" in w:
         return []
@@ -100,7 +107,9 @@ def _skip_indexes(name, args):
     skip, operands = set(), 0
     sub = next((a for a in args if not a.startswith("-")), "")
     for i, a in enumerate(args):
-        if (sub in MESSAGE_SUBS.get(name, ()) and a in MESSAGE_OPTS) or (name in PATTERN_FIRST and a in ("-e", "--regexp")):
+        if (sub in MESSAGE_SUBS.get(name, ()) and a in MESSAGE_OPTS) or (
+            name in PATTERN_FIRST and a in ("-e", "--regexp")
+        ):
             skip.add(i + 1)
         elif name in PATTERN_FIRST and not a.startswith("-") and i not in skip:
             operands += 1
@@ -113,7 +122,7 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
     """A block reason if the command reads secret material, else None. Inside `$(…)` the output feeds another
     command, so nothing counts as harmless and `find` is a recursive reader."""
     pats = patterns(root) if pats is None else pats
-    for m in SUBST_RE.finditer(cmd):                       # $(…) and `…`, also inside quotes: commands of their own
+    for m in SUBST_RE.finditer(cmd):  # $(…) and `…`, also inside quotes: commands of their own
         inner = m.group(1) if m.group(1) is not None else m.group(2)
         if depth < 3 and (why := check_shell(inner, cwd, root, pats, depth + 1)):
             return why
@@ -123,7 +132,7 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
         segs = [(["\x00unparsed"] + cmd.split(), [])]
     start_cwd = cwd
     for words, _redirs in segs:
-        if _redirs is None:                                # the second reading (comments kept) starts afresh
+        if _redirs is None:  # the second reading (comments kept) starts afresh
             cwd = start_cwd if words == RESET else cwd
             continue
         while words and re.match(r"^[A-Za-z_]\w*=", words[0]):
@@ -139,12 +148,14 @@ def check_shell(cmd, cwd, root, pats=None, depth=0):
         if name in HARMLESS and not depth:
             continue
         skip = _skip_indexes(name, args)
-        recursive = name in RECURSIVE or (name in RECURSIVE_FLAG and any(
-            re.match(r"^-[a-zA-Z]*[rR]", a) or a == "--recursive" for a in args)) or (name == "find" and (
-                depth or any(a in FIND_READS for a in args)))
+        recursive = (
+            name in RECURSIVE
+            or (name in RECURSIVE_FLAG and any(re.match(r"^-[a-zA-Z]*[rR]", a) or a == "--recursive" for a in args))
+            or (name == "find" and (depth or any(a in FIND_READS for a in args)))
+        )
         hidden = name in ("rg", "ag") and any(re.match(r"^(--hidden|--no-ignore\S*|-u+|-\w*u|-\.)$", a) for a in args)
         if hidden and not [a for j, a in enumerate(args) if not a.startswith("-") and j not in skip]:
-            if (hit := ancestor_hit(cwd, root, pats, files=True)):   # no path operand: the cwd, hidden files included
+            if hit := ancestor_hit(cwd, root, pats, files=True):  # no path operand: the cwd, hidden files included
                 return f"`{name}` with hidden files searches '{cwd}', which holds secret material ({hit})"
         for i, word in enumerate(words):
             if i and (i - 1) in skip:
@@ -188,9 +199,11 @@ def main():
     else:
         why = check_search({**ti, "_tool": tool}, root)
     if why:
-        print(f"BLOCKED [G-SEC-03] by guard-{'bash' if tool == 'Bash' else 'read'}: {why}\n"
-              "Procedure: use .env.example / documentation for names; never read real secrets into the session. "
-              "(details: `sdlc why G-SEC-03`)",
-              file=sys.stderr)
+        print(
+            f"BLOCKED [G-SEC-03] by guard-{'bash' if tool == 'Bash' else 'read'}: {why}\n"
+            "Procedure: use .env.example / documentation for names; never read real secrets into the session. "
+            "(details: `sdlc why G-SEC-03`)",
+            file=sys.stderr,
+        )
         return 2
     return 0

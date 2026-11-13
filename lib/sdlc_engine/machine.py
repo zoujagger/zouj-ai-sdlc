@@ -1,13 +1,14 @@
 """Derive the lifecycle state of each intent from its artifacts and git. State is computed, never stored.
 
-  1 BRAINSTORMING  intent.md missing, Draft, or changed since approval
-  2 SPECIFICATION  spec.md  missing, Draft, or changed since approval
-  3 PLAN           plan.md  missing, Draft, or changed since approval   (read-only: no code edits)
-  4 EXECUTION      plan approved, Steps still open                       (autonomous TDD loop)
-  5 PRE-REVIEW     all Steps done; review.md missing, failing, stale, or PASS awaiting the human merge
-  6 DONE           review.md (PASS) is on the main branch
-  0 CLOSED         intent closed by a human
+1 BRAINSTORMING  intent.md missing, Draft, or changed since approval
+2 SPECIFICATION  spec.md  missing, Draft, or changed since approval
+3 PLAN           plan.md  missing, Draft, or changed since approval   (read-only: no code edits)
+4 EXECUTION      plan approved, Steps still open                       (autonomous TDD loop)
+5 PRE-REVIEW     all Steps done; review.md missing, failing, stale, or PASS awaiting the human merge
+6 DONE           review.md (PASS) is on the main branch
+0 CLOSED         intent closed by a human
 """
+
 import json
 import os
 import re
@@ -22,13 +23,26 @@ from . import artifacts as A
 PLUGIN_ROOT = Path(__file__).resolve().parents[2]
 KINDS = ("intent", "spec", "plan", "review")
 SCHEMAS = {k: json.loads((PLUGIN_ROOT / "schemas" / f"{k}.json").read_text()) for k in KINDS}
-STATE_NAMES = {0: "CLOSED", 1: "BRAINSTORMING", 2: "SPECIFICATION", 3: "PLAN", 4: "EXECUTION", 5: "PRE-REVIEW", 6: "DONE"}
+STATE_NAMES = {
+    0: "CLOSED",
+    1: "BRAINSTORMING",
+    2: "SPECIFICATION",
+    3: "PLAN",
+    4: "EXECUTION",
+    5: "PRE-REVIEW",
+    6: "DONE",
+}
 LOCKED_STATES = (1, 2, 3)
 DIR_RE = re.compile(r"^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*$")
 BRANCH_RE = re.compile(r"(?:^|/)(\d{4})-")
-DEFAULT_CONFIG = {"lock_when_idle": True, "commit_approvals": True, "main_branch": "main",
-                  "require_signed_approvals": True,
-                  "approval_key_policy": "human", "profile": "team"}
+DEFAULT_CONFIG = {
+    "lock_when_idle": True,
+    "commit_approvals": True,
+    "main_branch": "main",
+    "require_signed_approvals": True,
+    "approval_key_policy": "human",
+    "profile": "team",
+}
 
 
 # git by absolute path: a `git` planted earlier on PATH must not run inside the engine (approvals included).
@@ -64,7 +78,7 @@ def config(root):
             data = json.loads(f.read_text())
         except ValueError:
             data = None
-        if isinstance(data, dict):          # invalid JSON, or JSON that isn't an object, reads as the defaults
+        if isinstance(data, dict):  # invalid JSON, or JSON that isn't an object, reads as the defaults
             cfg.update(data)
     return cfg
 
@@ -148,7 +162,7 @@ class Status:
     state: int
     detail: str
     next: str
-    waiting_on: str = "agent"   # agent | human
+    waiting_on: str = "agent"  # agent | human
     steps_done: int = 0
     steps_total: int = 0
     open_questions: int = 0
@@ -160,19 +174,41 @@ class Status:
         return STATE_NAMES[self.state]
 
     def as_dict(self):
-        return {"id": self.id, "dir": str(self.dir), "state": self.state, "name": self.name, "detail": self.detail,
-                "next": self.next, "waiting_on": self.waiting_on, "steps": [self.steps_done, self.steps_total],
-                "open_questions": self.open_questions, "deviations": self.deviations, "gates": self.gates}
+        return {
+            "id": self.id,
+            "dir": str(self.dir),
+            "state": self.state,
+            "name": self.name,
+            "detail": self.detail,
+            "next": self.next,
+            "waiting_on": self.waiting_on,
+            "steps": [self.steps_done, self.steps_total],
+            "open_questions": self.open_questions,
+            "deviations": self.deviations,
+            "gates": self.gates,
+        }
 
 
 def _pending_gate(ident, d, kind, state, why, skill):
     if why == "missing":
         return Status(ident, d, state, f"{kind}.md not written yet", f"/zouj-ai-sdlc:{skill} {ident}")
     if why == "changed since approval":
-        return Status(ident, d, state, f"{kind}.md changed after it was approved; the approval no longer holds",
-                      f"human re-approves: type `{phrase(kind, ident)}`", "human")
-    return Status(ident, d, state, f"{kind}.md is drafted ({why}); waiting for human sign-off",
-                  f"human types `{phrase(kind, ident)}` (or asks for changes)", "human")
+        return Status(
+            ident,
+            d,
+            state,
+            f"{kind}.md changed after it was approved; the approval no longer holds",
+            f"human re-approves: type `{phrase(kind, ident)}`",
+            "human",
+        )
+    return Status(
+        ident,
+        d,
+        state,
+        f"{kind}.md is drafted ({why}); waiting for human sign-off",
+        f"human types `{phrase(kind, ident)}` (or asks for changes)",
+        "human",
+    )
 
 
 def review_stale(root, commit):
@@ -188,16 +224,22 @@ def evaluate(root, d):
     ident = d.name[:4]
     st = _evaluate(root, d, ident)
     st.gates = {k: gate(d, k)[0] for k in ("intent", "spec", "plan")}
-    for kind in ("intent", "spec"):         # only where a question can still block a gate: once approved, accepted
+    for kind in ("intent", "spec"):  # only where a question can still block a gate: once approved, accepted
         text = read(d, kind)
         if text and not st.gates[kind]:
-            st.open_questions += len([1 for s, _ in A.checkboxes(A.sections(A.parse(text).body).get("Open questions", ""))
-                                      if s != "x"])
+            st.open_questions += len(
+                [1 for s, _ in A.checkboxes(A.sections(A.parse(text).body).get("Open questions", "")) if s != "x"]
+            )
     plan = read(d, "plan")
     if plan:
         log = A.sections(A.parse(plan).body).get("Deviation log", "")
-        st.deviations = len([ln for ln in log.splitlines() if ln.startswith("|") and not re.match(r"^\|[\s|:-]*\|?$", ln)
-                             and not ln.lower().startswith("| date")])
+        st.deviations = len(
+            [
+                ln
+                for ln in log.splitlines()
+                if ln.startswith("|") and not re.match(r"^\|[\s|:-]*\|?$", ln) and not ln.lower().startswith("| date")
+            ]
+        )
     return st
 
 
@@ -228,16 +270,28 @@ def _review_state(root, d, ident):
     main = config(root)["main_branch"]
     rel = f".aiops/{d.name}/review.md"
     on_main = git(root, "show", f"{main}:{rel}")
-    if on_main and A.parse(on_main).get("verdict") == "PASS":   # merged: DONE whichever branch you're on
+    if on_main and A.parse(on_main).get("verdict") == "PASS":  # merged: DONE whichever branch you're on
         return Status(ident, d, 6, f"merged into {main}", "none (Maintain: /zouj-ai-sdlc:triage on alerts)")
     if a.get("verdict") != "PASS":
-        return Status(ident, d, 5, f"review verdict {a.get('verdict') or 'unset'}: fix the findings",
-                      f"/zouj-ai-sdlc:implement {ident}, then /zouj-ai-sdlc:review {ident}")
+        return Status(
+            ident,
+            d,
+            5,
+            f"review verdict {a.get('verdict') or 'unset'}: fix the findings",
+            f"/zouj-ai-sdlc:implement {ident}, then /zouj-ai-sdlc:review {ident}",
+        )
     if review_stale(root, a.get("commit")):
-        return Status(ident, d, 5, "code changed after the review; it no longer covers HEAD",
-                      f"/zouj-ai-sdlc:review {ident}")
-    return Status(ident, d, 5, f"review PASS (score {a.get('score')}); waiting for the human merge decision",
-                  f"/zouj-ai-sdlc:pr {ident}, then a human reviews and merges", "human")
+        return Status(
+            ident, d, 5, "code changed after the review; it no longer covers HEAD", f"/zouj-ai-sdlc:review {ident}"
+        )
+    return Status(
+        ident,
+        d,
+        5,
+        f"review PASS (score {a.get('score')}); waiting for the human merge decision",
+        f"/zouj-ai-sdlc:pr {ident}, then a human reviews and merges",
+        "human",
+    )
 
 
 def profile():
@@ -265,12 +319,13 @@ def lock(root):
     return False, f"intent {st.id} is in state {st.state} {st.name}", st
 
 
-LOCK_ENV = ("SDLC_HOOK_PROFILE", "AIOPS_INTENT")   # the agent can set these in its own command line
+LOCK_ENV = ("SDLC_HOOK_PROFILE", "AIOPS_INTENT")  # the agent can set these in its own command line
 
 
 class lock_env_stripped:
     """Judge the read-only lock without SDLC_HOOK_PROFILE / AIOPS_INTENT: what the agent's own command sets can't
     lift the lock for a write the engine does on its behalf (init --force, upgrade, repair). Restores them after."""
+
     def __enter__(self):
         self.saved = {k: os.environ.pop(k) for k in LOCK_ENV if k in os.environ}
         return self

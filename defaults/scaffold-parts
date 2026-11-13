@@ -1,0 +1,44 @@
+# Which part of the scaffold each file under templates/scaffold/ belongs to: `<part> <glob>` (bash glob syntax, `*`
+# crosses `/`, relative to the repo root). `core` is always installed; the others are opt-in:
+#   sdlc setup --with review,maintain,deploy,governance,issues   (or --with all)
+# Every scaffold file must match exactly one line (tests/test_lifecycle.py::Parts). A path that matches no line
+# counts as core at run time, so a new file is never silently left out.
+
+# core: what the gates, the read-only lock and the CI audit need
+core .aiops/*
+core .claude/settings.json
+core .github/CODEOWNERS
+core .github/pull_request_template.md
+core .github/workflows/aiops-gates.yml
+core .github/workflows/ci.yml
+core CLAUDE.md
+core Makefile
+core REVIEW.md
+
+# review: Claude reviews pull requests and answers @claude mentions (needs ANTHROPIC_API_KEY)
+review .github/workflows/claude-pr-review.yml
+review .github/workflows/claude.yml
+
+# maintain: the Maintain loop (control bands, scheduled scans) and its docs
+maintain .github/workflows/claude-maintain.yml
+maintain .github/workflows/claude-scheduled-scan.yml
+maintain ops/bands.yaml
+maintain scripts/check-bands.py
+maintain docs/runbooks/*
+maintain docs/postmortems/*
+maintain docs/retros/*
+
+# deploy: staging and production deploys from CI, release notes
+deploy .github/workflows/deploy.yml
+deploy .github/workflows/claude-release-notes.yml
+
+# governance: org policy examples and dependency updates
+governance governance/*
+governance docs/ai-usage-policy.md
+governance docs/branch-protection.md
+governance docs/adr/*
+governance .github/dependabot.yml
+
+# issues: issue forms and automated triage
+issues .github/ISSUE_TEMPLATE/*
+issues .github/workflows/claude-issue-triage.yml

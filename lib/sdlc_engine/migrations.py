@@ -4,6 +4,7 @@ Each migration says whether it is still pending (`applies`, idempotent detection
 it. `upgrade` never runs a human-only migration: it prints the command. A migration is recorded in install-state
 as applied once `applies` turns false.
 """
+
 from typing import Callable, NamedTuple
 
 from . import approvals
@@ -27,7 +28,12 @@ def _legacy_pending(root):
 
 
 MIGRATIONS = [
-    Migration("legacy-approvals", lambda root: bool(_legacy_pending(root)), True, "sdlc legacy-approvals --write",
-              "approval commits made before signing was required: CI accepts them only once a human lists them in "
-              ".aiops/config/legacy-approvals (human-owned)"),
+    Migration(
+        "legacy-approvals",
+        lambda root: bool(_legacy_pending(root)),
+        True,
+        "sdlc legacy-approvals --write",
+        "approval commits made before signing was required: CI accepts them only once a human lists them in "
+        ".aiops/config/legacy-approvals (human-owned)",
+    ),
 ]

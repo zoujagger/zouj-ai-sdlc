@@ -2,6 +2,7 @@
 with an `AIOps-Approval:` trailer so CI can audit who opened each gate. Only two callers exist: the
 UserPromptSubmit hook (the human typed `Plan Approved`) and `sdlc approve` run by a human in a terminal.
 """
+
 import datetime
 import json
 import os
@@ -42,33 +43,49 @@ def approve_command(ident="NNNN", kind="intent|spec|plan"):
 SIGNING_HELP = (
     "Set up SSH commit signing with a dedicated key (global config: repo-local signing settings are refused), then\n"
     "approve again:\n"
-    "  ssh-keygen -t ed25519 -f ~/.ssh/aiops_signing -C \"aiops approvals\"   # set a passphrase\n"
+    '  ssh-keygen -t ed25519 -f ~/.ssh/aiops_signing -C "aiops approvals"   # set a passphrase\n'
     "  git config --global gpg.format ssh\n"
     "  git config --global user.signingkey ~/.ssh/aiops_signing.pub\n"
     "and make sure your key is in .aiops/config/allowed-signers (human-owned), e.g.\n"
-    "  echo \"$(git config user.email) namespaces=\\\"git\\\" $(cat ~/.ssh/aiops_signing.pub)\" >> .aiops/config/allowed-signers\n"
-    "Keep the key out of ssh-agent (or use an sk- key): `sdlc doctor` checks it.")
+    '  echo "$(git config user.email) namespaces=\\"git\\" $(cat ~/.ssh/aiops_signing.pub)" >> .aiops/config/allowed-signers\n'
+    "Keep the key out of ssh-agent (or use an sk- key): `sdlc doctor` checks it."
+)
 
 
 KEY_HELP = (
     "Approvals need a human for each signature: use a passphrase-protected key that is NOT loaded in ssh-agent\n"
     "(add one with `ssh-keygen -p -f ~/.ssh/aiops_signing`; unload with `ssh-add -d ~/.ssh/aiops_signing`), or a FIDO\n"
     f"`sk-` key that needs a touch. Then approve in your own terminal: `{approve_command()}`\n"
-    "(it asks for the passphrase). Escape hatch (human-owned): \"approval_key_policy\": \"any\" in .aiops/config.json.")
+    '(it asks for the passphrase). Escape hatch (human-owned): "approval_key_policy": "any" in .aiops/config.json.'
+)
 
 
 # The approval commit always signs with the system's ssh-keygen and without hooks, whatever the repo's config says:
 # anything an agent can write (repo git config, .git/hooks) must not sit between the human and the signature.
-SSH_KEYGEN = "/usr/bin/ssh-keygen" if Path("/usr/bin/ssh-keygen").is_file() else (shutil.which("ssh-keygen") or "ssh-keygen")
+SSH_KEYGEN = (
+    "/usr/bin/ssh-keygen" if Path("/usr/bin/ssh-keygen").is_file() else (shutil.which("ssh-keygen") or "ssh-keygen")
+)
 SSH_ADD = "/usr/bin/ssh-add" if Path("/usr/bin/ssh-add").is_file() else (shutil.which("ssh-add") or "ssh-add")
-PINNED = ("-c", "gpg.format=ssh", "-c", f"gpg.ssh.program={SSH_KEYGEN}", "-c", "core.hooksPath=/dev/null",
-          "-c", "core.fsmonitor=false", "-c", "core.attributesFile=/dev/null")
+PINNED = (
+    "-c",
+    "gpg.format=ssh",
+    "-c",
+    f"gpg.ssh.program={SSH_KEYGEN}",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.attributesFile=/dev/null",
+)
 # Repo-local (and worktree) config may only hold keys that can't run code or redirect signing; read with includes.
 LOCAL_ALLOWED_RE = re.compile(
     r"^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks|"
     r"autocrlf|eol|safecrlf|quotepath|sparsecheckout|worktree)|extensions\..+|remote\..+|branch\..+|"
     r"user\.(name|email)|commit\.gpgsign|tag\.gpgsign|pull\.\w+|push\.\w+|fetch\.\w+|init\.defaultbranch|"
-    r"submodule\.[^.]+\.(url|active|branch)|gc\.\w+|maintenance\..+)$", re.I)
+    r"submodule\.[^.]+\.(url|active|branch)|gc\.\w+|maintenance\..+)$",
+    re.I,
+)
 
 
 def _signing_key_files(root):
@@ -89,8 +106,8 @@ def _signer_options(root, blob):
     for line in (f.read_text() if f.is_file() else "").splitlines():
         words = line.split()
         if blob in words and not line.lstrip().startswith("#"):
-            opts = words[1:words.index(blob) - 1]                  # principals [options] keytype key
-            return {o.split("=", 1)[0].strip().lower() for o in ",".join(opts).split(",") if o}   # case-insensitive
+            opts = words[1 : words.index(blob) - 1]  # principals [options] keytype key
+            return {o.split("=", 1)[0].strip().lower() for o in ",".join(opts).split(",") if o}  # case-insensitive
     return set()
 
 
@@ -149,8 +166,9 @@ def _commit_alone(root, rel, title, body, sign):
     entry = f"{'100755' if os.access(root / rel, os.X_OK) else '100644'},{blob},{rel}"
     with tempfile.TemporaryDirectory() as tmp:
         index = str(Path(tmp) / "index")
-        if (head and run("read-tree", head, index=index) is None) or \
-                run("update-index", "--add", "--cacheinfo", entry, index=index) is None:
+        if (head and run("read-tree", head, index=index) is None) or run(
+            "update-index", "--add", "--cacheinfo", entry, index=index
+        ) is None:
             return None
         tree = run("write-tree", index=index)
     if not tree:
@@ -158,12 +176,12 @@ def _commit_alone(root, rel, title, body, sign):
     sha = run("commit-tree", tree, *(["-p", head] if head else []), *sign, "-m", title, "-m", body)
     if not sha or run("update-ref", "-m", title, "HEAD", sha, *([head] if head else [])) is None:
         return None
-    if run("update-index", "--add", "--cacheinfo", entry) is None:   # the real index follows the commit
+    if run("update-index", "--add", "--cacheinfo", entry) is None:  # the real index follows the commit
         return sha, f"git reset -q -- {rel}"
     return sha, None
 
 
-KEY_POLICIES = ("human", "sk", "any")   # team: a human per signature · strict: a touch key only · solo/escape hatch
+KEY_POLICIES = ("human", "sk", "any")  # team: a human per signature · strict: a touch key only · solo/escape hatch
 
 
 def signing_problem(root):
@@ -175,21 +193,27 @@ def signing_problem(root):
         return "require_signed_approvals needs commit_approvals: true in .aiops/config.json"
     keys = local_config_keys(root)
     if keys:
-        return (f"repo-local git config sets {', '.join(keys)}: signing settings must come from your global git "
-                f"config (`git config --global …`), and the repo's own config may only hold basics (user.name/email, "
-                f"remote.*, branch.*, core file settings), never keys that run code or change signing "
-                f"(remove with `git config --local --unset <key>`)")
+        return (
+            f"repo-local git config sets {', '.join(keys)}: signing settings must come from your global git "
+            f"config (`git config --global …`), and the repo's own config may only hold basics (user.name/email, "
+            f"remote.*, branch.*, core file settings), never keys that run code or change signing "
+            f"(remove with `git config --local --unset <key>`)"
+        )
     if not git(root, "config", "user.signingkey"):
         return "git has no signing key configured (user.signingkey)"
     if (git(root, "config", "gpg.format") or "openpgp") != "ssh":
         return "git signing is not set to SSH (gpg.format ssh)"
     policy = cfg.get("approval_key_policy", "human")
     if policy not in KEY_POLICIES:
-        return (f"unknown approval_key_policy {policy!r} in .aiops/config.json (use one of: "
-                f"{', '.join(KEY_POLICIES)}); an unknown value is refused, never treated as \"any\"")
+        return (
+            f"unknown approval_key_policy {policy!r} in .aiops/config.json (use one of: "
+            f'{", ".join(KEY_POLICIES)}); an unknown value is refused, never treated as "any"'
+        )
     if policy == "sk" and not _signing_key_files(root)[0].startswith("sk-"):
-        return ("the strict profile (approval_key_policy \"sk\") accepts only a FIDO sk- key that needs a touch per "
-                f"signature.\n{KEY_HELP}")
+        return (
+            'the strict profile (approval_key_policy "sk") accepts only a FIDO sk- key that needs a touch per '
+            f"signature.\n{KEY_HELP}"
+        )
     if policy in ("human", "sk"):
         weak = key_protection(root)
         if weak:
@@ -220,15 +244,23 @@ def approve(root, d, kind, via, who=None):
     problem = signing_problem(root)
     if problem:
         setup = "" if KEY_HELP in problem else f"\n{SIGNING_HELP}"
-        return False, (f"{kind}.md for {ident} was NOT approved: {problem.rstrip('.')}.{setup}\n"
-                       f"Approve in your own terminal: `{approve_command(ident, kind)}`.")
+        return False, (
+            f"{kind}.md for {ident} was NOT approved: {problem.rstrip('.')}.{setup}\n"
+            f"Approve in your own terminal: `{approve_command(ident, kind)}`."
+        )
     signed = bool(config(root).get("require_signed_approvals"))
     who = who or approver(root)
     digest = A.approval_hash(kind, text)
-    stamped = A.set_fields(text, {
-        "status": schema["gate"], "approved-by": who,
-        "approved-at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "approved-via": via, "approved-sha256": digest})
+    stamped = A.set_fields(
+        text,
+        {
+            "status": schema["gate"],
+            "approved-by": who,
+            "approved-at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "approved-via": via,
+            "approved-sha256": digest,
+        },
+    )
     path = d / f"{kind}.md"
     path.write_text(stamped)
     note = ""
@@ -239,18 +271,25 @@ def approve(root, d, kind, via, who=None):
         sign = ["-S"] if signed else []
         sha, fix = _commit_alone(root, rel, title, body, sign) or (None, None)
         if sha is None:
-            if signed:   # an unsigned stamp would never pass the audit: roll it back
+            if signed:  # an unsigned stamp would never pass the audit: roll it back
                 path.write_text(text)
-                return False, (f"{kind}.md for {ident} was NOT approved: the signed commit failed (signing needs "
-                               f"you: a passphrase or touch, which needs a terminal). Approve in your own terminal: "
-                               f"`{approve_command(ident, kind)}`.")
+                return False, (
+                    f"{kind}.md for {ident} was NOT approved: the signed commit failed (signing needs "
+                    f"you: a passphrase or touch, which needs a terminal). Approve in your own terminal: "
+                    f"`{approve_command(ident, kind)}`."
+                )
             note = "\n(The approval is in the working tree, but committing it failed. Commit it yourself.)"
         else:
-            note = f"\nCommitted as `{title}`." + (f" The index was busy and still holds the old {kind}.md: run "
-                                                f"`{fix}` before your next commit." if fix else "")
+            note = f"\nCommitted as `{title}`." + (
+                f" The index was busy and still holds the old {kind}.md: run `{fix}` before your next commit."
+                if fix
+                else ""
+            )
     st = evaluate(root, d)
-    return True, (f"{schema['approval_phrase']}: {kind}.md for {ident} approved by {who}.{note}\n"
-                  f"Intent {ident} is now in state {st.state} {st.name}. Next: {st.next}")
+    return True, (
+        f"{schema['approval_phrase']}: {kind}.md for {ident} approved by {who}.{note}\n"
+        f"Intent {ident} is now in state {st.state} {st.name}. Next: {st.next}"
+    )
 
 
 def close(root, d, who=None):
@@ -272,6 +311,7 @@ def trust(root, base=None, warnings=None):
     """(config, allowed-signers text, legacy approval shas): from `base` when given, else the working tree.
     A PR must not be able to vouch for itself, so CI passes the target branch as `base`. Only when the base has
     no signer list at all (the change that introduces signing) does the working tree count, with a warning."""
+
     def tree(rel):
         f = root / rel
         return f.read_text() if f.is_file() else None
@@ -282,12 +322,16 @@ def trust(root, base=None, warnings=None):
     src = tree
     if base is not None:
         if not base.strip() or git(root, "rev-parse", "-q", "--verify", f"{base}^{{commit}}") is None:
-            raise BaseRefError(f"base ref {base!r} does not resolve to a commit; refusing to audit against the change "
-                               "itself (fetch the target branch, e.g. actions/checkout with fetch-depth: 0)")
+            raise BaseRefError(
+                f"base ref {base!r} does not resolve to a commit; refusing to audit against the change "
+                "itself (fetch the target branch, e.g. actions/checkout with fetch-depth: 0)"
+            )
         if at_base(SIGNERS) is None:
             if warnings is not None:
-                warnings.append(f"bootstrap: {base} has no {SIGNERS}, so this change's signer list is trusted. "
-                                "It must get CODEOWNERS review.")
+                warnings.append(
+                    f"bootstrap: {base} has no {SIGNERS}, so this change's signer list is trusted. "
+                    "It must get CODEOWNERS review."
+                )
         else:
             src = at_base
     cfg = dict(DEFAULT_CONFIG)
@@ -295,7 +339,9 @@ def trust(root, base=None, warnings=None):
         cfg.update(json.loads(src(CONFIG) or "{}"))
     except ValueError:
         pass
-    legacy = {ln.split()[0] for ln in (src(LEGACY) or "").splitlines() if ln.strip() and not ln.lstrip().startswith("#")}
+    legacy = {
+        ln.split()[0] for ln in (src(LEGACY) or "").splitlines() if ln.strip() and not ln.lstrip().startswith("#")
+    }
     return cfg, src(SIGNERS) or "", legacy
 
 
@@ -315,7 +361,7 @@ def approval_commit(root, d, kind, digest):
     log = git(root, "log", "--format=%H%x00%B%x1e", "-S", f"approved-sha256: {digest}", "--", rel)
     if not log:
         return None
-    oldest = [e for e in log.split("\x1e") if e.strip()][-1]   # git log is newest first
+    oldest = [e for e in log.split("\x1e") if e.strip()][-1]  # git log is newest first
     sha, _, msg = oldest.strip().partition("\x00")
     return sha, msg
 
@@ -347,8 +393,10 @@ def commit_problems(root, d, kind):
         return sha, [f"{kind}.md approval commit {sha[:10]} has a trailer whose sha256 doesn't match the stamp"]
     touched = (git(root, "show", "--name-only", "--format=", sha) or "").split()
     if touched != [rel]:
-        return sha, [f"{kind}.md approval commit {sha[:10]} must change only {rel} (it also touches "
-                     f"{', '.join(t for t in touched if t != rel)[:120]})"]
+        return sha, [
+            f"{kind}.md approval commit {sha[:10]} must change only {rel} (it also touches "
+            f"{', '.join(t for t in touched if t != rel)[:120]})"
+        ]
     return sha, []
 
 
@@ -372,8 +420,11 @@ def signer_entries(signers):
 
 def non_touch_signers(signers):
     """Allowed-signers lines that can sign without a touch: not an sk- key, or allow-listed with no-touch-required."""
-    return [line for line, opts, ktype, _ in signer_entries(signers)
-            if not ktype.startswith("sk-") or "no-touch-required" in opts]
+    return [
+        line
+        for line, opts, ktype, _ in signer_entries(signers)
+        if not ktype.startswith("sk-") or "no-touch-required" in opts
+    ]
 
 
 def _fingerprint(ktype, blob):
@@ -394,8 +445,14 @@ def signer_needs_touch(root, sha, signers):
         fp = git(root, "-c", f"gpg.ssh.allowedSignersFile={f.name}", "log", "-1", "--format=%GK", sha)
     finally:
         os.unlink(f.name)
-    return any(_fingerprint(ktype, blob) == fp and ktype.startswith("sk-") and "no-touch-required" not in opts
-               for _line, opts, ktype, blob in signer_entries(signers)) if fp else False
+    return (
+        any(
+            _fingerprint(ktype, blob) == fp and ktype.startswith("sk-") and "no-touch-required" not in opts
+            for _line, opts, ktype, blob in signer_entries(signers)
+        )
+        if fp
+        else False
+    )
 
 
 def audit(root, d, kind, base=None, warnings=None):
@@ -411,11 +468,15 @@ def audit(root, d, kind, base=None, warnings=None):
     if cfg.get("require_signed_approvals") and sha not in {x for x in legacy if FULL_SHA_RE.match(x)}:
         verdict = signature(root, sha, signers)
         if verdict != "G":
-            return [f"{kind}.md approval commit {sha[:10]} is not signed by an allow-listed signer "
-                    f"(git %G? = {verdict}; signers from {base or 'the working tree'})"]
+            return [
+                f"{kind}.md approval commit {sha[:10]} is not signed by an allow-listed signer "
+                f"(git %G? = {verdict}; signers from {base or 'the working tree'})"
+            ]
         if cfg.get("approval_key_policy") == "sk" and not signer_needs_touch(root, sha, signers):
-            return [f"{kind}.md approval commit {sha[:10]} is signed by a key that doesn't need a touch; the strict "
-                    "profile (approval_key_policy \"sk\") requires an allow-listed sk- key without no-touch-required"]
+            return [
+                f"{kind}.md approval commit {sha[:10]} is signed by a key that doesn't need a touch; the strict "
+                'profile (approval_key_policy "sk") requires an allow-listed sk- key without no-touch-required'
+            ]
     return []
 
 
@@ -432,7 +493,9 @@ def unsigned_approvals(root):
             sha, problems = commit_problems(root, d, kind)
             if not sha or problems or signature(root, sha, signers) == "G":
                 continue
-            if not _is_ancestor(root, sha, main) or (intro and not (sha != intro[-1] and _is_ancestor(root, sha, intro[-1]))):
+            if not _is_ancestor(root, sha, main) or (
+                intro and not (sha != intro[-1] and _is_ancestor(root, sha, intro[-1]))
+            ):
                 continue
             out.append((sha, f"{d.name}/{kind}.md"))
     return out

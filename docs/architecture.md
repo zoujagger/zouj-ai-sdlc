@@ -4,6 +4,7 @@
 Claude Code session
  ├─ SessionStart ─────────▶ sdlc hook session-start  → state card + skills/using-zouj-ai-sdlc body
  ├─ UserPromptSubmit ─────▶ sdlc hook prompt         → "Plan Approved NNNN" ⇒ approvals.approve() ⇒ commit
+ │                                                     "Setup Profile <name>" ⇒ setup.set_first_profile() ⇒ commit
  ├─ PreToolUse Bash ──────▶ guard-bash.sh · guard-deploy.sh · sdlc hook pre-bash   (exit 2 = block)
  ├─ PreToolUse Edit|Write ▶ guard-files.sh · guard-tests.sh · sdlc hook pre-edit
  ├─ PostToolUse Edit|Write▶ sdlc hook post-edit (schema) · post-edit-format.sh (make format/lint)
@@ -16,7 +17,9 @@ lib/sdlc_engine/
   approvals.py   approve(), close(), audit() (CI)
   guards.py      check_edit() (simulates Edit/Write/MultiEdit), check_bash() (static write detection)
   rules.py       the rule registry (defaults/rules, rules.md), `sdlc why`, exact-command allowances
-  lifecycle.py   install-state, adoption (defaults/scaffold-history.json), list-installed/repair/upgrade/uninstall
+  lifecycle.py   install-state, adoption (defaults/scaffold-history.json), scaffold parts (defaults/scaffold-parts),
+                 list-installed/repair/upgrade/uninstall
+  setup.py       guided setup: preflight, plan, profiles, human steps; set_first_profile() for the typed phrase
   migrations.py  migrations upgrade lists (legacy-approvals: human-only)
   cli.py         `sdlc` commands and the hook dispatcher
 ```
@@ -34,7 +37,11 @@ lib/sdlc_engine/
 - **Stdlib only.** Hooks run on every tool call, so the engine needs no `pip install` and starts fast.
 - **Approval through the prompt.** A tool call can't author a user prompt, so a phrase typed as the whole prompt is the
   cleanest proof of human intent available inside a session. `CLAUDECODE=1` is set for hooks too, so the CLI's
-  `approve` refuses it, while the prompt hook calls the engine in-process.
+  `approve` refuses it, while the prompt hook calls the engine in-process. A repo's **first profile** is set the same
+  way (`Setup Profile <name>`), so `solo` needs no terminal: [ADR 0003](adr/0003-first-profile-by-typed-phrase.md).
+- **Core scaffold, opt-in parts.** `defaults/scaffold-parts` assigns every scaffold file to one part. `core` (the gates,
+  the lock, the CI audit) is always installed and holds every file the security model relies on; nothing in it runs on
+  a schedule or reads a secret. Install-state records the opt-in parts, and the lifecycle commands never add one.
 
 ## Threat model
 | Threat | Mitigation | Residual |
@@ -55,7 +62,8 @@ lib/sdlc_engine/
 | The agent edits its own instructions in states 1-3 | the read-only exemption covers docs, README, CHANGELOG, CONTRIBUTING and SECURITY only. CLAUDE.md, REVIEW.md, `skills/` and `agents/` are locked | per-repo `readonly-exempt` can widen it. It's human-owned |
 | An unpinned plugin in privileged CI jobs | the scaffold fetches the plugin at `ZOUJ_SDLC_REF` (`v<version>` from `sdlc init`) and loads it with `--plugin-dir` | a mutable tag. Pin a full sha |
 | Static shell parsing misses a form | heredoc- (incl. arithmetic and `$'…'`), quote-, glob-, brace-, variable-, `$PWD`- and `find`-aware parsing, recursion into `bash -c`/`eval`, and the known env-marker and wrapper forms | parsing can never be complete: `python -c`, base64-decoded commands, new shells, targets built by `for`, `read`, `printf -v` or `$(echo …)`, variables set outside the command, other archivers (`bsdtar`, `7z`), env markers overridden by `printf -v`/`read`/`+=`, subcommands assembled from pieces (`$'approve'`, `app$(echo r)ove`, `${a}ove`), `base64 -d | bash`, `bash < file`. More in [Known gaps (intent 0006)](#known-gaps-intent-0006). The key policy is what keeps a missed form from opening a gate |
-| The agent uses `sdlc setup` to downgrade the profile or write a human-owned file | run under the agent (`CLAUDECODE` / `CLAUDE_CODE_CHILD_SESSION`), setup never changes an existing `.aiops/config.json` or `.claude/settings.json`, creates a missing config with init's defaults, and prints the rest as human steps. It and `init` write only regular files at the top of a git repo (git's `GIT_DIR`/`GIT_WORK_TREE`-style variables are refused), never through a link, and never in `$HOME`, `~/.claude` or a toolchain path. Under the agent, `init --force` keeps every file the guard won't let the agent write. They scaffold only the repo they run in (a `CLAUDE_PROJECT_DIR` naming another repo is refused), and home is taken from the account record as well as `$HOME`. The pre-bash guard allows the agent's `sdlc init|setup` only in the session's repo (`CLAUDE_PROJECT_DIR`), without `cd`, `-C`, `--chdir`, `-execdir` or `GIT_*`/`CLAUDE_PROJECT_DIR`/`HOME` settings | the check reads the env markers, so an interpreter that strips them runs setup as the human; dynamic command words (`$x setup`), `bash -c "$(…)"`-built commands, brace-expanded `{cd,…}`, `unset CLAUDE_PROJECT_DIR` and other directory-changing wrappers aren't parsed. Setup flags an uncommitted or staged human-owned file whose content isn't what it writes, but a file already committed counts as reviewed, so one the agent committed before `init` (when the guards are off) isn't flagged: a **deterrent**. CI reads the config from the base ref, so a downgrade can't open a gate |
+| The agent uses `sdlc setup` to downgrade the profile or write a human-owned file | run under the agent (`CLAUDECODE` / `CLAUDE_CODE_CHILD_SESSION`), setup never changes an existing `.aiops/config.json` or `.claude/settings.json`, creates a missing config with init's defaults (no profile), and prints the rest as human steps. The first profile comes from the human's typed `Setup Profile <name>` (next row), never from the agent's setup. By default it writes the core part only, so no scheduled or secret-reading workflow arrives unless the human asks for `--with <part>`. It and `init` write only regular files at the top of a git repo (git's `GIT_DIR`/`GIT_WORK_TREE`-style variables are refused), never through a link, and never in `$HOME`, `~/.claude` or a toolchain path. Under the agent, `init --force` keeps every file the guard won't let the agent write. They scaffold only the repo they run in (a `CLAUDE_PROJECT_DIR` naming another repo is refused), and home is taken from the account record as well as `$HOME`. The pre-bash guard allows the agent's `sdlc init|setup` only in the session's repo (`CLAUDE_PROJECT_DIR`), without `cd`, `-C`, `--chdir`, `-execdir` or `GIT_*`/`CLAUDE_PROJECT_DIR`/`HOME` settings | the check reads the env markers, so an interpreter that strips them runs setup as the human; dynamic command words (`$x setup`), `bash -c "$(…)"`-built commands, brace-expanded `{cd,…}`, `unset CLAUDE_PROJECT_DIR` and other directory-changing wrappers aren't parsed. Setup flags an uncommitted or staged human-owned file whose content isn't what it writes, but a file already committed counts as reviewed, so one the agent committed before `init` (when the guards are off) isn't flagged: a **deterrent**. CI reads the config from the base ref, so a downgrade can't open a gate |
+| The first profile is set without the human (`Setup Profile <name>`) | the prompt hook accepts the phrase only as the *whole* prompt (a tool call can't author one), and only while nothing depends on a profile: `.aiops/config.json` is a regular file equal to the scaffold template, no artifact is Approved or Closed, and no commit on any ref carries an `AIOps-Approval:` trailer (the agent may set an artifact back to Draft, so the files alone don't prove it). It writes the template's keys plus that profile's, exactly what a terminal `setup --profile` writes into a new config, and nothing else. The file is committed alone, unsigned, as `chore(aiops): Setup Profile <name>` with `AIOps-Profile:` and `Set-By:` trailers, so the choice is one visible commit in the adoption PR. The agent's own paths are unchanged: its `setup`, Edit, Write and shell writes still can't touch the config. A set profile changes only in the human's terminal ([ADR 0003](adr/0003-first-profile-by-typed-phrase.md)) | the hook can't tell who typed a prompt: Claude Code sets `CLAUDECODE` and `CLAUDE_CODE_CHILD_SESSION` for every session's hooks, a human's included. An agent that starts a session of its own (`claude -p "Setup Profile solo"`) can set `solo` in a repo that has no profile and nothing approved ([Known gaps](#known-gaps-intent-0006)). CI reads the config from the base ref, so on a repo that already has one, the change still needs a reviewed PR |
 | A false-positive allowance lifts a gate | `.aiops/config/allowed-commands` is human-owned (`.aiops/config*`, CODEOWNERS). Only `heuristic` rules (G-ENV-03, G-BASH-07) consult it, through `rules.allowed`: an exact, single-line, byte-equal command, one rule per entry, every other rule still evaluated; never a whole-environment dump. A symlinked file is ignored, and doctor never echoes an unrecognised line. Gate, secret, toolchain and safety rules call `block` directly and never reach it. `doctor` and `validate --ci` (head and base) reject other entries | an allowed `sudo` command can write root-owned PATH directories (`sdlc why G-BASH-07` warns) |
 | The agent edits install-state to steer a lifecycle command | `.aiops/install-state.json` is in `defaults/protected-paths` and `guards.GUARDED_RE` (Edit/Write and shell writes blocked) and under CODEOWNERS. It never decides a gate (CI ignores it) | none for the parsed forms |
 | `uninstall` as a deletion primitive | human-only (CLI refuses under the agent; the pre-bash guard blocks a real `uninstall`, G-GATE-07). A path is removed only if it is recorded, a scaffold path of some release, and unmodified; `.aiops/NNNN-*` and `.aiops/state` are refused whatever install-state says; removal never follows a link | a human who runs it removes the files it lists (`--dry-run` shows them) |
@@ -68,8 +76,9 @@ status check (better: a required workflow), require CODEOWNERS review on `.aiops
 protect your signing key.
 
 ## Known gaps (intent 0006)
-Found in the 0005 reviews and not yet closed. None of them is weaker than 0.2.0-alpha.3; each is a form static
-parsing doesn't see yet.
+Found in the 0005 reviews and not yet closed, plus one accepted in the 0007 spec (the last entry). The 0005 ones are
+no weaker than 0.2.0-alpha.3; each is a form static parsing doesn't see yet. The 0007 one arrived with the profile
+phrase.
 - **Git config keys and variables** not yet known to the guard: `protocol.ext.allow`, `core.gitProxy`,
   `remote.*.uploadpack`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT/KEY/VALUE`, and `GIT_SSH` program files.
 - **Git commands:** plumbing (`update-index`, `checkout-index`, `read-tree`), `switch`/`checkout <branch>`, `reset`,
@@ -89,6 +98,12 @@ parsing doesn't see yet.
 - **Environment dumps** by `export`, `declare`, `set` or `ps e`, and G-ENV-05 false positives when a `/proc` read and
   an unrelated glob share one line.
 - **The human-only checks** (`approve`, `close`, …) in repos without `.aiops/`.
+- **A phrase typed into a session the agent starts.** `claude -p "Setup Profile solo"`, or `claude -p "Plan Approved
+  0001"`, reaches the prompt hook as a prompt, and no environment marker separates it from a human's (probed
+  2026-11-10: a human's own session shows both markers). What bounds it today: the profile phrase works only in a repo
+  with the untouched template config and nothing approved (in its files or its history), and leaves a visible commit; an approval phrase still needs
+  the human's signature under `team` and `strict`. Under `solo` nothing does. To add: a pre-bash rule against
+  starting a Claude session that carries a gate or profile phrase (found in the 0007 spec, not in a 0005 review).
 
 ## Approval isolation
 An approval is only as strong as the human-only step behind its signature. From strongest to weakest:

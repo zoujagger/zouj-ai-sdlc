@@ -11,7 +11,7 @@ Input: `$ARGUMENTS`
 You are in a **read-only** state. Only `.aiops/` and docs can be written.
 
 1. **Locate.** Run `sdlc status`. If an intent already covers this need, offer to continue that one (`sdlc use NNNN`) instead of creating a new one.
-2. **Gather the source.** For `#N`, run `gh issue view N`. For `alert:<metric>`, read `ops/bands.yaml` and run `python3 scripts/check-bands.py --metric <metric>`. Otherwise, use the text as given.
+2. **Gather the source.** For `#N`, run `gh issue view N`. For `alert:<metric>`, read `ops/bands.yaml` and run `python3 scripts/check-bands.py --metric <metric>`; if those files aren't there, the `maintain` part isn't installed: say so, name `sdlc setup --with maintain`, and use the alert text as given. Otherwise, use the text as given.
 3. **Clarification interview (targeted).** If the need is ambiguous, ask **at most 5 questions in one round** (use AskUserQuestion when the options are clear), most decision-relevant first. Cover only what's unclear:
    - the problem, who has it, and the evidence
    - the observable outcome that means "done"

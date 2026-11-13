@@ -1,4 +1,5 @@
 """Validate an artifact against schemas/<kind>.json plus cross-artifact rules (AC coverage, ids)."""
+
 import re
 
 from . import artifacts as A
@@ -37,13 +38,15 @@ def validate(d, kind, text=None):
 
 
 def _has_acs(d, a, secs):
-    return [] if A.ac_ids(secs.get("Acceptance criteria", "")) else \
-        ["`## Acceptance criteria` has no testable criteria with ids (AC-1, AC-2, ...)"]
+    return (
+        []
+        if A.ac_ids(secs.get("Acceptance criteria", ""))
+        else ["`## Acceptance criteria` has no testable criteria with ids (AC-1, AC-2, ...)"]
+    )
 
 
 def _has_steps(d, a, secs):
-    return [] if A.checkboxes(secs.get("Steps", "")) else \
-        ["`## Steps` has no checkbox steps (`- [ ] S1 ...`)"]
+    return [] if A.checkboxes(secs.get("Steps", "")) else ["`## Steps` has no checkbox steps (`- [ ] S1 ...`)"]
 
 
 def _covers_spec_acs(d, a, secs):
@@ -53,8 +56,11 @@ def _covers_spec_acs(d, a, secs):
     wanted = A.ac_ids(A.sections(A.parse(spec).body).get("Acceptance criteria", ""))
     have = set(A.ac_ids(a.body))
     missing = [ac for ac in wanted if ac not in have]
-    return [f"does not reference {', '.join(missing)} from spec.md (every AC needs a test definition / verdict)"] \
-        if missing else []
+    return (
+        [f"does not reference {', '.join(missing)} from spec.md (every AC needs a test definition / verdict)"]
+        if missing
+        else []
+    )
 
 
 def _valid_verdict(d, a, secs):
@@ -66,5 +72,9 @@ def _valid_verdict(d, a, secs):
     return errs
 
 
-CHECKS = {"has_acceptance_criteria": _has_acs, "has_steps": _has_steps,
-          "covers_spec_acs": _covers_spec_acs, "valid_verdict": _valid_verdict}
+CHECKS = {
+    "has_acceptance_criteria": _has_acs,
+    "has_steps": _has_steps,
+    "covers_spec_acs": _covers_spec_acs,
+    "valid_verdict": _valid_verdict,
+}

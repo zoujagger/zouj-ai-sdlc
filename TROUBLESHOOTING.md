@@ -10,8 +10,22 @@ its fix. If you're stuck, `sdlc feedback` prints the issue links and a summary t
 - **The approval needs your key.** Under `team` (a passphrase key) the prompt can't ask for the passphrase. Claude
   then prints the exact command to run in **your own terminal**:
   `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan`.
-  It refuses inside Claude Code, the `!` prefix included, because approving is a human act.
+  It refuses inside Claude Code, the `!` prefix included, because approving is a human act. Lost the path?
+  `sdlc where` prints it, and `sdlc status` shows it as `Your terminal:` while a gate waits on your key.
 - **Check the gate:** `sdlc status` shows `intent ✓ · spec … · plan …`.
+
+## Typing `Setup Profile solo` (or `team`, `strict`) does nothing, or says `profile NOT set`
+- **Nothing happens:** the phrase must be the whole message, and the plugin must be loaded in that session, as for an
+  approval. In a repo without `.aiops/` the phrase is ignored: run `/zouj-ai-sdlc:setup` first.
+- **"unknown profile" or "no profile was named":** the names are `solo`, `team` and `strict`.
+- **"a profile is already set here":** the phrase sets a repo's **first** profile only. To change one, run
+  `sdlc setup --profile <name>` in your own terminal (`sdlc where` prints the command with its full path), then
+  commit `.aiops/config.json` through a reviewed PR.
+- **"config.json was edited after setup":** the phrase only fills in an untouched config. Use the terminal command
+  above, which shows the change as a diff before writing.
+- **"… is already Approved" (or Closed):** a gate was opened under the default profile, so changing how approvals are
+  proven is now a deliberate change: the terminal command again.
+- **"committing it failed":** the profile is in `.aiops/config.json` in your working tree. Commit that file alone.
 
 ## "approval signing: …" in doctor, or an approval is refused
 - **"no passphrase" / "loaded in ssh-agent":** the `team` profile needs a human for every signature. Use a dedicated
@@ -28,8 +42,9 @@ its fix. If you're stuck, `sdlc feedback` prints the issue links and a summary t
   `git config --local --unset <key>`.
 - **"not signed by an allow-listed signer" in CI:** add your public key to `.aiops/config/allowed-signers`, then land
   it through a reviewed PR. CI trusts the *target* branch's list.
-- **Signing ceremony too heavy for a solo project?** Run `sdlc setup --profile solo` in your terminal. Approvals are
-  then a typed phrase plus an unsigned commit. The workflow and the gates stay the same.
+- **Signing ceremony too heavy for a solo project?** In a repo with no profile yet, type `Setup Profile solo`. If a
+  profile is set, run `sdlc setup --profile solo` in your terminal (`sdlc where` prints the full command). Approvals
+  are then a typed phrase plus an unsigned commit. The workflow and the gates stay the same.
 
 ## `git push` fails
 - **"could not read Username":** git has no credential helper. Run `gh auth setup-git`, or configure any helper.
@@ -81,6 +96,19 @@ Setup stops before writing anything when:
 
 `!` rows (claude, gh, credential helper, signing) are warnings: setup continues and lists the fix.
 
+## A workflow, `ops/bands.yaml` or another scaffold file isn't there
+Since 0.2.0-alpha.4, setup and `init` install the core scaffold only: what the gates, the read-only lock and the CI
+audit need. The rest is opt-in, by part:
+- `review`: Claude's PR review and `@claude` workflows
+- `maintain`: `ops/bands.yaml`, the Maintain and scheduled-scan workflows, runbooks, postmortems, retros
+- `deploy`: `deploy.yml` and release notes
+- `governance`: policy examples, `docs/branch-protection.md`, `docs/adr/`, Dependabot
+- `issues`: issue forms and issue triage
+
+Add one with `sdlc setup --with <part>` (comma-separated, or `--with all`). `sdlc list-installed` ends with the parts
+that aren't installed, and `sdlc setup --dry-run` names them too. `--with` only adds, and no command removes a part. A repo set up
+before alpha.4 keeps every part.
+
 ## Setup shows `!` rows in its plan and "Review before committing"
 A human-owned file (such as `.aiops/config/allowed-signers` or `.claude/settings.json`) exists, no commit has it,
 and it holds something setup doesn't write, or its staged version isn't what's on disk. Setup didn't write it and
@@ -110,9 +138,11 @@ pager and hooks. Setup's checks, and any git command you run in that checkout, c
   diff against the new template. Merge what you want by hand.
 - **`upgrade` run by Claude left files for you:** human-owned files (workflows, `.claude/settings.json`,
   `.aiops/config*`, CODEOWNERS) and code under the read-only lock are yours. Run the printed
-  `<python> -I <plugin>/bin/sdlc upgrade` in your own terminal, then commit.
+  `<python> -I <plugin>/bin/sdlc upgrade` in your own terminal (`sdlc where` prints that prefix), then commit.
 - **`! … ZOUJ_SDLC_REF is not a literal`:** your workflow sets the ref with an expression; upgrade leaves it
   alone. Set it to the printed sha yourself.
+- **`upgrade` didn't create a new workflow:** it belongs to a part this repo doesn't have. `upgrade` and `repair` never
+  add a part: `sdlc setup --with <part>` does.
 - **A file shows `declined`:** it was part of the scaffold you adopted, but you had removed it, so upgrade and repair
   never re-create it. To get it back, copy it from the plugin's `templates/scaffold/`.
 - **`! … pinning the tag`:** upgrade couldn't find the plugin's commit sha (no `installed_plugins.json` entry, or an

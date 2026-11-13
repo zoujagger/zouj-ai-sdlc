@@ -2,6 +2,7 @@
 
 Stdlib only: hooks import this on every tool call, so it must load fast and never need pip.
 """
+
 import hashlib
 import re
 from dataclasses import dataclass
@@ -38,7 +39,7 @@ def parse(text):
             continue
         val = re.sub(r"\s+#.*$", "", val.strip())  # trailing "# comment"; a leading "#12" is a value
         front[key.strip()] = val.strip().strip("\"'")
-    return Artifact(front, text[m.end():], True)
+    return Artifact(front, text[m.end() :], True)
 
 
 def set_fields(text, updates):
@@ -54,7 +55,7 @@ def set_fields(text, updates):
         if key in todo and not line.lstrip().startswith("#"):
             lines[i] = f"{key}: {todo.pop(key)}"
     lines += [f"{k}: {v}" for k, v in todo.items()]
-    return "---\n" + "\n".join(lines) + "\n---\n" + text[m.end():]
+    return "---\n" + "\n".join(lines) + "\n---\n" + text[m.end() :]
 
 
 def sections(body):

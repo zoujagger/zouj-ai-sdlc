@@ -1,5 +1,6 @@
 """The guard rule registry: defaults/rules (one line per rule, greppable by the bash hooks) and defaults/rules.md
 (the reason and the safe alternative per rule). `sdlc why <id>` reads both."""
+
 import difflib
 import re
 from pathlib import Path
@@ -10,7 +11,7 @@ from .machine import PLUGIN_ROOT
 REGISTRY = PLUGIN_ROOT / "defaults" / "rules"
 DOCS = PLUGIN_ROOT / "defaults" / "rules.md"
 CLASSES = ("gate", "secret", "toolchain", "safety", "heuristic", "retired")
-ALLOWABLE = {"heuristic"}            # the only class an exact-command allowance can lift
+ALLOWABLE = {"heuristic"}  # the only class an exact-command allowance can lift
 ID_RE = re.compile(r"^G-[A-Z]+-\d\d$")
 
 
@@ -65,11 +66,12 @@ def load():
     """{id: Rule} with the rules.md text attached."""
     reg = parse_registry(REGISTRY.read_text())
     docs = parse_docs(DOCS.read_text()) if DOCS.is_file() else {}
-    return {rid: r._replace(why=docs.get(rid, ("", ""))[0], instead=docs.get(rid, ("", ""))[1])
-            for rid, r in reg.items()}
+    return {
+        rid: r._replace(why=docs.get(rid, ("", ""))[0], instead=docs.get(rid, ("", ""))[1]) for rid, r in reg.items()
+    }
 
 
-STAGES = {   # the stage column of defaults/rules, as `sdlc why` prints it
+STAGES = {  # the stage column of defaults/rules, as `sdlc why` prints it
     "intent-spec-plan": "the human gates (Intent, Spec, Plan Approved)",
     "read-only-lock": "the read-only lock in states 1-3",
     "artifacts": "the artifacts and .aiops/ (the audit trail)",
@@ -91,27 +93,32 @@ def why(rid):
     r = reg.get(rid)
     if r is None:
         near = difflib.get_close_matches(rid, list(reg), n=5, cutoff=0.6)
-        return 1, f"unknown rule id {rid!r}." + (f" Did you mean: {', '.join(near)}?" if near else
-                                                  " The ids are listed in the plugin's defaults/rules.")
+        return 1, f"unknown rule id {rid!r}." + (
+            f" Did you mean: {', '.join(near)}?" if near else " The ids are listed in the plugin's defaults/rules."
+        )
     if r.cls in ALLOWABLE:
-        allow = (f"allowable class: the human can let one exact command through this rule by adding the line "
-                 f"`{r.id} <the exact command>` to .aiops/config/allowed-commands (human-owned, under CODEOWNERS). "
-                 "Only that command, and only this rule: every other rule still applies.")
+        allow = (
+            f"allowable class: the human can let one exact command through this rule by adding the line "
+            f"`{r.id} <the exact command>` to .aiops/config/allowed-commands (human-owned, under CODEOWNERS). "
+            "Only that command, and only this rule: every other rule still applies."
+        )
     else:
         allow = f"no allowance: {r.cls} rules can't be lifted (there is no per-rule disable switch)."
-    return 0, "\n".join([
-        f"{r.id}: {r.summary}",
-        f"  class: {r.cls}",
-        f"  protects: {STAGES.get(r.stage, r.stage)}",
-        f"  why: {r.why}",
-        f"  instead: {r.instead}",
-        f"  allowance: {allow}",
-    ])
+    return 0, "\n".join(
+        [
+            f"{r.id}: {r.summary}",
+            f"  class: {r.cls}",
+            f"  protects: {STAGES.get(r.stage, r.stage)}",
+            f"  why: {r.why}",
+            f"  instead: {r.instead}",
+            f"  allowance: {allow}",
+        ]
+    )
 
 
-ALLOWANCES = ".aiops/config/allowed-commands"     # human-owned: protected by .aiops/config* and CODEOWNERS
+ALLOWANCES = ".aiops/config/allowed-commands"  # human-owned: protected by .aiops/config* and CODEOWNERS
 ENTRY_RE = re.compile(r"^(\S+)(?:[ \t]+(.*?))?[ \t]*$")
-CONTROL_RE = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")   # any control character but tab: no multi-line, no \r tricks
+CONTROL_RE = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")  # any control character but tab: no multi-line, no \r tricks
 
 
 def _entries(text):
@@ -127,9 +134,22 @@ def _entries(text):
 
 # G-ENV-03 allowances accept only commands that can't print the whole environment (0005, gap 6): `printenv NAME…`,
 # or a command that doesn't run env/printenv at all. Anything else is refused: no list of known dumps to outgrow.
-SAFE_ENV_COMMANDS = {"ls", "cd", "cat", "head", "tail", "wc", "file", "stat", "du", "tree",
-                     "virtualenv"}                    # commands that never run their arguments (not source or .)
-SECRET_NAME_RE = re.compile(r"(KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH|_URL$|_URI$|DSN$|COOKIE|SESSION|PWD$|CONN|PROXY)", re.I)
+SAFE_ENV_COMMANDS = {
+    "ls",
+    "cd",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "file",
+    "stat",
+    "du",
+    "tree",
+    "virtualenv",
+}  # commands that never run their arguments (not source or .)
+SECRET_NAME_RE = re.compile(
+    r"(KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH|_URL$|_URI$|DSN$|COOKIE|SESSION|PWD$|CONN|PROXY)", re.I
+)
 ENV_WORD_RE = re.compile(r"(^|/)(env|printenv)$")
 SUBSTITUTION_RE = re.compile(r"\$\(|`|<\(|>\(|[<>]")
 
@@ -139,6 +159,7 @@ def safe_env_command(command):
     or doesn't mention env/printenv as a word, or is one of SAFE_ENV_COMMANDS (or `python -m venv`) with env only
     as an argument. Substitutions and redirections are refused outright."""
     import shlex
+
     if SUBSTITUTION_RE.search(command):
         return False
     for part in re.split(r"[;&|\n(){}]+", command):
@@ -148,7 +169,7 @@ def safe_env_command(command):
             return False
         if not words:
             continue
-        if re.match(r"^[A-Za-z_]\w*=", words[0]):      # LD_PRELOAD=…, BASH_ENV=…: an assignment changes what runs
+        if re.match(r"^[A-Za-z_]\w*=", words[0]):  # LD_PRELOAD=…, BASH_ENV=…: an assignment changes what runs
             return False
         name, args = Path(words[0]).name, words[1:]
         if name == "printenv":
@@ -156,7 +177,7 @@ def safe_env_command(command):
                 continue
             return False
         if name in SAFE_ENV_COMMANDS or (name in ("python", "python3") and args[:2] == ["-m", "venv"]):
-            continue                                  # every simple command must be safe (review round 1)
+            continue  # every simple command must be safe (review round 1)
         return False
     return True
 
@@ -176,7 +197,7 @@ def allowed(root, rule_id, command):
     cmd = (command or "").strip(" \t\n")
     if not cmd or CONTROL_RE.search(cmd):
         return False
-    if rule_id == "G-ENV-03" and not safe_env_command(cmd):   # could print every token: never allowable
+    if rule_id == "G-ENV-03" and not safe_env_command(cmd):  # could print every token: never allowable
         return False
     f = Path(root) / ALLOWANCES
     try:
@@ -192,18 +213,22 @@ def allowance_problems(text):
     reg, probs = load(), []
     for n, rid, cmd in _entries(text):
         r = reg.get(rid)
-        if not ID_RE.match(rid):                          # never echo text that isn't a rule id
+        if not ID_RE.match(rid):  # never echo text that isn't a rule id
             probs.append(f"line {n}: doesn't start with a rule id (format: `<rule id> <exact command>`)")
         elif r is None:
             probs.append(f"line {n}: unknown rule id {rid} (see `sdlc why`)")
         elif r.cls not in ALLOWABLE:
-            probs.append(f"line {n}: {rid} is a {r.cls} rule; only heuristic rules "
-                         f"({', '.join(sorted(k for k, v in reg.items() if v.cls in ALLOWABLE))}) can be allowed")
+            probs.append(
+                f"line {n}: {rid} is a {r.cls} rule; only heuristic rules "
+                f"({', '.join(sorted(k for k, v in reg.items() if v.cls in ALLOWABLE))}) can be allowed"
+            )
         elif not cmd:
             probs.append(f"line {n}: {rid} has no command (format: `<rule id> <exact command>`)")
         elif CONTROL_RE.search(cmd):
             probs.append(f"line {n}: the command contains a control character")
         elif rid == "G-ENV-03" and not safe_env_command(cmd):
-            probs.append(f"line {n}: G-ENV-03 allows only `printenv NAME…` or a command that doesn't run env/printenv "
-                         "(it could print the whole environment)")
+            probs.append(
+                f"line {n}: G-ENV-03 allows only `printenv NAME…` or a command that doesn't run env/printenv "
+                "(it could print the whole environment)"
+            )
     return probs
