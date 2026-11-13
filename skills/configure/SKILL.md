@@ -15,7 +15,8 @@ A profile changes only **how** a human approval is proven, never whether a gate 
 - `strict`: an `sk-` key touch, plus CODEOWNERS on `.aiops/`
 
 The profile and key policy live in `.aiops/config.json`, which is human-owned. This skill only reads and previews.
-The human applies the change: by the typed phrase for a repo's first profile, in their own terminal after that.
+The human applies the change: by typing `/zouj-ai-sdlc:setup <profile>` for a repo's first profile, in their own
+terminal after that.
 
 1. **Where things stand.** Run `sdlc list-installed` and `sdlc doctor`. Show the human:
    - the profile and key policy, from doctor's `profile:` row

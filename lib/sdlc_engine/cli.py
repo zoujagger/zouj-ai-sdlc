@@ -131,7 +131,7 @@ def terminal_lines(root, st=None):
     signing_problem may run ssh-keygen, so it is asked only in that second case."""
     from . import lifecycle, setup
 
-    if setup.no_profile_yet(root)[0]:
+    if setup.no_profile_yet(root, history=False)[0]:  # files only: no history walk on every status (0007 r6)
         return [
             f"- Your terminal: {lifecycle.human_command('').rstrip()}",
             "- No profile chosen yet: the human types `/zouj-ai-sdlc:setup solo|team|strict` as the whole prompt",
@@ -174,12 +174,17 @@ def cmd_status(root, args):
     if as_json:
         out(json.dumps([r.as_dict() for r in rows], indent=2))
         return 0
+    pending = "\n".join(terminal_lines(root))  # a human step pending with no intent active (0007 AC-10)
     if not rows:
         out('No intents yet. Start one: /zouj-ai-sdlc:intent "<need>"  (or: sdlc new <slug>)')
+        if pending:
+            out(pending)
         return 0
     out("| Intent | State | Detail | Next |\n|---|---|---|---|")
     for r in rows:
         out(f"| {r.dir.name} | {r.state} {r.name} | {r.detail} | {r.next} |")
+    if pending:
+        out(pending)
     return 0
 
 

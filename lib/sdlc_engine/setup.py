@@ -382,7 +382,7 @@ def owned_changes(root, profile):
     cfg = _json(f)
     if cfg is not None:
         # No profile yet: compare with the file itself, not the engine defaults (which equal team's keys), so a first
-        # `--profile team` writes the template plus team's keys, what the typed phrase writes (0007 review r2 L1).
+        # `--profile team` writes the template plus team's keys, what the typed setup command writes (0007 review r2 L1).
         base = cfg if "profile" not in cfg else {**config(root), **cfg}
         want = {k: v for k, v in PROFILE_CONFIG[profile].items() if base.get(k) != v}
         if want:
@@ -696,13 +696,14 @@ def steps_for_human(root, profile, pending, review=(), install=True):
 # ---------------------------------------------------------------- the first profile, set by the typed setup command
 
 
-def no_profile_yet(root):
+def no_profile_yet(root, history=True):
     """(True, "") while this repo has no profile and nothing depends on one, else (False, why). That is when the
     human's typed `/zouj-ai-sdlc:setup <name>` may set the first profile:
     - .aiops/config.json is a regular file that still equals the scaffold template (no `profile` key, nothing edited)
     - no artifact is Approved or Closed, and no commit on any ref carries an `AIOps-Approval:` trailer: no gate has
       been opened under the default yet.
-    Changing a profile later, a downgrade included, is a run in the human's own terminal."""
+    Changing a profile later, a downgrade included, is a run in the human's own terminal. `history=False` skips the
+    `git log --all` walk: the state card only hints, and the command itself always walks it."""
     from . import lifecycle
 
     f = root / ".aiops" / "config.json"
@@ -732,7 +733,7 @@ def no_profile_yet(root):
                     f".aiops/{d.name}/{kind}.md is already {status}: a gate has been opened under the "
                     "default profile, so changing it now is a deliberate change"
                 )
-    why = approval_in_history(root)
+    why = approval_in_history(root) if history else None
     return (False, why) if why else (True, "")
 
 
@@ -824,7 +825,13 @@ def set_first_profile(root, name, cwd=None):
     try:
         cli.write_file(root, rel, (json.dumps({**template, **PROFILE_CONFIG[name]}, indent=2) + "\n").encode())
     except OSError as exc:
-        return False, f"profile NOT set: {rel} could not be written ({exc}). Nothing changed."
+        done_before = (
+            f" The core scaffold was written first and stays: {', '.join(created)}; type the command again once the "
+            "cause is fixed."
+            if created
+            else " Nothing changed."
+        )
+        return False, f"profile NOT set: {rel} could not be written ({exc}).{done_before}"
     if created:  # install-state records the config as written, profile included, as a terminal run does (r5)
         lifecycle.record(root, [rel], profile=name)
     title = f"chore(aiops): Setup Profile {name}"
@@ -837,8 +844,16 @@ def set_first_profile(root, name, cwd=None):
             if done[1]
             else ""
         )
-    pending, review = (owned_changes(root, name), unreviewed(root)) if created else ({}, ())
+    # Review on both paths (0007 r6): in a repo the agent scaffolded, a human-owned file it changed while the gates
+    # were off is named here, before the steps, so the human sees it directly, and stays out of the suggested commit.
+    pending, review = (owned_changes(root, name) if created else {}), unreviewed(root)
     steps = steps_for_human(root, name, pending, review, install=False)
+    check = (
+        "Review before committing (human-owned, in no commit, not what setup writes; left out of the commit "
+        "below): " + ", ".join(review) + "\n"
+        if review
+        else ""
+    )
     files = [f for f in created if f != ".gitignore"]
     made = (
         f"Created the core scaffold ({len(files)} files; no existing file changed"
@@ -853,6 +868,7 @@ def set_first_profile(root, name, cwd=None):
         f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n{made}"
         + _identity_note(root)
         + _trust_lists(root)
+        + check
         + "Relay the remaining human steps:\n"
         + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1))
     )
@@ -886,5 +902,12 @@ def _trust_lists(root):
                 if ln.strip() and not ln.lstrip().startswith("#")
             ]
             if lines:
-                out.append(f"{rel} (check that you trust every line):\n" + "\n".join(f"    {ln}" for ln in lines))
+                out.append(
+                    f"{rel} (check that you trust every line):\n" + "\n".join(f"    {_shown(ln)}" for ln in lines)
+                )
     return "".join(f"{block}\n" for block in out)
+
+
+def _shown(line):
+    """line with every non-printable character escaped (\\x1b…), so a planted line can't hide itself in a terminal."""
+    return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in line)

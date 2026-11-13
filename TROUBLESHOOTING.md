@@ -27,7 +27,10 @@ its fix. If you're stuck, `sdlc feedback` prints the issue links and a summary t
   a subdirectory, then type the command again.
 - **"this repo's own git config sets …":** a repo-local key that can run code (such as `core.fsmonitor` or
   `core.hooksPath`) is set. Check you set it yourself, remove it with `git config --local --unset <key>`, and type
-  the command again.
+  the command again. Tools set some of these on purpose (husky's `core.hooksPath`, Git LFS's `filter.lfs.*` and
+  `lfs.*`, custom `diff.*`/`merge.*` drivers): unset them for the command, or run
+  `sdlc setup --profile <p>` in your own terminal instead, then set them back. `sdlc approve` and `sdlc doctor`
+  refuse the same keys, so a team profile needs them unset anyway.
 - **"a profile is already set here":** the command sets a repo's **first** profile only. To change one, run
   `sdlc setup --profile <name>` in your own terminal (`sdlc where` prints the command with its full path), then
   commit `.aiops/config.json` through a reviewed PR.

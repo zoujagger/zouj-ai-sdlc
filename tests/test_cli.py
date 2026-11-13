@@ -717,7 +717,7 @@ class Card(RepoCase):
     def test_terminal_line_when_no_profile_chosen(self):
         shutil.rmtree(self.root / ".aiops")
         self.assertEqual(self.run_sdlc("init").returncode, 0)  # the template config: no profile
-        for text in (self.session(),):  # no active intent yet
+        for text in (self.card(), self.session()):  # no intent yet: `sdlc status` says it too (0007 r6, AC-10)
             self.assertIn(f"- Your terminal: {terminal_command()}", text)
             self.assertIn("types `/zouj-ai-sdlc:setup solo|team|strict`", text)
         self.d.mkdir()
@@ -756,6 +756,18 @@ class Card(RepoCase):
         (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
         with mock.patch.object(approvals, "signing_problem", return_value=None):
             self.assertEqual(cli.terminal_lines(self.root, evaluate(self.root, self.d)), [])  # the phrase signs
+
+    def test_card_runs_no_history_walk(self):
+        # 0007 r6 LOW: the card's no-profile check reads files only; the `git log --all` walk is the command's
+        from unittest import mock
+
+        from sdlc_engine import cli, setup
+
+        shutil.rmtree(self.root / ".aiops")
+        self.assertEqual(self.run_sdlc("init").returncode, 0)  # the template config: no profile
+        with mock.patch.object(setup, "approval_in_history", side_effect=AssertionError("history walked")):
+            lines = cli.terminal_lines(self.root)
+        self.assertTrue(any("/zouj-ai-sdlc:setup solo|team|strict" in line for line in lines), lines)
 
     def test_no_terminal_line_otherwise(self):
         self.assertNotIn("Your terminal", self.session())  # no intent.md yet: waiting on the agent

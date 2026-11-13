@@ -1238,6 +1238,28 @@ class FirstRun(SetupCase):
         self.assertIn("CLAUDE.md", msg)
         self.assertNotIn("Nothing was written", msg)
 
+    def test_config_write_failure_after_the_scaffold_is_reported(self):
+        # 0007 r6 LOW: if the profile write fails after the scaffold was written, the reply says what was written
+        from sdlc_engine import setup
+
+        d = self.repo("cfgfail")
+        os.chdir(d)
+        real, seen = cli.write_file, []
+
+        def second_config_write_fails(root, rel, *args, **kwargs):
+            if rel == CONFIG:
+                seen.append(rel)
+                if len(seen) == 2:  # the first is the scaffold's template, the second the profile
+                    raise OSError("disk full")
+            return real(root, rel, *args, **kwargs)
+
+        with mock.patch.object(cli, "write_file", second_config_write_fails):
+            with mock.patch.dict(os.environ, {"PATH": f"{self.bin_with()}:/usr/bin:/bin"}):
+                ok, msg = setup.set_first_profile(d, "solo")
+        self.assertFalse(ok, msg)
+        self.assertNotIn("Nothing changed", msg)
+        self.assertIn("CLAUDE.md", msg)
+
     def test_set_by_from_the_repos_own_git_config_is_flagged(self):
         # 0007 r4 security LOW: before .aiops/ exists the agent can set the repo-local identity that Set-By names
         d = self.repo("ident")
@@ -1419,6 +1441,29 @@ class FirstProfile(SetupCase):
         self.assertTrue(ok, msg)
         self.assertIn("Created the core scaffold", msg)
         self.assertEqual(self.cfg()["profile"], "solo")
+
+    def test_planted_owned_file_is_named_before_the_steps(self):
+        # 0007 r6 security MEDIUM: in a repo the agent scaffolded, a human-owned file changed before the command is
+        # named in the part the human sees directly, and kept out of the suggested commit
+        wf = self.root / ".github" / "workflows" / "aiops-gates.yml"
+        wf.write_text(
+            "on: pull_request\njobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n"
+        )
+        ok, msg = self.S.set_first_profile(self.root, "team")
+        self.assertTrue(ok, msg)
+        notice, steps = msg.split("Relay the remaining human steps", 1)
+        self.assertIn(".github/workflows/aiops-gates.yml", notice)
+        commit = next(line for line in steps.splitlines() if "git add --" in line)
+        self.assertNotIn("aiops-gates.yml", commit)
+
+    def test_trust_list_lines_are_escaped(self):
+        # 0007 r6 hardening: a planted line can't hide itself with terminal control characters
+        signers = self.root / ".aiops" / "config" / "allowed-signers"
+        signers.write_text(signers.read_text() + "x@example.com ssh-ed25519 AAAA\x1b[2K\x1b[1A\n")
+        ok, msg = self.S.set_first_profile(self.root, "team")
+        self.assertTrue(ok, msg)
+        self.assertNotIn("\x1b", msg)
+        self.assertIn("\\x1b", msg)
 
     def test_reply_lists_the_trust_lists(self):
         # 0007 r4 security LOW: with no preview on this path, the reply shows what the human-owned trust lists hold
