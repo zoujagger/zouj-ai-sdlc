@@ -879,7 +879,15 @@ def check_bash(data):
     root = project_root(cwd)
     if not cmd.strip():
         return None
+    human_only = any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain)
     if not initialized(root):  # SDLC gates dormant; the safety checks run in every repo (0005, gap 2)
+        if human_only:  # 0007 r7: the prompt hook acts here on the setup command, so a fed payload must not
+            return _block(
+                "G-GATE-07",
+                "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
+                "stop and ask the human: they type the command or phrase in the prompt themselves "
+                "(`/zouj-ai-sdlc:setup solo|team|strict` sets up this repo), or run it in their own terminal.",
+            )
         return _check_command(cmd, Path(cwd), root, False, "", None, False, depth=0, gates=False)
     if TRAILER_RE.search(plain) or (
         FORMAT_TRAILER_RE.search(plain) and "Approval" in plain and re.search(r"\bgit\b", plain)
@@ -903,7 +911,7 @@ def check_bash(data):
             "`sdlc uninstall` removes the workflow's files; it is human-only.",
             "preview it with `sdlc uninstall --dry-run`; the human runs the real uninstall in their own terminal.",
         )
-    if any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain):
+    if human_only:
         return _block(
             "G-GATE-07",
             "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",

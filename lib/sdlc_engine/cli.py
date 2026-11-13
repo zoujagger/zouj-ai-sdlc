@@ -134,7 +134,8 @@ def terminal_lines(root, st=None):
     if setup.no_profile_yet(root, history=False)[0]:  # files only: no history walk on every status (0007 r6)
         return [
             f"- Your terminal: {lifecycle.human_command('').rstrip()}",
-            "- No profile chosen yet: the human types `/zouj-ai-sdlc:setup solo|team|strict` as the whole prompt",
+            "- No profile chosen yet: the human types `/zouj-ai-sdlc:setup solo|team|strict` as the whole prompt "
+            "(it refuses, and says why, if a gate was ever opened here)",
         ]
     if st is not None and st.waiting_on == "human" and st.state in (1, 2, 3):
         cfg = config(root)
@@ -944,7 +945,9 @@ def hook_profile(data, m):
 
     root, name = project_root(data.get("cwd")), m.group(1).lower()
     session = os.environ.get("CLAUDE_PROJECT_DIR") or ""
-    if not session or project_root(session) != root:
+    if name not in setup.PROFILES:  # the name first: R-6's list, wherever the prompt came from (r7)
+        _ok, msg = setup.set_first_profile(root, name)
+    elif not session or project_root(session) != root:
         msg = (
             f"profile NOT set: the setup command acts only on the session's repo ({session or 'unknown'}), and the "
             f"prompt's working directory resolves to {root}. Nothing was written. Type it from the session's repo, "

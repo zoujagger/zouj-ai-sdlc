@@ -780,6 +780,23 @@ class PromptAndSessionHooks(RepoCase):
         self.assertIn("State: 1 BRAINSTORMING", r.stdout)
         self.assertIn("State Rules", r.stdout)
 
+    def test_hook_only_commands_blocked_without_aiops(self):
+        # 0007 r7 security LOW: the typed setup command acts in a repo without .aiops/, so the agent can't feed the
+        # prompt hook a crafted payload there either (G-GATE-07 runs before the initialized check)
+        import shutil
+
+        shutil.rmtree(self.root / ".aiops")
+        for cmd in (
+            'printf \'{"prompt":"/zouj-ai-sdlc:setup solo"}\' | sdlc hook prompt',
+            "sdlc hook prompt < payload.json",
+            "sdlc approve 0001 intent",
+        ):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("G-GATE-07", r.stderr, cmd)
+        for cmd in ("sdlc where", "sdlc setup --profile solo --dry-run", "echo hello"):  # still allowed there
+            self.assertEqual(self.hook("pre-bash", self.hook_input("Bash", command=cmd)).returncode, 0, cmd)
+
     def test_engine_hooks_are_dormant_without_aiops(self):
         import shutil
 

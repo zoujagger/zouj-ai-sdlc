@@ -1260,6 +1260,31 @@ class FirstRun(SetupCase):
         self.assertNotIn("Nothing changed", msg)
         self.assertIn("CLAUDE.md", msg)
 
+    def test_commit_holds_the_bytes_the_hook_wrote(self):
+        # 0007 r7 security LOW: a process that rewrites the config right after the hook's write can't get its
+        # version committed under the profile's title; the reply says the file on disk changed
+        from sdlc_engine import setup
+
+        d = self.repo("race")
+        os.chdir(d)
+        real = cli.write_file
+        weaker = b'{"require_signed_approvals": false, "approval_key_policy": "any", "profile": "strict"}\n'
+
+        def racer(root, rel, data, *args, **kwargs):
+            result = real(root, rel, data, *args, **kwargs)
+            if rel == CONFIG and b'"profile"' in data:  # right after the profile write
+                (root / rel).write_bytes(weaker)
+            return result
+
+        with mock.patch.object(cli, "write_file", racer):
+            with mock.patch.dict(os.environ, {"PATH": f"{self.bin_with()}:/usr/bin:/bin"}):
+                ok, msg = setup.set_first_profile(d, "strict")
+        self.assertTrue(ok, msg)
+        template = json.loads((cli.TEMPLATES / "scaffold" / CONFIG).read_text())
+        committed = git(d, "show", f"HEAD:{CONFIG}")
+        self.assertEqual(json.loads(committed), {**template, **setup.PROFILE_CONFIG["strict"]})
+        self.assertIn("changed on disk", msg)
+
     def test_set_by_from_the_repos_own_git_config_is_flagged(self):
         # 0007 r4 security LOW: before .aiops/ exists the agent can set the repo-local identity that Set-By names
         d = self.repo("ident")
@@ -1518,6 +1543,11 @@ class FirstProfile(SetupCase):
             r = self.setup_run("--profile", name, "--yes")  # the human's terminal: no session markers
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(self.cfg(), {**self.template, **self.S.PROFILE_CONFIG[name]}, name)
+            self.assertEqual(  # AC-8: the same bytes as the typed command writes, not just the same JSON
+                (self.root / CONFIG).read_text(),
+                json.dumps({**self.template, **self.S.PROFILE_CONFIG[name]}, indent=2) + "\n",
+                name,
+            )
             self.assertEqual(lifecycle.config_written(self.root), name)
             self.assertFalse(self.S.no_profile_yet(self.root)[0], name)
             self.assertNotIn("Setup Profile", r.stdout, name)  # no step to set what was just set

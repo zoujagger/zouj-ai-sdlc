@@ -569,6 +569,11 @@ class SetupCommand(RepoCase):
                 self.assertIn(f"/zouj-ai-sdlc:setup {name}", ctx)
             self.assertNotIn("Setup Profile", ctx)
         self.assertEqual((self.root / CONFIG).read_bytes(), self.before)
+        # r7 NIT: the name is checked first, so R-6's list comes back even when the session's repo is unknown
+        ctx = self.context("/zouj-ai-sdlc:setup fast", env={"CLAUDE_PROJECT_DIR": ""})
+        for name in ("solo", "team", "strict"):
+            self.assertIn(f"/zouj-ai-sdlc:setup {name}", ctx)
+        self.assertNotIn("--profile fast", ctx)
 
     def test_refused_outside_the_session_repo(self):
         nested = self.root / "vendor" / "other"  # a repo of its own, with the template config
@@ -768,6 +773,8 @@ class Card(RepoCase):
         with mock.patch.object(setup, "approval_in_history", side_effect=AssertionError("history walked")):
             lines = cli.terminal_lines(self.root)
         self.assertTrue(any("/zouj-ai-sdlc:setup solo|team|strict" in line for line in lines), lines)
+        # r7: the hint says the command may still refuse (the card skips the history walk the command makes)
+        self.assertTrue(any("refuses" in line for line in lines), lines)
 
     def test_no_terminal_line_otherwise(self):
         self.assertNotIn("Your terminal", self.session())  # no intent.md yet: waiting on the agent

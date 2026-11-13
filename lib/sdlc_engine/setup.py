@@ -822,8 +822,9 @@ def set_first_profile(root, name, cwd=None):
         )
     rel = ".aiops/config.json"
     template = json.loads((cli.TEMPLATES / "scaffold" / rel).read_text())
+    data = (json.dumps({**template, **PROFILE_CONFIG[name]}, indent=2) + "\n").encode()
     try:
-        cli.write_file(root, rel, (json.dumps({**template, **PROFILE_CONFIG[name]}, indent=2) + "\n").encode())
+        cli.write_file(root, rel, data)
     except OSError as exc:
         done_before = (
             f" The core scaffold was written first and stays: {', '.join(created)}; type the command again once the "
@@ -835,7 +836,8 @@ def set_first_profile(root, name, cwd=None):
     if created:  # install-state records the config as written, profile included, as a terminal run does (r5)
         lifecycle.record(root, [rel], profile=name)
     title = f"chore(aiops): Setup Profile {name}"
-    done = approvals._commit_alone(root, rel, title, f"AIOps-Profile: {name}\nSet-By: {approvals.approver(root)}", [])
+    body = f"AIOps-Profile: {name}\nSet-By: {approvals.approver(root)}"
+    done = approvals._commit_alone(root, rel, title, body, [], data=data)  # the bytes written, not a re-read
     if done is None:
         note = f"The change is in the working tree, but committing it failed: commit it yourself ({rel}, alone)."
     else:
@@ -843,6 +845,15 @@ def set_first_profile(root, name, cwd=None):
             f" The index was busy and still holds the old file: run `{done[1]}` before your next commit."
             if done[1]
             else ""
+        )
+    try:
+        changed = (root / rel).read_bytes() != data
+    except OSError:
+        changed = True
+    if changed:  # something rewrote it after the hook's write: the commit holds the hook's bytes, the disk doesn't
+        note += (
+            f" WARNING: {rel} changed on disk after the hook wrote it; the commit holds what the hook wrote. Check "
+            f"`git diff -- {rel}` before you commit anything."
         )
     # Review on both paths (0007 r6): in a repo the agent scaffolded, a human-owned file it changed while the gates
     # were off is named here, before the steps, so the human sees it directly, and stays out of the suggested commit.

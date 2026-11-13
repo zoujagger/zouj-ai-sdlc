@@ -242,6 +242,8 @@ def classify(root, st):
             out[rel] = "dropped"
         elif not f.is_file() or f.is_symlink():
             out[rel] = "missing"
+        elif rel == ".aiops/config.json" and config_written(root):
+            out[rel] = "current"  # exactly the template plus one profile: what setup or the typed command writes (r7)
         elif sha256_file(f) != entry.get("sha256"):
             out[rel] = "modified"
         elif entry.get("version") == version or sha256_bytes(
