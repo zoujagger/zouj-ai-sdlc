@@ -5,6 +5,7 @@ stack, and the sha256 of each scaffold file as written. Only the engine writes i
 repair, uninstall); the guards block the agent's own writes, and CODEOWNERS covers it. It never decides a gate: CI
 ignores it.
 """
+
 import datetime
 import difflib
 import hashlib
@@ -19,7 +20,7 @@ from .machine import PLUGIN_ROOT, config
 
 STATE = ".aiops/install-state.json"
 SCHEMA = 1
-NOT_OWNED = {".gitignore"}            # init appends a line to it; the file stays the user's
+NOT_OWNED = {".gitignore"}  # init appends a line to it; the file stays the user's
 
 
 def sha256_bytes(data):
@@ -56,34 +57,46 @@ def record(root, written, profile=None, stack=None, ref=None, parts=None):
     """Record the scaffold files just written (their bytes on disk) in install-state, and the installed opt-in
     `parts` when given. Files that were only kept are not claimed. Nothing is written when nothing was, so a rerun
     leaves the state as it is."""
-    paths = [rel for rel in dict.fromkeys(written) if rel not in NOT_OWNED and (cli.TEMPLATES / "scaffold" / rel).is_file()]
+    paths = [
+        rel for rel in dict.fromkeys(written) if rel not in NOT_OWNED and (cli.TEMPLATES / "scaffold" / rel).is_file()
+    ]
     if not paths:
         return
     version = cli.plugin_version()
     st = load(root) or {"schema": SCHEMA, "files": {}, "migrations": []}
-    st.update({
-        "schema": SCHEMA,
-        "plugin_version": version,
-        "ref": ref or st.get("ref") or f"v{version}",
-        "profile": profile or config(root).get("profile", "team"),
-        "stack": stack if stack is not None else st.get("stack"),
-        "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    })
+    st.update(
+        {
+            "schema": SCHEMA,
+            "plugin_version": version,
+            "ref": ref or st.get("ref") or f"v{version}",
+            "profile": profile or config(root).get("profile", "team"),
+            "stack": stack if stack is not None else st.get("stack"),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+    )
     if parts is not None:
         st["parts"] = sorted(parts)
     for rel in paths:
-        st["files"][rel] = {"sha256": sha256_file(root / rel), "version": version,
-                            "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
+        st["files"][rel] = {
+            "sha256": sha256_file(root / rel),
+            "version": version,
+            "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel)),
+        }
     save(root, st)
 
 
 # security scaffold a repo must not silently lose: offered back by upgrade even if it was missing at adoption
-NEVER_DECLINED = {".github/workflows/aiops-gates.yml", ".github/CODEOWNERS", ".aiops/config/allowed-signers",
-                  ".aiops/config/secret-paths", ".aiops/config/protected-paths"}
+NEVER_DECLINED = {
+    ".github/workflows/aiops-gates.yml",
+    ".github/CODEOWNERS",
+    ".aiops/config/allowed-signers",
+    ".aiops/config/secret-paths",
+    ".aiops/config/protected-paths",
+}
 
 STATUSES = ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new", "declined")
 
-PARTS = ("review", "maintain", "deploy", "governance", "issues")   # opt-in (`--with`); `core` is always installed
+PARTS = ("review", "maintain", "deploy", "governance", "issues")  # opt-in (`--with`); `core` is always installed
 PARTS_FILE = PLUGIN_ROOT / "defaults" / "scaffold-parts"
 
 
@@ -119,8 +132,10 @@ def parts_line(parts, command="setup"):
     missing = [p for p in PARTS if p not in parts]
     if not missing:
         return ""
-    return (f"Not installed (opt-in parts): {', '.join(missing)}. Add one with `sdlc {command} --with <part>` "
-            "(comma-separated, or `--with all`).")
+    return (
+        f"Not installed (opt-in parts): {', '.join(missing)}. Add one with `sdlc {command} --with <part>` "
+        "(comma-separated, or `--with all`)."
+    )
 
 
 def scaffold_paths(parts=None):
@@ -138,6 +153,7 @@ def config_written(root):
     that stopped before writing it), a profile name for the template with exactly that profile's keys (a human's
     `setup --profile`), and None for anything else (edited by hand, a link, unreadable)."""
     from .setup import PROFILE_CONFIG
+
     f = root / ".aiops" / "config.json"
     if not f.exists() and not f.is_symlink():
         return ""
@@ -228,8 +244,9 @@ def classify(root, st):
             out[rel] = "missing"
         elif sha256_file(f) != entry.get("sha256"):
             out[rel] = "modified"
-        elif entry.get("version") == version or \
-                sha256_bytes(expected(rel, f"v{version}", st.get("stack"))) == entry.get("sha256"):
+        elif entry.get("version") == version or sha256_bytes(
+            expected(rel, f"v{version}", st.get("stack"))
+        ) == entry.get("sha256"):
             out[rel] = "current"
         else:
             out[rel] = "stale"
@@ -247,13 +264,17 @@ def cmd_list_installed(root, args):
     if st:
         out(f"zouj-ai-sdlc install state ({STATE})")
         # the profile is read from .aiops/config.json, its one source: the typed phrase and a hand edit change it there
-        out(f"  recorded: {st.get('plugin_version')} · ref {st.get('ref')} · profile {config(root).get('profile')} · "
-            f"stack {st.get('stack') or 'none'}")
+        out(
+            f"  recorded: {st.get('plugin_version')} · ref {st.get('ref')} · profile {config(root).get('profile')} · "
+            f"stack {st.get('stack') or 'none'}"
+        )
     else:
-        out(f"zouj-ai-sdlc: this repo has no install state ({STATE}); it was initialized before 0.2.0-alpha.3 or "
+        out(
+            f"zouj-ai-sdlc: this repo has no install state ({STATE}); it was initialized before 0.2.0-alpha.3 or "
             "not at all. Below is a preview of what adoption would record (nothing is written): files equal to a "
             "released scaffold become managed, the others are `modified` and are never touched. `sdlc repair` (or "
-            "`sdlc upgrade`) records it.")
+            "`sdlc upgrade`) records it."
+        )
         st = adopt(root)
     out(f"  running plugin: {cli.plugin_version()}")
     rows = classify(root, st)
@@ -273,7 +294,7 @@ def out(msg, stream=None):
 
 # ---------------------------------------------------------------- scaffold history and adoption
 
-HISTORY = PLUGIN_ROOT / "defaults" / "scaffold-history.json"   # generated by scripts/scaffold-history.py
+HISTORY = PLUGIN_ROOT / "defaults" / "scaffold-history.json"  # generated by scripts/scaffold-history.py
 REF_LINE_RE = re.compile(rb"(ZOUJ_SDLC_REF:[ \t]*)([^\s#]+)")
 REF_JSON_RE = re.compile(rb'("ref":[ \t]*")([^"]*)(")')
 
@@ -347,19 +368,38 @@ def adopt(root):
         files[rel] = entry
     newest = max(versions, key=version_key) if versions else None
     release = next((k for k in hist if (running if k == "unreleased" else k) == newest), None)
-    parts, rules = installed_parts(root, None), part_rules()      # read from disk: there is no state to name them
-    for rel in hist.get(release, {}):                  # in the adopted release, but not on disk: the user removed it
-        if "+" not in rel and rel not in files and rel not in NEVER_DECLINED and not (root / rel).exists() \
-                and not (root / rel).is_symlink() and part_of(rel, rules) in ("core", *parts):
-            files[rel] = {"sha256": None, "version": None, "declined": True,
-                          "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
-    return {"schema": SCHEMA, "adopted": True, "files": files, "migrations": [], "stack": stack, "ref": ref,
-            "plugin_version": newest, "parts": parts,
-            "profile": config(root).get("profile", "team"),
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    parts, rules = installed_parts(root, None), part_rules()  # read from disk: there is no state to name them
+    for rel in hist.get(release, {}):  # in the adopted release, but not on disk: the user removed it
+        if (
+            "+" not in rel
+            and rel not in files
+            and rel not in NEVER_DECLINED
+            and not (root / rel).exists()
+            and not (root / rel).is_symlink()
+            and part_of(rel, rules) in ("core", *parts)
+        ):
+            files[rel] = {
+                "sha256": None,
+                "version": None,
+                "declined": True,
+                "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel)),
+            }
+    return {
+        "schema": SCHEMA,
+        "adopted": True,
+        "files": files,
+        "migrations": [],
+        "stack": stack,
+        "ref": ref,
+        "plugin_version": newest,
+        "parts": parts,
+        "profile": config(root).get("profile", "team"),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
 
 
 # ---------------------------------------------------------------- shared by repair, upgrade and uninstall
+
 
 def parse(args, name):
     """({"--dry-run": bool, "--yes": bool}, None) or (None, why): the lifecycle commands take only these flags."""
@@ -381,6 +421,7 @@ def agent_may_write(root, rel):
     file (config, signers, settings, CODEOWNERS, workflows), a protected path, or code under the read-only lock. The
     lock is judged without SDLC_HOOK_PROFILE / AIOPS_INTENT, which the agent's own command line could set."""
     from .machine import lock_env_stripped
+
     with lock_env_stripped():
         return not (cli.HUMAN_OWNED_RE.match(rel) or cli._agent_blocked(root, rel))
 
@@ -393,6 +434,7 @@ def confirm(opts, name):
     if opts["--yes"]:
         return None
     from . import setup
+
     if not setup._is_tty():
         out(f"no terminal to confirm: nothing was written. Re-run with --yes to apply (`sdlc {name} --yes`).")
         return 2
@@ -409,14 +451,23 @@ def refusal(root):
         return f"refusing: {problem}. Nothing was written."
     links = [rel for rel in set(scaffold_paths()) | {STATE} if cli.symlink_on_path(root, rel)]
     if links:
-        return ("refusing to write through symlinks; remove these links and run again. Nothing was written:\n  "
-                + "\n  ".join(sorted(links)))
+        return (
+            "refusing to write through symlinks; remove these links and run again. Nothing was written:\n  "
+            + "\n  ".join(sorted(links))
+        )
     return None
 
 
 def show_diff(rel, old, new, limit=40):
-    lines = list(difflib.unified_diff(old.decode(errors="replace").splitlines(), new.decode(errors="replace").splitlines(),
-                                      f"a/{rel}", f"b/{rel}", lineterm=""))
+    lines = list(
+        difflib.unified_diff(
+            old.decode(errors="replace").splitlines(),
+            new.decode(errors="replace").splitlines(),
+            f"a/{rel}",
+            f"b/{rel}",
+            lineterm="",
+        )
+    )
     for ln in lines[:limit]:
         out("      " + ln)
     if len(lines) > limit:
@@ -424,10 +475,19 @@ def show_diff(rel, old, new, limit=40):
 
 
 def write_scaffold(root, st, rel, data, version=None):
-    cli.write_file(root, rel, data, (cli.TEMPLATES / "scaffold" / rel).stat().st_mode & 0o777
-                   if (cli.TEMPLATES / "scaffold" / rel).is_file() else 0o644)
-    st["files"][rel] = {"sha256": sha256_bytes(data), "version": version or cli.plugin_version(),
-                        "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel))}
+    cli.write_file(
+        root,
+        rel,
+        data,
+        (cli.TEMPLATES / "scaffold" / rel).stat().st_mode & 0o777
+        if (cli.TEMPLATES / "scaffold" / rel).is_file()
+        else 0o644,
+    )
+    st["files"][rel] = {
+        "sha256": sha256_bytes(data),
+        "version": version or cli.plugin_version(),
+        "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel)),
+    }
 
 
 def stamp(st):
@@ -435,6 +495,7 @@ def stamp(st):
 
 
 # ---------------------------------------------------------------- repair
+
 
 def cmd_repair(root, args):
     """Re-create missing managed files. Never touches a modified, stale or current one (upgrade does stale)."""
@@ -457,16 +518,20 @@ def cmd_repair(root, args):
             continue
         (human if agent and not agent_may_write(root, rel) else restore).append(rel)
     if adopted:
-        out(f"No install state: adopting this repo ({len([1 for e in st['files'].values() if e['sha256']])} files "
-            f"match a released scaffold; the others are `modified` and are never touched). Writes {STATE}.")
+        out(
+            f"No install state: adopting this repo ({len([1 for e in st['files'].values() if e['sha256']])} files "
+            f"match a released scaffold; the others are `modified` and are never touched). Writes {STATE}."
+        )
     if not restore and not human and not adopted:
         out("Nothing to repair: every managed file is on disk.")
         return 0
     for rel in restore:
         out(f"  + restore {rel}")
     if human:
-        out("Human-owned or locked, not restored when the agent runs repair. The human runs, in their own terminal:\n"
-            f"  {human_command('repair')}\n  for: " + ", ".join(human))
+        out(
+            "Human-owned or locked, not restored when the agent runs repair. The human runs, in their own terminal:\n"
+            f"  {human_command('repair')}\n  for: " + ", ".join(human)
+        )
     rc = confirm(opts, "repair")
     if rc is not None:
         return rc
@@ -496,13 +561,14 @@ def resolve_ref(plugin_root=PLUGIN_ROOT, home=None):
     2. this plugin's own git checkout (`claude --plugin-dir`): HEAD, if a remote-tracking branch contains it
     3. the tag v<version>, with a warning: a tag can be moved."""
     from pathlib import Path
+
     plugin_root = Path(plugin_root).resolve()
     home = Path(home) if home is not None else Path.home()
     try:
         data = json.loads((home / ".claude" / "plugins" / "installed_plugins.json").read_text())
         installs = data.get("plugins", data) if isinstance(data, dict) else {}
-        for entries in (installs.values() if isinstance(installs, dict) else []):
-            for e in (entries if isinstance(entries, list) else [entries]):
+        for entries in installs.values() if isinstance(installs, dict) else []:
+            for e in entries if isinstance(entries, list) else [entries]:
                 if not isinstance(e, dict) or not e.get("installPath"):
                     continue
                 sha = str(e.get("gitCommitSha") or "")
@@ -517,15 +583,19 @@ def resolve_ref(plugin_root=PLUGIN_ROOT, home=None):
         if SHA_RE.match(head):
             if (cli.git(plugin_root, "branch", "-r", "--contains", head) or "").strip():
                 return head, None
-            return tag, (f"the plugin checkout's HEAD ({head[:10]}) is not pushed to a remote, so CI couldn't fetch "
-                         f"it; pinning the tag {tag} instead (a tag can be moved: pin a full sha when you can)")
-    return tag, (f"no commit sha found for this plugin install; pinning the tag {tag} (a tag can be moved: pin a "
-                 "full sha when you can)")
+            return tag, (
+                f"the plugin checkout's HEAD ({head[:10]}) is not pushed to a remote, so CI couldn't fetch "
+                f"it; pinning the tag {tag} instead (a tag can be moved: pin a full sha when you can)"
+            )
+    return tag, (
+        f"no commit sha found for this plugin install; pinning the tag {tag} (a tag can be moved: pin a "
+        "full sha when you can)"
+    )
 
 
 # ---------------------------------------------------------------- upgrade
 
-MERGED_JSON = (".aiops/config.json", ".claude/settings.json")   # setup merges its keys into these: never replaced
+MERGED_JSON = (".aiops/config.json", ".claude/settings.json")  # setup merges its keys into these: never replaced
 
 
 # Only literal values are pinned: a release tag, a full sha, or the placeholder. An expression (`${{ vars.X }}`) is
@@ -538,7 +608,7 @@ def _object_span(data, pos):
     """(start, end) of the innermost JSON object around byte offset pos (strings skipped), else None."""
     i, in_str, spans, stack = 0, False, [], []
     while i < len(data):
-        c = data[i:i + 1]
+        c = data[i : i + 1]
         if in_str:
             if c == b"\\":
                 i += 1
@@ -561,10 +631,10 @@ def pin(data, ref):
     JSON only the `"ref"` of the zouj-ai-sdlc marketplace source (another marketplace's ref is never touched)."""
     data = PIN_LINE_RE.sub(lambda m: m.group(1) + ref.encode(), data)
     spans = {_object_span(data, m.start()) for m in ZOUJ_REPO_RE.finditer(data)} - {None}
-    for s, e in sorted(spans, reverse=True):              # right to left: earlier offsets stay valid
+    for s, e in sorted(spans, reverse=True):  # right to left: earlier offsets stay valid
         for r in reversed(list(REF_JSON_RE.finditer(data, s, e + 1))):
-            if _object_span(data, r.start()) == (s, e):   # the object's own ref, not a nested one
-                data = data[:r.start(2)] + ref.encode() + data[r.end(2):]
+            if _object_span(data, r.start()) == (s, e):  # the object's own ref, not a nested one
+                data = data[: r.start(2)] + ref.encode() + data[r.end(2) :]
     return data
 
 
@@ -608,6 +678,7 @@ def cmd_upgrade(root, args):
     """Bring the repo's scaffold to the running plugin: replace stale files (diff shown), create missing and new ones,
     keep modified files except for the CI ref, pin every ref to a full sha, list migrations. No network."""
     from . import migrations
+
     opts, why = parse(args, "upgrade")
     if why:
         out(f"{why}. Nothing was written.", sys.stderr)
@@ -642,7 +713,9 @@ def cmd_upgrade(root, args):
     for rel in dict.fromkeys(advice):
         disk = (root / rel).read_bytes()
         if unpinnable(disk):
-            out(f"  ! {rel}: ZOUJ_SDLC_REF is not a literal (an expression?), so upgrade left it; set it to {ref} by hand")
+            out(
+                f"  ! {rel}: ZOUJ_SDLC_REF is not a literal (an expression?), so upgrade left it; set it to {ref} by hand"
+            )
         if normalize(disk) != normalize(expected(rel, ref, st.get("stack"))):
             out(f"  = kept {rel} (modified): it differs from the new template; compare and merge by hand:")
             show_diff(rel, disk, expected(rel, ref, st.get("stack")))
@@ -650,12 +723,20 @@ def cmd_upgrade(root, args):
         if status == "declined":
             out(f"  ! {rel} is declined (removed before adoption); upgrade never re-creates it")
     if human:
-        out("Human-owned or locked, not written when the agent runs upgrade (install-state keeps them at their old "
-            f"version). The human runs, in their own terminal:\n  {human_command('upgrade')}\n  for: " + ", ".join(human))
+        out(
+            "Human-owned or locked, not written when the agent runs upgrade (install-state keeps them at their old "
+            f"version). The human runs, in their own terminal:\n  {human_command('upgrade')}\n  for: "
+            + ", ".join(human)
+        )
     for m in pending:
-        out(f"  ! migration {m.id}: {m.why}. "
-            + (f"Human-only: the human runs `{m.command}` in their own terminal; upgrade never runs it."
-               if m.human_only else f"Run `{m.command}`."))
+        out(
+            f"  ! migration {m.id}: {m.why}. "
+            + (
+                f"Human-only: the human runs `{m.command}` in their own terminal; upgrade never runs it."
+                if m.human_only
+                else f"Run `{m.command}`."
+            )
+        )
     rc = confirm(opts, "upgrade")
     if rc is not None:
         return rc
@@ -665,7 +746,7 @@ def cmd_upgrade(root, args):
             if kind == "pin":
                 entry, before = st["files"].get(rel), sha256_file(root / rel)
                 cli.write_file(root, rel, data, (root / rel).stat().st_mode & 0o777)
-                if entry and entry.get("sha256") == before:     # managed and as recorded (a merged JSON file)
+                if entry and entry.get("sha256") == before:  # managed and as recorded (a merged JSON file)
                     entry.update(sha256=sha256_bytes(data), version=version)
             else:
                 write_scaffold(root, st, rel, data)
@@ -680,8 +761,10 @@ def cmd_upgrade(root, args):
     except OSError as exc:
         out(cli.write_failure(exc, written), sys.stderr)
         return 1
-    out(f"Upgraded: {len(written)} file(s) written; {STATE} updated. Review the diff and commit it."
-        + ("" if not human else " The human finishes the human-owned files and the ref."))
+    out(
+        f"Upgraded: {len(written)} file(s) written; {STATE} updated. Review the diff and commit it."
+        + ("" if not human else " The human finishes the human-owned files and the ref.")
+    )
     return 0
 
 
@@ -696,6 +779,7 @@ def remove_file(root, rel):
     import os
     import stat
     from pathlib import Path
+
     *dirs, name = Path(rel).parts
     fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -740,8 +824,11 @@ def cmd_uninstall(root, args):
         out(f"{why}. Nothing was written.", sys.stderr)
         return 1
     if approvals.running_under_agent() and not opts["--dry-run"]:
-        out(cli.HUMAN_ONLY.replace("this is a human gate", "uninstall is human-only") +
-            " Preview it with `sdlc uninstall --dry-run`.", sys.stderr)
+        out(
+            cli.HUMAN_ONLY.replace("this is a human gate", "uninstall is human-only")
+            + " Preview it with `sdlc uninstall --dry-run`.",
+            sys.stderr,
+        )
         return 1
     why = refusal(root)
     if why:
@@ -780,7 +867,9 @@ def cmd_uninstall(root, args):
     except OSError as exc:
         out(f"✗ {exc}. Removed before the error: {', '.join(removed) or 'none'}.", sys.stderr)
         return 1
-    out(f"Uninstalled: {len(removed)} file(s) removed. Next: review and commit the removal, then remove the plugin "
+    out(
+        f"Uninstalled: {len(removed)} file(s) removed. Next: review and commit the removal, then remove the plugin "
         "itself with `/plugin uninstall zouj-ai-sdlc@zouj` (and its entries in .claude/settings.json, if you kept "
-        "that file).")
+        "that file)."
+    )
     return 0

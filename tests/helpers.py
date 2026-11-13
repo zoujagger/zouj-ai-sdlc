@@ -1,4 +1,5 @@
 """Shared fixtures: a throwaway git repo initialized for zouj-ai-sdlc, and valid artifact bodies."""
+
 import json
 import os
 import subprocess
@@ -140,7 +141,7 @@ def git(root, *args):
     return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
 
 
-_KEYS = tempfile.TemporaryDirectory()   # throwaway SSH signing keys, generated once per test run
+_KEYS = tempfile.TemporaryDirectory()  # throwaway SSH signing keys, generated once per test run
 
 
 def signing_key(name="owner", passphrase=""):
@@ -161,9 +162,20 @@ class RepoCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name).resolve()
-        self.env = {k: v for k, v in os.environ.items()
-                    if k not in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "AIOPS_INTENT", "SDLC_HOOK_PROFILE",
-                                 "CLAUDE_PROJECT_DIR", "SSH_AUTH_SOCK", "SSH_AGENT_PID")}
+        self.env = {
+            k: v
+            for k, v in os.environ.items()
+            if k
+            not in (
+                "CLAUDECODE",
+                "CLAUDE_CODE_CHILD_SESSION",
+                "AIOPS_INTENT",
+                "SDLC_HOOK_PROFILE",
+                "CLAUDE_PROJECT_DIR",
+                "SSH_AUTH_SOCK",
+                "SSH_AGENT_PID",
+            )
+        }
         # Signing config must come from *global* git config (repo-local overrides are refused), so each test gets
         # its own throwaway global config file.
         self.gitconfig = self.root.parent / f"{self.root.name}.gitconfig"
@@ -202,8 +214,9 @@ class RepoCase(unittest.TestCase):
 
     # artifact helpers
     def write(self, kind, text):
-        (self.d / f"{kind}.md").write_text(text.format(id="0001", verdict="PASS", commit="0" * 40)
-                                           if "{id}" in text else text)
+        (self.d / f"{kind}.md").write_text(
+            text.format(id="0001", verdict="PASS", commit="0" * 40) if "{id}" in text else text
+        )
 
     def approve(self, kind):
         ok, msg = approvals.approve(self.root, self.d, kind, via="test")
@@ -222,8 +235,14 @@ class RepoCase(unittest.TestCase):
         return {"tool_name": tool, "tool_input": ti, "cwd": str(self.root), "hook_event_name": "PreToolUse"}
 
     def run_sdlc(self, *args, stdin="", env=None):
-        return subprocess.run([sys.executable, SDLC, *args], cwd=self.root, input=stdin, capture_output=True,
-                              text=True, env={**self.env, **(env or {})})
+        return subprocess.run(
+            [sys.executable, SDLC, *args],
+            cwd=self.root,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            env={**self.env, **(env or {})},
+        )
 
     def hook(self, event, payload, env=None):
         return self.run_sdlc("hook", event, stdin=json.dumps(payload), env=env)

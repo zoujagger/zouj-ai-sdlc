@@ -1,4 +1,5 @@
 """The rule registry (defaults/rules + defaults/rules.md), `sdlc why`, and its agreement with the guard sources."""
+
 import re
 import subprocess
 import sys
@@ -18,8 +19,9 @@ def why(*args):
 
 class Registry(unittest.TestCase):
     def test_well_formed(self):
-        lines = [ln for ln in (ROOT / "defaults" / "rules").read_text().splitlines()
-                 if ln.strip() and not ln.startswith("#")]
+        lines = [
+            ln for ln in (ROOT / "defaults" / "rules").read_text().splitlines() if ln.strip() and not ln.startswith("#")
+        ]
         ids = []
         for ln in lines:
             parts = ln.split(None, 3)
@@ -48,8 +50,12 @@ class Registry(unittest.TestCase):
         self.assertEqual(reg["G-ENV-04"].cls, "secret")
 
     def test_malformed_registry_is_refused(self):
-        for bad in ("G-X-1 heuristic every-repo x", "G-ENV-03 nosuchclass every-repo x", "G-ENV-03 heuristic",
-                    "G-ENV-03 heuristic every-repo a\nG-ENV-03 heuristic every-repo b"):
+        for bad in (
+            "G-X-1 heuristic every-repo x",
+            "G-ENV-03 nosuchclass every-repo x",
+            "G-ENV-03 heuristic",
+            "G-ENV-03 heuristic every-repo a\nG-ENV-03 heuristic every-repo b",
+        ):
             with self.assertRaises(ValueError, msg=bad):
                 rules.parse_registry(bad)
 
@@ -78,9 +84,9 @@ class Why(unittest.TestCase):
     def test_stages_are_readable_and_accurate(self):
         for rid in rules.load():
             out = why(rid).stdout
-            self.assertNotRegex(out, r"protects: [a-z]+(-[a-z]+)+\n", rid)   # no raw slug
-        self.assertIn("initialized", why("G-SEC-02").stdout)               # check_bash runs only in .aiops repos
-        self.assertIn("every repo", why("G-SEC-04").stdout)                # guard-files.sh is always on
+            self.assertNotRegex(out, r"protects: [a-z]+(-[a-z]+)+\n", rid)  # no raw slug
+        self.assertIn("initialized", why("G-SEC-02").stdout)  # check_bash runs only in .aiops repos
+        self.assertIn("every repo", why("G-SEC-04").stdout)  # guard-files.sh is always on
 
     def test_lifecycle_commands_are_documented(self):
         self.assertIn("uninstall", why("G-GATE-07").stdout)
@@ -105,6 +111,7 @@ class Why(unittest.TestCase):
 
 class Coverage(unittest.TestCase):
     """defaults/rules and the guard sources agree: every id a hook emits is registered, and every live id is emitted."""
+
     SOURCES = sorted((ROOT / "hooks").glob("*.sh")) + sorted((ROOT / "lib" / "sdlc_engine").glob("*.py"))
 
     def emitted(self):
@@ -138,15 +145,17 @@ class Coverage(unittest.TestCase):
                 if re.search(r"(^|[;&|]\s*|\s)block\s+\S", code) and "block()" not in code:
                     self.assertRegex(code, r"block\s+(G-[A-Z]+-\d\d|\"'\$v'|\"\$@\")", f"{f.name}:{n}: {line.strip()}")
         src = (ROOT / "lib" / "sdlc_engine" / "guards.py").read_text()
-        for m in re.finditer(r"_block\((?!rule_id)([^,]+),", src):
+        for m in re.finditer(r"_block\(\s*(?!rule_id)([^,]+),", src):
             self.assertRegex(m.group(1), r'^"G-[A-Z]+-\d\d"', m.group(0))
 
 
 class Allowance(unittest.TestCase):
     """rules.allowed / allowance_problems: an exact single-line command, one heuristic rule per entry (0004 S5)."""
+
     def setUp(self):
         import tempfile
         from pathlib import Path
+
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         (self.root / ".aiops" / "config").mkdir(parents=True)
@@ -161,22 +170,41 @@ class Allowance(unittest.TestCase):
     def test_exact_match_only(self):
         self.entries("# human-owned\nG-ENV-03 ls env\nG-BASH-07 sudo systemctl status docker   \n")
         self.assertTrue(rules.allowed(self.root, "G-ENV-03", "ls env"))
-        self.assertTrue(rules.allowed(self.root, "G-ENV-03", "  ls env\n"))        # surrounding whitespace trimmed
+        self.assertTrue(rules.allowed(self.root, "G-ENV-03", "  ls env\n"))  # surrounding whitespace trimmed
         self.assertTrue(rules.allowed(self.root, "G-BASH-07", "sudo systemctl status docker"))
         for cmd in ("ls  env", "ls env; git push --force", "ls env x", "LS ENV", "ls env && true", "ls"):
             self.assertFalse(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
-        self.assertFalse(rules.allowed(self.root, "G-BASH-07", "ls env"))          # the entry names one rule
-        self.assertFalse(rules.allowed(self.root, "g-env-03", "ls env"))           # ids are exact too
+        self.assertFalse(rules.allowed(self.root, "G-BASH-07", "ls env"))  # the entry names one rule
+        self.assertFalse(rules.allowed(self.root, "g-env-03", "ls env"))  # ids are exact too
 
     def test_full_environment_dump_never_allowed(self):
-        self.entries("G-ENV-03 printenv\nG-ENV-03 env\nG-ENV-03 env -0\nG-ENV-03 FOO=1 env\nG-ENV-03 printenv PATH\n"
-                     "G-ENV-03 ls env\n")
+        self.entries(
+            "G-ENV-03 printenv\nG-ENV-03 env\nG-ENV-03 env -0\nG-ENV-03 FOO=1 env\nG-ENV-03 printenv PATH\n"
+            "G-ENV-03 ls env\n"
+        )
         for cmd in ("printenv", "env", "env -0", "FOO=1 env"):
             self.assertFalse(rules.allowed(self.root, "G-ENV-03", cmd), cmd)
         # review round 2: options with arguments, wrappers, grouping, redirection and substitution are dumps too
-        for cmd in ("env -u HOME", "env -C /tmp", "env --chdir /tmp", "command env", "nice env", "exec env",
-                    "time printenv", "nohup env", "timeout 5 env", "(env)", "{ env; }", "env > /tmp/x",
-                    "echo $(env)", "cat <(env)", "echo `printenv`", "printenv -0", "/usr/bin/env", "printenv | cat"):
+        for cmd in (
+            "env -u HOME",
+            "env -C /tmp",
+            "env --chdir /tmp",
+            "command env",
+            "nice env",
+            "exec env",
+            "time printenv",
+            "nohup env",
+            "timeout 5 env",
+            "(env)",
+            "{ env; }",
+            "env > /tmp/x",
+            "echo $(env)",
+            "cat <(env)",
+            "echo `printenv`",
+            "printenv -0",
+            "/usr/bin/env",
+            "printenv | cat",
+        ):
             self.assertTrue(rules.dumps_environment(cmd), cmd)
         for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "python -m venv env"):
             self.assertFalse(rules.dumps_environment(cmd), cmd)
@@ -189,19 +217,59 @@ class Allowance(unittest.TestCase):
 
     def test_only_safe_env_forms(self):
         """0005 S2 (gap 6): only `printenv NAME…` or commands that never run env/printenv are allowable."""
-        for cmd in ("printenv PATH", "printenv HOME USER", "ls env", "cd env", "python -m venv env",
-                    "python3 -m venv env", "virtualenv env", "cat env/pyvenv.cfg", "ls env && cd env"):
+        for cmd in (
+            "printenv PATH",
+            "printenv HOME USER",
+            "ls env",
+            "cd env",
+            "python -m venv env",
+            "python3 -m venv env",
+            "virtualenv env",
+            "cat env/pyvenv.cfg",
+            "ls env && cd env",
+        ):
             self.assertTrue(rules.safe_env_command(cmd), cmd)
         # review round 1: source runs its argument; every simple command must be safe; no secret-named printenv
-        for cmd in ("source env/bin/activate", ". env/bin/activate", "source env", "cat env | sh",
-                    "ls env && export -p", "ls env; set", "printenv GITHUB_TOKEN", "printenv AWS_SECRET_ACCESS_KEY",
-                    "ls env && make", "printenv DATABASE_URL", "printenv SENTRY_DSN", "LD_PRELOAD=/tmp/x.so ls env",
-                    "BASH_ENV=env cat env", "printenv MYSQL_PWD", "printenv DB_CONN", "printenv HTTPS_PROXY"):
+        for cmd in (
+            "source env/bin/activate",
+            ". env/bin/activate",
+            "source env",
+            "cat env | sh",
+            "ls env && export -p",
+            "ls env; set",
+            "printenv GITHUB_TOKEN",
+            "printenv AWS_SECRET_ACCESS_KEY",
+            "ls env && make",
+            "printenv DATABASE_URL",
+            "printenv SENTRY_DSN",
+            "LD_PRELOAD=/tmp/x.so ls env",
+            "BASH_ENV=env cat env",
+            "printenv MYSQL_PWD",
+            "printenv DB_CONN",
+            "printenv HTTPS_PROXY",
+        ):
             self.assertFalse(rules.safe_env_command(cmd), cmd)
-        for cmd in ("env", "printenv", "env FOO=1 make", "bash -c env", "env env", "xargs env",
-                    "if true; then env; fi", "env>/tmp/x", "echo $(printenv)", "nice env", "printenv -0",
-                    "cat <(env)", "watch env", "sh -c printenv", "eval env", "ls env; env", "find . -exec env \\;",
-                    "ls env > /tmp/x", "python -c 'import os; print(os.environ)' env"):
+        for cmd in (
+            "env",
+            "printenv",
+            "env FOO=1 make",
+            "bash -c env",
+            "env env",
+            "xargs env",
+            "if true; then env; fi",
+            "env>/tmp/x",
+            "echo $(printenv)",
+            "nice env",
+            "printenv -0",
+            "cat <(env)",
+            "watch env",
+            "sh -c printenv",
+            "eval env",
+            "ls env; env",
+            "find . -exec env \\;",
+            "ls env > /tmp/x",
+            "python -c 'import os; print(os.environ)' env",
+        ):
             self.assertFalse(rules.safe_env_command(cmd), cmd)
         self.entries("G-ENV-03 ls env\nG-ENV-03 bash -c env\nG-ENV-03 env FOO=1 make\n")
         self.assertTrue(rules.allowed(self.root, "G-ENV-03", "ls env"))
@@ -238,7 +306,8 @@ class Allowance(unittest.TestCase):
     def test_problems_name_line_and_class(self):
         probs = rules.allowance_problems(
             "# comment\n\nG-ENV-03 ls env\nG-MERGE-03 git push origin main\nG-SEC-06 cat .env\nG-NOPE-01 x\n"
-            "G-ENV-03\nnot-an-id ls\nG-BASH-01 eval eval eval eval true\n")
+            "G-ENV-03\nnot-an-id ls\nG-BASH-01 eval eval eval eval true\n"
+        )
         text = "\n".join(probs)
         self.assertEqual(len(probs), 6, text)
         self.assertIn("line 4", text)
@@ -246,35 +315,44 @@ class Allowance(unittest.TestCase):
         self.assertIn("G-SEC-06 is a secret rule", text)
         self.assertIn("G-BASH-01 is a safety rule", text)
         self.assertIn("unknown rule id G-NOPE-01", text)
-        self.assertIn("line 7", text)                                               # an id with no command
-        self.assertNotIn("line 3", text)                                            # the valid entry
+        self.assertIn("line 7", text)  # an id with no command
+        self.assertNotIn("line 3", text)  # the valid entry
         self.assertEqual(rules.allowance_problems("G-ENV-03 ls env\n"), [])
 
 
 class History(unittest.TestCase):
     """defaults/scaffold-history.json holds every release's scaffold, and the current one (0004 S10)."""
+
     def test_current_scaffold_in_history(self):
         import json
         from sdlc_engine import lifecycle
+
         hist = json.loads((ROOT / "defaults" / "scaffold-history.json").read_text())
         for v in ("0.1.0", "0.2.0-alpha.1", "0.2.0-alpha.2"):
             self.assertIn(v, hist)
         key = lifecycle.history_key()
         self.assertIn(key, hist, "regenerate: python3 scripts/scaffold-history.py")
-        current = {rel: lifecycle.sha256_bytes(lifecycle.normalize((ROOT / "templates" / "scaffold" / rel).read_bytes()))
-                   for rel in lifecycle.scaffold_paths()}
+        current = {
+            rel: lifecycle.sha256_bytes(lifecycle.normalize((ROOT / "templates" / "scaffold" / rel).read_bytes()))
+            for rel in lifecycle.scaffold_paths()
+        }
         recorded = {rel: h for rel, h in hist[key].items() if "+" not in rel}
         self.assertEqual(recorded, current, "regenerate: python3 scripts/scaffold-history.py")
 
     def test_normalize_undoes_the_ref_pin(self):
         from sdlc_engine import lifecycle
-        for pinned in (b"      ZOUJ_SDLC_REF: v0.1.0        # pin", b"      ZOUJ_SDLC_REF: " + b"a" * 40 + b"   # x",
-                       b'        "ref": "v0.2.0-alpha.2"'):
+
+        for pinned in (
+            b"      ZOUJ_SDLC_REF: v0.1.0        # pin",
+            b"      ZOUJ_SDLC_REF: " + b"a" * 40 + b"   # x",
+            b'        "ref": "v0.2.0-alpha.2"',
+        ):
             self.assertIn(b"__ZOUJ_SDLC_REF__", lifecycle.normalize(pinned), pinned)
 
 
 class Skills(unittest.TestCase):
     """/zouj-ai-sdlc:configure is a thin, read-only wrapper over setup (0004 S17)."""
+
     def test_configure_is_read_only(self):
         f = ROOT / "skills" / "configure" / "SKILL.md"
         self.assertTrue(f.is_file())
@@ -285,7 +363,7 @@ class Skills(unittest.TestCase):
         self.assertTrue(ran)
         for cmd in ran:
             self.assertRegex(cmd, r"^sdlc (list-installed|doctor|setup --profile <\w+> --dry-run)$", cmd)
-        self.assertIn("-I <plugin>/bin/sdlc setup --profile", text)     # the human's terminal command, at the end
+        self.assertIn("-I <plugin>/bin/sdlc setup --profile", text)  # the human's terminal command, at the end
         self.assertLess(text.index("--dry-run"), text.index("-I <plugin>/bin/sdlc setup --profile"))
         for word in ("--yes", "uninstall", "approve"):
             self.assertNotIn(f"Run `sdlc {word}", text)

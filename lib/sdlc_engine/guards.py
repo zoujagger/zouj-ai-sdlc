@@ -7,6 +7,7 @@ Rules (only in repos initialized with `.aiops/`):
     may be written, by Edit/Write or by shell commands.
   * Always: no shell writes to artifacts or `.aiops/config|state`, no forged approvals, no merging into main.
 """
+
 import glob
 import os
 import posixpath
@@ -17,8 +18,22 @@ from pathlib import Path
 
 from . import artifacts as A
 from .shell import RESET, scoped_segments, segments, tokenize
-from .machine import (PLUGIN_ROOT, SCHEMAS, active_dir, config, current_branch, evaluate, gate, git, glob_hit, globs,
-                      initialized, lock, phrase, project_root)
+from .machine import (
+    PLUGIN_ROOT,
+    SCHEMAS,
+    active_dir,
+    config,
+    current_branch,
+    evaluate,
+    gate,
+    git,
+    glob_hit,
+    globs,
+    initialized,
+    lock,
+    phrase,
+    project_root,
+)
 
 ARTIFACT_RE = re.compile(r"^\.aiops/(\d{4}-[a-z0-9-]+)/(intent|spec|plan|review)\.md$")
 GUARDED_RE = re.compile(r"^\.aiops/(config(/|\.json$)|state(/|$)|install-state\.json$)")
@@ -40,8 +55,10 @@ def lock_procedure(st):
         return "start from an intent: run /zouj-ai-sdlc:intent (or `sdlc use NNNN` to resume one)."
     if st.state in (1, 2, 3):
         kind = ("intent", "spec", "plan")[st.state - 1]
-        return (f"you are in a read-only state. Finish {kind}.md under {st.dir.name}/, then stop and ask the human "
-                f"to type `{phrase(kind, st.id)}`. Code is unlocked only after `Plan Approved`.")
+        return (
+            f"you are in a read-only state. Finish {kind}.md under {st.dir.name}/, then stop and ask the human "
+            f"to type `{phrase(kind, st.id)}`. Code is unlocked only after `Plan Approved`."
+        )
     return "this intent is finished. Start a new one with /zouj-ai-sdlc:intent."
 
 
@@ -51,10 +68,11 @@ def _rel(root, path, cwd):
     try:
         return p.resolve().relative_to(root).as_posix()
     except ValueError:
-        return None   # outside the project: not this repo's application code
+        return None  # outside the project: not this repo's application code
 
 
 # ---------------------------------------------------------------- Edit / Write / MultiEdit
+
 
 def simulate(tool, ti, path):
     """The file content after the tool runs, or None if it can't be predicted (the tool will fail anyway)."""
@@ -80,14 +98,20 @@ def check_edit(data):
     if not initialized(root):
         return None
     if _in_plugin(path, cwd, root):
-        return _block("G-TOOL-01", f"'{path}' is inside the installed plugin, which the human runs to approve.",
-                      "change the plugin through its own repo.")
+        return _block(
+            "G-TOOL-01",
+            f"'{path}' is inside the installed plugin, which the human runs to approve.",
+            "change the plugin through its own repo.",
+        )
     rel = _rel(root, path, cwd)
     if rel is None:
         return None
     if GUARDED_RE.match(rel):
-        return _block("G-ART-01", f"'{rel}' is engine state or human-owned configuration.",
-                      "propose the change in chat; a human edits .aiops/config. State changes go through `sdlc`.")
+        return _block(
+            "G-ART-01",
+            f"'{rel}' is engine state or human-owned configuration.",
+            "propose the change in chat; a human edits .aiops/config. State changes go through `sdlc`.",
+        )
     m = ARTIFACT_RE.match(rel)
     if m:
         new = simulate(data.get("tool_name", ""), ti, root / rel)
@@ -107,41 +131,77 @@ def check_artifact(d, kind, new_text):
     new = A.parse(new_text)
     gate_value = schema["gate"]
     if new.get("id") and new.get("id") != ident:
-        return _block("G-ART-02", f"`id: {new.get('id')}` in {kind}.md must match its folder ({ident}).",
-                      "keep `id` equal to the folder number; artifacts can't be moved between intents.")
+        return _block(
+            "G-ART-02",
+            f"`id: {new.get('id')}` in {kind}.md must match its folder ({ident}).",
+            "keep `id` equal to the folder number; artifacts can't be moved between intents.",
+        )
     if not path.is_file():
         if schema["requires"]:
             ok, why = gate(d, schema["requires"])
             if not ok:
                 req = schema["requires"]
-                return _block("G-GATE-01", f"{kind}.md needs an approved {req}.md first ({req}.md: {why}).",
-                              f"finish {req}.md and ask the human to type `{phrase(req, ident)}`.")
+                return _block(
+                    "G-GATE-01",
+                    f"{kind}.md needs an approved {req}.md first ({req}.md: {why}).",
+                    f"finish {req}.md and ask the human to type `{phrase(req, ident)}`.",
+                )
         if gate_value and new.get("status") not in ("", "Draft"):
-            return _block("G-GATE-02", f"a new {kind}.md must start as `status: Draft`.",
-                          "write it as Draft; the human approves it by typing the approval phrase.")
+            return _block(
+                "G-GATE-02",
+                f"a new {kind}.md must start as `status: Draft`.",
+                "write it as Draft; the human approves it by typing the approval phrase.",
+            )
         if any(new.get(f) for f in A.APPROVAL_FIELDS):
-            return _block("G-GATE-03", "approved-* fields are written only by a human approval.",
-                          "leave them out; they are stamped when the human approves.")
+            return _block(
+                "G-GATE-03",
+                "approved-* fields are written only by a human approval.",
+                "leave them out; they are stamped when the human approves.",
+            )
         return None
     old = A.parse(path.read_text())
     if old.get("id") != new.get("id"):
         return _block("G-ART-03", f"`id` in {kind}.md can't be changed.", "keep `id` equal to the folder number.")
     for f in A.APPROVAL_FIELDS:
         if old.get(f) != new.get(f):
-            return _block("G-GATE-04", f"`{f}` in {kind}.md can only be written by a human approval.",
-                          f"leave approval fields untouched. The human types `{phrase(kind, ident)}`."
-                          if gate_value else "leave approval fields untouched.")
+            return _block(
+                "G-GATE-04",
+                f"`{f}` in {kind}.md can only be written by a human approval.",
+                f"leave approval fields untouched. The human types `{phrase(kind, ident)}`."
+                if gate_value
+                else "leave approval fields untouched.",
+            )
     if gate_value and new.get("status") != old.get("status") and new.get("status") != "Draft":
-        return _block("G-GATE-05", f"setting {kind}.md to `status: {new.get('status')}` is a human decision.",
-                      f"stop and ask the human to type `{phrase(kind, ident)}` in the prompt."
-                      if new.get("status") == gate_value else "only `Draft` may be set by the agent.")
+        return _block(
+            "G-GATE-05",
+            f"setting {kind}.md to `status: {new.get('status')}` is a human decision.",
+            f"stop and ask the human to type `{phrase(kind, ident)}` in the prompt."
+            if new.get("status") == gate_value
+            else "only `Draft` may be set by the agent.",
+        )
     return None
 
 
 # ---------------------------------------------------------------- Bash
 
-PREFIXES = {"sudo", "command", "env", "nohup", "time", "exec", "builtin", "xargs", "then", "do", "else", "if",
-            "while", "until", "!", "{"}   # a stray `!`/`{` is stripped, never the command word (0005 review round 6)
+PREFIXES = {
+    "sudo",
+    "command",
+    "env",
+    "nohup",
+    "time",
+    "exec",
+    "builtin",
+    "xargs",
+    "then",
+    "do",
+    "else",
+    "if",
+    "while",
+    "until",
+    "!",
+    "{",
+}  # a stray `!`/`{` is stripped, never the command word (0005 review round 6)
 ALL_TARGETS = {"rm", "rmdir", "touch", "mkdir", "truncate", "tee", "shred", "unlink"}
 DEST_TARGET = {"cp", "ln", "install", "rsync", "scp"}
 INPLACE = {"sed", "perl", "ruby", "gsed"}
@@ -150,56 +210,113 @@ PKG = {
     "pnpm": {"install", "i", "add", "remove", "rm", "update", "up", "upgrade", "link"},
     "yarn": {"", "install", "add", "remove", "upgrade", "up"},
     "bun": {"install", "i", "add", "remove", "update"},
-    "pip": {"install", "uninstall"}, "pip3": {"install", "uninstall"},
-    "uv": {"add", "remove", "sync", "pip", "lock"}, "poetry": {"add", "remove", "install", "update", "lock"},
-    "go": {"get"}, "cargo": {"add", "remove", "install", "update"}, "gem": {"install", "uninstall"},
-    "bundle": {"install", "add", "update"}, "composer": {"require", "install", "update", "remove"},
+    "pip": {"install", "uninstall"},
+    "pip3": {"install", "uninstall"},
+    "uv": {"add", "remove", "sync", "pip", "lock"},
+    "poetry": {"add", "remove", "install", "update", "lock"},
+    "go": {"get"},
+    "cargo": {"add", "remove", "install", "update"},
+    "gem": {"install", "uninstall"},
+    "bundle": {"install", "add", "update"},
+    "composer": {"require", "install", "update", "remove"},
 }
-GIT_LOCKED = {"apply", "am", "cherry-pick", "merge", "rebase", "revert", "pull", "restore", "rm", "mv", "clean",
-              "reset", "stash"}
+GIT_LOCKED = {
+    "apply",
+    "am",
+    "cherry-pick",
+    "merge",
+    "rebase",
+    "revert",
+    "pull",
+    "restore",
+    "rm",
+    "mv",
+    "clean",
+    "reset",
+    "stash",
+}
 GIT_MAIN_FORBIDDEN = {"merge", "rebase", "cherry-pick", "am"}
 GIT_TREE_WRITERS = {"rm", "mv", "checkout", "restore", "reset", "clean", "stash"}
 MAKE_WRITERS = {"format", "fmt", "fix", "generate", "gen", "migrate", "codegen"}
 HUMAN_SUBS = r"(approve|close|unlock|hook|legacy-approvals)"
 # Commands that run their arguments as a command; any literal words (options, durations) may follow them. Shells
 # count only with -c (`sh script.sh $x hook` runs a script, not $x).
-WRAPPER_WORDS = {"sudo", "doas", "command", "exec", "env", "nohup", "time", "builtin", "xargs", "eval", "nice",
-                 "timeout", "stdbuf", "setsid", "ionice", "chrt", "taskset", "unbuffer", "watch", "flock", "trap",
-                 "coproc", "strace", "ltrace", "parallel", "busybox", "then", "do", "else", "while", "until", "if",
-                 "elif", "!", "{"}
-WRAPPERS = r"(sudo|doas|command|exec|env|nohup|time|builtin|xargs|eval|nice|timeout|stdbuf|setsid|ionice|chrt|" \
-           r"taskset|unbuffer|watch|flock|trap|coproc|strace|ltrace|parallel|python[\d.]*)"
+WRAPPER_WORDS = {
+    "sudo",
+    "doas",
+    "command",
+    "exec",
+    "env",
+    "nohup",
+    "time",
+    "builtin",
+    "xargs",
+    "eval",
+    "nice",
+    "timeout",
+    "stdbuf",
+    "setsid",
+    "ionice",
+    "chrt",
+    "taskset",
+    "unbuffer",
+    "watch",
+    "flock",
+    "trap",
+    "coproc",
+    "strace",
+    "ltrace",
+    "parallel",
+    "busybox",
+    "then",
+    "do",
+    "else",
+    "while",
+    "until",
+    "if",
+    "elif",
+    "!",
+    "{",
+}
+WRAPPERS = (
+    r"(sudo|doas|command|exec|env|nohup|time|builtin|xargs|eval|nice|timeout|stdbuf|setsid|ionice|chrt|"
+    r"taskset|unbuffer|watch|flock|trap|coproc|strace|ltrace|parallel|python[\d.]*)"
+)
 SHELL_C = r"((busybox|su)\s+)?(\S*/)?(ba|z|da|k|fi)?sh\s+(-\S+\s+)*?-\w*c|script\s+(-\S+\s+)*?-\w*c|su\s+(-\S+\s+)*?-c"
-CMD_POS = (rf"(^|[;&|()`\n{{!]|\b(then|do|else|while|until|if|elif|coproc)\s)\s*"
-           rf"(((\S*/)?{WRAPPERS}|{SHELL_C})(\s+[^\s$`;&|]+)*?\s+|\w+=\S*\s+)*")
-SHELL_FED_RE = re.compile(r"\|\s*(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\b|\b(source|\.)\s+(<\(|/dev/stdin|/dev/fd|/proc/)")
-HUMAN_WORD_RE = re.compile(rf"(^|[\s=;&|(]|:-){HUMAN_SUBS}(\s|$|[;&|)}}])")   # also a `${x:-approve}` default
-ENGINE_RES = (   # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
+CMD_POS = (
+    rf"(^|[;&|()`\n{{!]|\b(then|do|else|while|until|if|elif|coproc)\s)\s*"
+    rf"(((\S*/)?{WRAPPERS}|{SHELL_C})(\s+[^\s$`;&|]+)*?\s+|\w+=\S*\s+)*"
+)
+SHELL_FED_RE = re.compile(
+    r"\|\s*(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\b|\b(source|\.)\s+(<\(|/dev/stdin|/dev/fd|/proc/)"
+)
+HUMAN_WORD_RE = re.compile(rf"(^|[\s=;&|(]|:-){HUMAN_SUBS}(\s|$|[;&|)}}])")  # also a `${x:-approve}` default
+ENGINE_RES = (  # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
     re.compile(rf"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*{HUMAN_SUBS}\b"),
-    re.compile(rf"{CMD_POS}[^\s;&|]*[$`][^\s;&|]*\s+{HUMAN_SUBS}\b"),     # dynamic command word: $s, ${s}lc, $(…)
+    re.compile(rf"{CMD_POS}[^\s;&|]*[$`][^\s;&|]*\s+{HUMAN_SUBS}\b"),  # dynamic command word: $s, ${s}lc, $(…)
     re.compile(rf"{CMD_POS}(\$\([^)]*\)|`[^`]*`)\S*\s+{HUMAN_SUBS}\b"),  # $(which sdlc) hook, `which sdlc` close
-    re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*\S*[$`]"),              # dynamic subcommand: sdlc $x, sdlc $(…)
-    re.compile(r"(\bfunction\s+\w+|\b\w+\s*\(\s*\))\s*\{[^}]*\bsdlc\b"),   # a function wrapping sdlc
+    re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*\S*[$`]"),  # dynamic subcommand: sdlc $x, sdlc $(…)
+    re.compile(r"(\bfunction\s+\w+|\b\w+\s*\(\s*\))\s*\{[^}]*\bsdlc\b"),  # a function wrapping sdlc
     re.compile(r"\balias\s+\w+=\S*\bsdlc\b"),
     re.compile(r"\bxargs\b[^;&|\n]*\bsdlc\b"),
-    re.compile(r"\b(cp|install|rsync|ln|mv|scp)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)"),   # copying the engine
+    re.compile(r"\b(cp|install|rsync|ln|mv|scp)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)"),  # copying the engine
     re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
 TRAILER_RE = re.compile(r"AIOps-Approval\s*:")
-FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:|\w+=\S*AIOps-")      # printf 'AIOps-%s:', AIOps-$x:, m=AIOps-…
+FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:|\w+=\S*AIOps-")  # printf 'AIOps-%s:', AIOps-$x:, m=AIOps-…
 MARKERS = r"(CLAUDECODE|CLAUDE_CODE_CHILD_SESSION)"
 ENV_RES = (
-    re.compile(rf"(?<![\w$]){MARKERS}="),                                # an assignment, not `[ $CLAUDECODE = 1 ]`
+    re.compile(rf"(?<![\w$]){MARKERS}="),  # an assignment, not `[ $CLAUDECODE = 1 ]`
     re.compile(rf"\bunset\b[^;&|\n]*\b{MARKERS}\b"),
     re.compile(rf"(\s-u\s*|--unset[=\s]+){MARKERS}\b"),
     re.compile(r"\benv\s+(-\S+\s+)*(-i|--ignore-environment|-)(\s|$)"),
-    re.compile(rf"\b(export|declare|typeset|readonly|local)\b[^;&|\n]*\b{MARKERS}\b"),   # export -n, declare +x, …
+    re.compile(rf"\b(export|declare|typeset|readonly|local)\b[^;&|\n]*\b{MARKERS}\b"),  # export -n, declare +x, …
     # computed marker names: `unset ${a}CODE`, `unset CLAUDE{CODE,}`, `unset CLAUDE*`, printf-built `CLAUDE%s`
     re.compile(r"\bunset\b[^;&|\n]*\s(\$|[^\s$\[]*[{*?%])"),
     re.compile(r"\benv\b[^;&|\n]*\s(-u\s*|--unset[=\s]+)(\$|[^\s$]*[{*?%])"),
     re.compile(r"\b(export|declare|typeset)\b[^;&|\n]*\s(-n|\+x)\b[^;&|\n]*\s(\$|[^\s$]*[{*?%])"),
-    re.compile(r"\bexec\s+-\w*c"),                                    # bash's own empty-environment exec
+    re.compile(r"\bexec\s+-\w*c"),  # bash's own empty-environment exec
 )
 
 
@@ -218,25 +335,58 @@ def _dynamic_engine_call(cmd, plain):
     assigned = re.search(rf"\w+={HUMAN_SUBS}\b", plain)
     for words, _ in segments(tokenize(cmd)):
         i = 0
-        while i < len(words) and (words[i] in WRAPPER_WORDS or re.match(r"^[A-Za-z_]\w*=", words[i])
-                                  or re.match(r"^python[\d.]*$", Path(words[i]).name)
-                                  or (i and words[i - 1] in WRAPPER_WORDS and words[i].startswith("-"))):
+        while i < len(words) and (
+            words[i] in WRAPPER_WORDS
+            or re.match(r"^[A-Za-z_]\w*=", words[i])
+            or re.match(r"^python[\d.]*$", Path(words[i]).name)
+            or (i and words[i - 1] in WRAPPER_WORDS and words[i].startswith("-"))
+        ):
             i += 1
         if i + 1 < len(words) and Path(words[i]).name in SHELLS and re.search(r"[$`?*\[{]", words[i + 1]):
-            i += 1                                           # `sh "$(command -v sdlc)" approve`
+            i += 1  # `sh "$(command -v sdlc)" approve`
         head = [] if i >= len(words) else [words[i]] if re.match(r"^(\$\(|`)", words[i]) else words[i].split()
         if not head or not re.search(r"[$`?*\[{]", head[0]):
             continue
-        rest = head[1:] + words[i + 1:]                      # `eval "$s approve …"` keeps its words in one token
+        rest = head[1:] + words[i + 1 :]  # `eval "$s approve …"` keeps its words in one token
         first = next((w for w in rest if not w.startswith("-")), "")
         if human.match(first) or (assigned and re.search(r"[$`]", first)) or re.search(r"\$[@*]|\$\{\w+:?[-=]", first):
             return True
     return False
 
 
-PARALLEL_VALUE_OPTS = {"-j", "--jobs", "--halt", "--halt-on-error", "--retries", "--memfree", "--load", "-X", "-N", "-n", "--max-args", "-S", "--sshlogin", "-a", "--arg-file", "--colsep",
-                      "-d", "--delimiter", "-E", "--eof", "--timeout", "--delay", "--joblog", "--results", "--tmpdir",
-                      "-P", "--max-procs", "-L", "--max-lines", "-s", "--max-chars"}
+PARALLEL_VALUE_OPTS = {
+    "-j",
+    "--jobs",
+    "--halt",
+    "--halt-on-error",
+    "--retries",
+    "--memfree",
+    "--load",
+    "-X",
+    "-N",
+    "-n",
+    "--max-args",
+    "-S",
+    "--sshlogin",
+    "-a",
+    "--arg-file",
+    "--colsep",
+    "-d",
+    "--delimiter",
+    "-E",
+    "--eof",
+    "--timeout",
+    "--delay",
+    "--joblog",
+    "--results",
+    "--tmpdir",
+    "-P",
+    "--max-procs",
+    "-L",
+    "--max-lines",
+    "-s",
+    "--max-chars",
+}
 
 
 def _nested_command(words):
@@ -250,27 +400,29 @@ def _nested_command(words):
     if name in SHELLS:
         for i, a in enumerate(words[1:], 1):
             if re.match(r"^-[a-zA-Z]*c[a-zA-Z]*$", a) and i + 1 < len(words):
-                script, pos = words[i + 1], words[i + 3:]          # $0 = words[i + 2]
+                script, pos = words[i + 1], words[i + 3 :]  # $0 = words[i + 2]
                 if i + 2 < len(words):
                     script = re.sub(r'"?\$0\b"?|"?\$\{0\}"?', lambda _m: shlex.quote(words[i + 2]), script)
                 for k, v in enumerate(pos, 1):
-                    pat = r'"?\$' + str(k) + r'\b"?|"?\$\{' + str(k) + r'\}"?'      # "$1", $1, ${1}
+                    pat = r'"?\$' + str(k) + r'\b"?|"?\$\{' + str(k) + r'\}"?'  # "$1", $1, ${1}
                     script = re.sub(pat, lambda _m, v=v: shlex.quote(v), script)
                 if pos:
                     script = re.sub(r'"?\$\{?[@*]\}?"?', " ".join(shlex.quote(p) for p in pos), script)
-                    if re.search(r"\bshift\b|\bfor +\w+ *(;|\n| do\b)|\$\{?[0-9]", script):   # args read indirectly
-                        script += " ; rm -rf -- " + " ".join(shlex.quote(p) for p in pos)   # judge each as a target
+                    if re.search(r"\bshift\b|\bfor +\w+ *(;|\n| do\b)|\$\{?[0-9]", script):  # args read indirectly
+                        script += " ; rm -rf -- " + " ".join(shlex.quote(p) for p in pos)  # judge each as a target
                 return script
     if name == "trap":
         rest = [w for w in words[1:] if w != "--"]
         return rest[0] if rest and not rest[0].startswith("-") else None
     if name == "coproc" and len(words) > 1:
         return " ".join(shlex.quote(w) for w in words[1:])
-    if name in ("script", "su"):                         # script -qc '…' file, su -c '…' user
+    if name in ("script", "su"):  # script -qc '…' file, su -c '…' user
         for i, a in enumerate(words[1:], 1):
             if a.startswith("--command="):
                 return a.split("=", 1)[1]
-            if (a in ("-c", "--command") or (re.match(r"^-[a-zA-Z]*c$", a) and name == "script")) and i + 1 < len(words):
+            if (a in ("-c", "--command") or (re.match(r"^-[a-zA-Z]*c$", a) and name == "script")) and i + 1 < len(
+                words
+            ):
                 return words[i + 1]
     if name == "watch":
         i = 1
@@ -282,9 +434,9 @@ def _nested_command(words):
         return shlex.join(words[i:]) or None
     if name == "parallel" and ":::" in words:
         k, i = words.index(":::"), 1
-        while i < k and words[i].startswith("-"):           # parallel's own options
+        while i < k and words[i].startswith("-"):  # parallel's own options
             i += 2 if words[i] in PARALLEL_VALUE_OPTS else 1
-        return " ".join(shlex.quote(w) for w in words[i:k] + words[k + 1:])
+        return " ".join(shlex.quote(w) for w in words[i:k] + words[k + 1 :])
     if name == "flock":
         for i, a in enumerate(words):
             if a.startswith("--command="):
@@ -298,18 +450,64 @@ def _nested_command(words):
 # operands come before the command (`timeout 5 rm …`, `flock /tmp/l rm …`). 0005 review round 1: a wrapper must
 # never hide a write.
 WRAPPER_OPTS = {
-    "timeout": {"-s", "--signal", "-k", "--kill-after"}, "nice": {"-n", "--adjustment"},
+    "timeout": {"-s", "--signal", "-k", "--kill-after"},
+    "nice": {"-n", "--adjustment"},
     "ionice": {"-c", "-n", "-p", "-P", "-u", "--class", "--classdata", "--pid", "--pgid", "--uid"},
-    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"}, "chrt": set(), "taskset": set(),
-    "flock": {"-w", "--timeout", "-E", "--conflict-exit-code"}, "setsid": set(), "nohup": set(), "unbuffer": set(),
-    "sudo": {"-u", "-g", "-h", "-p", "-C", "-U", "-r", "-t", "-T", "-D", "--user", "--group", "--host", "--prompt",
-             "--chdir", "--close-from", "--role", "--type", "--command-timeout"},
-    "doas": {"-u", "-C"}, "command": set(), "builtin": set(), "time": {"-f", "--format", "-o", "--output"},
-    "exec": {"-a"}, "xargs": {"-n", "-I", "-P", "-L", "-d", "-a", "-E", "-s", "--max-args", "--max-procs",
-                              "--delimiter", "--arg-file", "--max-lines", "--max-chars", "--replace"},
-    "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}, "busybox": set(),
+    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"},
+    "chrt": set(),
+    "taskset": set(),
+    "flock": {"-w", "--timeout", "-E", "--conflict-exit-code"},
+    "setsid": set(),
+    "nohup": set(),
+    "unbuffer": set(),
+    "sudo": {
+        "-u",
+        "-g",
+        "-h",
+        "-p",
+        "-C",
+        "-U",
+        "-r",
+        "-t",
+        "-T",
+        "-D",
+        "--user",
+        "--group",
+        "--host",
+        "--prompt",
+        "--chdir",
+        "--close-from",
+        "--role",
+        "--type",
+        "--command-timeout",
+    },
+    "doas": {"-u", "-C"},
+    "command": set(),
+    "builtin": set(),
+    "time": {"-f", "--format", "-o", "--output"},
+    "exec": {"-a"},
+    "xargs": {
+        "-n",
+        "-I",
+        "-P",
+        "-L",
+        "-d",
+        "-a",
+        "-E",
+        "-s",
+        "--max-args",
+        "--max-procs",
+        "--delimiter",
+        "--arg-file",
+        "--max-lines",
+        "--max-chars",
+        "--replace",
+    },
+    "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
+    "busybox": set(),
     "runuser": {"-u", "-g", "-G", "--user", "--group", "--supp-group", "-w", "--whitelist-environment"},
-    "strace": {"-o", "-e", "-p", "-s", "-u", "-P", "-E"}, "ltrace": {"-o", "-e", "-p", "-s", "-u"},
+    "strace": {"-o", "-e", "-p", "-s", "-u", "-P", "-E"},
+    "ltrace": {"-o", "-e", "-p", "-s", "-u"},
 }
 WRAPPER_OPERANDS = {"timeout": 1, "chrt": 1, "taskset": 1, "flock": 1}
 
@@ -321,7 +519,7 @@ def _strip_prefix(words):
         w = words[i]
         name = Path(w).name
         if name == "flock" and any(a in ("-c", "--command") or a.startswith("--command=") for a in words[i:]):
-            break                                       # `flock f -c '…'`: _nested_command reads the script
+            break  # `flock f -c '…'`: _nested_command reads the script
         if name in WRAPPER_OPTS:
             i += 1
             while i < len(words) and words[i].startswith("-") and words[i] != "-":
@@ -342,11 +540,42 @@ def _strip_prefix(words):
 GIT_CONFIG_ENV_RE = re.compile(r"^GIT_CONFIG(_GLOBAL|_SYSTEM)?=")
 
 
-GIT_CONFIG_LONG = ("--global", "--system", "--local", "--worktree", "--file", "--blob", "--type", "--default",
-                   "--comment", "--value", "--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "--unset",
-                   "--unset-all", "--replace-all", "--add", "--rename-section", "--remove-section", "--edit",
-                   "--fixed-value", "--null", "--name-only", "--show-origin", "--show-scope", "--includes",
-                   "--no-includes", "--bool", "--int", "--bool-or-int", "--path", "--expiry-date")
+GIT_CONFIG_LONG = (
+    "--global",
+    "--system",
+    "--local",
+    "--worktree",
+    "--file",
+    "--blob",
+    "--type",
+    "--default",
+    "--comment",
+    "--value",
+    "--get",
+    "--get-all",
+    "--get-regexp",
+    "--get-urlmatch",
+    "--list",
+    "--unset",
+    "--unset-all",
+    "--replace-all",
+    "--add",
+    "--rename-section",
+    "--remove-section",
+    "--edit",
+    "--fixed-value",
+    "--null",
+    "--name-only",
+    "--show-origin",
+    "--show-scope",
+    "--includes",
+    "--no-includes",
+    "--bool",
+    "--int",
+    "--bool-or-int",
+    "--path",
+    "--expiry-date",
+)
 
 
 def _norm_git_config(rest):
@@ -374,10 +603,16 @@ def _git_config_outside(rest, cwd, root, env_file):
     for i, a in enumerate(rest):
         if len(a) >= 4 and ("--global".startswith(a) or "--system".startswith(a)):
             return True
-        f = rest[i + 1] if a in ("-f", "--file") and i + 1 < len(rest) else \
-            a.split("=", 1)[1] if a.startswith("--file=") else None
-        if f is not None and (_rel(root, os.path.expanduser(f), cwd) is None
-                              or _toolchain_path(Path(os.path.expanduser(f)), root)):
+        f = (
+            rest[i + 1]
+            if a in ("-f", "--file") and i + 1 < len(rest)
+            else a.split("=", 1)[1]
+            if a.startswith("--file=")
+            else None
+        )
+        if f is not None and (
+            _rel(root, os.path.expanduser(f), cwd) is None or _toolchain_path(Path(os.path.expanduser(f)), root)
+        ):
             return True
     return False
 
@@ -389,14 +624,34 @@ def _holds_toolchain(p, root=None):
     home = os.path.realpath(str(Path.home()))
     inside = [os.path.join(home, d) for d in (".ssh", ".config", ".claude", ".aws", "bin", ".local/bin", ".gnupg")]
     real_root = os.path.realpath(str(root)) if root is not None else None
-    inside += [os.path.realpath(str(PLUGIN_ROOT))] + [   # an activated in-repo venv isn't the human's toolchain
-        d for d in _writable_path_dirs() if not (real_root and (d == real_root or d.startswith(real_root + "/")))]
+    inside += [os.path.realpath(str(PLUGIN_ROOT))] + [  # an activated in-repo venv isn't the human's toolchain
+        d for d in _writable_path_dirs() if not (real_root and (d == real_root or d.startswith(real_root + "/")))
+    ]
     return real == home or home.startswith(real + "/") or any(c == real or c.startswith(real + "/") for c in inside)
 
 
-CLONE_VALUE_OPTS = {"-b", "--branch", "-o", "--origin", "-c", "--config", "--depth", "--reference",
-                    "--reference-if-able", "--template", "--separate-git-dir", "-u", "--upload-pack", "--filter", "-j",
-                    "--jobs", "--shallow-since", "--shallow-exclude", "--bundle-uri", "--server-option"}
+CLONE_VALUE_OPTS = {
+    "-b",
+    "--branch",
+    "-o",
+    "--origin",
+    "-c",
+    "--config",
+    "--depth",
+    "--reference",
+    "--reference-if-able",
+    "--template",
+    "--separate-git-dir",
+    "-u",
+    "--upload-pack",
+    "--filter",
+    "-j",
+    "--jobs",
+    "--shallow-since",
+    "--shallow-exclude",
+    "--bundle-uri",
+    "--server-option",
+}
 
 
 def write_targets(words, cwd):
@@ -415,7 +670,7 @@ def write_targets(words, cwd):
     if name == "link":
         return nonopt[:2]
     if name == "ln" and not any(re.match(r"^-[a-zA-Z]*s", a) or a == "--symbolic" for a in args):
-        return nonopt + target_dir                       # a hard link makes its source writable through the new name
+        return nonopt + target_dir  # a hard link makes its source writable through the new name
     if name == "cp" and any(a in ("-l", "--link") or re.match(r"^-[a-zA-Z]*l", a) for a in args):
         return nonopt + target_dir
     if name in DEST_TARGET:
@@ -424,11 +679,12 @@ def write_targets(words, cwd):
         return [a[3:] for a in args if a.startswith("of=")]
     if name in ("curl", "wget"):
         return [t for t in _download_targets(name, args) if t != "-"]
-    if name == "git":                                   # git clone <url> <dir>; git --work-tree=<dir> …
-        wt = [a.split("=", 1)[1] for a in args if a.startswith("--work-tree=")] + \
-            [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--work-tree"]
+    if name == "git":  # git clone <url> <dir>; git --work-tree=<dir> …
+        wt = [a.split("=", 1)[1] for a in args if a.startswith("--work-tree=")] + [
+            args[i + 1] for i, a in enumerate(args[:-1]) if a == "--work-tree"
+        ]
         if "clone" in args:
-            rest, after = [], args[args.index("clone") + 1:]
+            rest, after = [], args[args.index("clone") + 1 :]
             k = 0
             while k < len(after):
                 if after[k] in CLONE_VALUE_OPTS:
@@ -440,9 +696,10 @@ def write_targets(words, cwd):
             wt += rest[1:2]
         return wt
     if name == "find" and any(a in FIND_ACTIONS for a in args):
-        return args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))]
-    inplace = (name in INPLACE and any(re.match(r"^-[a-zA-Z]*i", a) or a.startswith("--in-place") for a in args)) \
-        or (name in ("awk", "gawk") and _awk_inplace(args))
+        return args[: next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!")), len(args))]
+    inplace = (name in INPLACE and any(re.match(r"^-[a-zA-Z]*i", a) or a.startswith("--in-place") for a in args)) or (
+        name in ("awk", "gawk") and _awk_inplace(args)
+    )
     if inplace:
         return [a for a in nonopt if (Path(cwd) / os.path.expanduser(HOME_VAR_RE.sub(str(Path.home()), a))).is_file()]
     return []
@@ -453,15 +710,22 @@ def _download_targets(name, args):
     short, long = ("o", "--output") if name == "curl" else ("O", "--output-document")
     dir_long, dir_short = ("--output-dir", None) if name == "curl" else ("--directory-prefix", "-P")
     out = []
-    named = any(a.startswith((long, dir_long)) or (a.startswith("-") and not a.startswith("--") and
-                                                     (short in a[1:] or (dir_short and dir_short[1] in a[1:])))
-                for a in args)
-    remote_name = name == "wget" or any(a in ("-O", "--remote-name", "-J", "--remote-name-all") or
-                                        (re.match(r"^-[a-zA-Z]+$", a) and "O" in a) for a in args)
-    if remote_name and not named:                       # saved under its remote name, in the current directory
+    named = any(
+        a.startswith((long, dir_long))
+        or (a.startswith("-") and not a.startswith("--") and (short in a[1:] or (dir_short and dir_short[1] in a[1:])))
+        for a in args
+    )
+    remote_name = name == "wget" or any(
+        a in ("-O", "--remote-name", "-J", "--remote-name-all") or (re.match(r"^-[a-zA-Z]+$", a) and "O" in a)
+        for a in args
+    )
+    if remote_name and not named:  # saved under its remote name, in the current directory
         out.append("./")
-        out += ["./" + posixpath.basename(a.split("?", 1)[0].rstrip("/")) for a in args
-                if "://" in a and posixpath.basename(a.split("?", 1)[0].rstrip("/"))]
+        out += [
+            "./" + posixpath.basename(a.split("?", 1)[0].rstrip("/"))
+            for a in args
+            if "://" in a and posixpath.basename(a.split("?", 1)[0].rstrip("/"))
+        ]
     for i, a in enumerate(args):
         if a.startswith(dir_long + "="):
             out.append(a.split("=", 1)[1] + "/")
@@ -475,11 +739,11 @@ def _download_targets(name, args):
         elif a == long and i + 1 < len(args):
             out.append(args[i + 1])
         elif re.match(r"^-[a-zA-Z]+$", a) and short in a[1:]:
-            rest = a[a.index(short, 1) + 1:]
+            rest = a[a.index(short, 1) + 1 :]
             if rest:
-                out.append(rest)          # -oFILE / -sSLoFILE
+                out.append(rest)  # -oFILE / -sSLoFILE
             elif i + 1 < len(args):
-                out.append(args[i + 1])   # -o FILE / -sSLo FILE
+                out.append(args[i + 1])  # -o FILE / -sSLo FILE
     return out
 
 
@@ -499,12 +763,30 @@ def _target_directory(args):
 
 
 def _awk_inplace(args):
-    return any((a == "-i" and i + 1 < len(args) and args[i + 1] == "inplace") or a in ("-iinplace", "--include=inplace")
-               for i, a in enumerate(args))
+    return any(
+        (a == "-i" and i + 1 < len(args) and args[i + 1] == "inplace") or a in ("-iinplace", "--include=inplace")
+        for i, a in enumerate(args)
+    )
 
 
-GIT_COMMIT_VALUE_OPTS = {"-m", "--message", "-F", "--file", "-C", "--reuse-message", "-c", "--reedit-message",
-                         "--author", "--date", "--fixup", "--squash", "-t", "--template", "--trailer", "--cleanup"}
+GIT_COMMIT_VALUE_OPTS = {
+    "-m",
+    "--message",
+    "-F",
+    "--file",
+    "-C",
+    "--reuse-message",
+    "-c",
+    "--reedit-message",
+    "--author",
+    "--date",
+    "--fixup",
+    "--squash",
+    "-t",
+    "--template",
+    "--trailer",
+    "--cleanup",
+}
 
 
 def _git_commit_pathspecs(rest):
@@ -513,7 +795,7 @@ def _git_commit_pathspecs(rest):
     while i < len(rest):
         a = rest[i]
         if a == "--":
-            return paths + rest[i + 1:]
+            return paths + rest[i + 1 :]
         if a in GIT_COMMIT_VALUE_OPTS or (re.match(r"^-[a-zA-Z]+$", a) and a[-1] in "mFCct"):
             i += 2
             continue
@@ -537,7 +819,7 @@ def _git_sub(args, cwd):
         elif args[i].startswith("-"):
             i += 1
         else:
-            return args[i], args[i + 1:], cwd
+            return args[i], args[i + 1 :], cwd
     return "", [], cwd
 
 
@@ -558,9 +840,11 @@ def _git_changed(root, staged_only):
 SCAFFOLD_RE = re.compile(r"(^|[^\w-])sdlc\s+(-\S+\s+)*(init|setup|upgrade|repair|uninstall)\b")
 # a real uninstall is human-only; its --dry-run is open to anyone (group 3: the rest of that simple command)
 UNINSTALL_RE = re.compile(r"(^|[\s;&|(/])sdlc\s+(-\S+\s+)*uninstall\b([^;&|\n]*)")
-RELOCATE_RE = re.compile(r"(^|[\s;&|(])(cd|pushd|popd)(\s|$)"
-                         r"|\b(GIT_[A-Z_]+|CLAUDE_PROJECT_DIR|HOME|SDLC_HOOK_PROFILE|AIOPS_INTENT)="
-                         r"|(^|\s)(-C\S*|--chdir\S*|-execdir|-okdir)(\s|$)")
+RELOCATE_RE = re.compile(
+    r"(^|[\s;&|(])(cd|pushd|popd)(\s|$)"
+    r"|\b(GIT_[A-Z_]+|CLAUDE_PROJECT_DIR|HOME|SDLC_HOOK_PROFILE|AIOPS_INTENT)="
+    r"|(^|\s)(-C\S*|--chdir\S*|-execdir|-okdir)(\s|$)"
+)
 
 
 def _scaffold_elsewhere(cwd, plain):
@@ -573,12 +857,15 @@ def _scaffold_elsewhere(cwd, plain):
     if not session or not SCAFFOLD_RE.search(plain):
         return None
     if RELOCATE_RE.search(plain) or project_root(cwd) != project_root(session):
-        return _block("G-SCAF-01", "`sdlc init|setup|upgrade|repair|uninstall` run by the agent may act only on "
-                      "this session's repo "
-                      f"({project_root(session)}), from there, without cd, -C, --chdir, -execdir or GIT_*, "
-                      "CLAUDE_PROJECT_DIR or HOME settings.",
-                      "run it from the project as a command of its own; another repo is set up by the human in "
-                      "their own terminal.")
+        return _block(
+            "G-SCAF-01",
+            "`sdlc init|setup|upgrade|repair|uninstall` run by the agent may act only on "
+            "this session's repo "
+            f"({project_root(session)}), from there, without cd, -C, --chdir, -execdir or GIT_*, "
+            "CLAUDE_PROJECT_DIR or HOME settings.",
+            "run it from the project as a command of its own; another repo is set up by the human in "
+            "their own terminal.",
+        )
     return None
 
 
@@ -586,31 +873,43 @@ def check_bash(data):
     cmd = (data.get("tool_input") or {}).get("command", "")
     cwd = data.get("cwd") or "."
     plain = re.sub(r"[\\'\"]", "", cmd)
-    elsewhere = _scaffold_elsewhere(cwd, plain)     # before the initialized check: the other repo may not be
+    elsewhere = _scaffold_elsewhere(cwd, plain)  # before the initialized check: the other repo may not be
     if elsewhere:
         return elsewhere
     root = project_root(cwd)
     if not cmd.strip():
         return None
-    if not initialized(root):            # SDLC gates dormant; the safety checks run in every repo (0005, gap 2)
+    if not initialized(root):  # SDLC gates dormant; the safety checks run in every repo (0005, gap 2)
         return _check_command(cmd, Path(cwd), root, False, "", None, False, depth=0, gates=False)
-    if TRAILER_RE.search(plain) or (FORMAT_TRAILER_RE.search(plain) and "Approval" in plain
-                                    and re.search(r"\bgit\b", plain)):   # also printf- or variable-built
-        return _block("G-GATE-06", "approval commits are created only by a human approval.",
-                      "ask the human to approve in their terminal (`<plugin>/bin/sdlc approve NNNN intent|spec|plan`, "
-                      "the exact path is in the refusal message).")
+    if TRAILER_RE.search(plain) or (
+        FORMAT_TRAILER_RE.search(plain) and "Approval" in plain and re.search(r"\bgit\b", plain)
+    ):  # also printf- or variable-built
+        return _block(
+            "G-GATE-06",
+            "approval commits are created only by a human approval.",
+            "ask the human to approve in their terminal (`<plugin>/bin/sdlc approve NNNN intent|spec|plan`, "
+            "the exact path is in the refusal message).",
+        )
     if any(r.search(plain) for r in ENV_RES):
-        return _block("G-ENV-02", "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
-                      "would let human-only commands run as the agent.",
-                      "leave the environment alone; human-only steps are run by the human.")
+        return _block(
+            "G-ENV-02",
+            "changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION (or clearing the environment) "
+            "would let human-only commands run as the agent.",
+            "leave the environment alone; human-only steps are run by the human.",
+        )
     if any("--dry-run" not in m.group(3).split("#", 1)[0].split() for m in UNINSTALL_RE.finditer(plain)):
-        return _block("G-GATE-07", "`sdlc uninstall` removes the workflow's files; it is human-only.",
-                      "preview it with `sdlc uninstall --dry-run`; the human runs the real uninstall in their own "
-                      "terminal.")
+        return _block(
+            "G-GATE-07",
+            "`sdlc uninstall` removes the workflow's files; it is human-only.",
+            "preview it with `sdlc uninstall --dry-run`; the human runs the real uninstall in their own terminal.",
+        )
     if any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain):
-        return _block("G-GATE-07", "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
-                      "stop and ask the human: they type `Intent|Spec|Plan Approved NNNN` in the prompt, "
-                      "or run the command in their own terminal.")
+        return _block(
+            "G-GATE-07",
+            "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
+            "stop and ask the human: they type `Intent|Spec|Plan Approved NNNN` in the prompt, "
+            "or run the command in their own terminal.",
+        )
     locked, reason, st = lock(root)
     on_main = current_branch(root) == config(root)["main_branch"]
     return _check_command(cmd, Path(cwd), root, locked, reason, st, on_main, depth=0)
@@ -633,7 +932,7 @@ def _braces(word):
         return [word]
     out = []
     for alt in m.group(1).split(","):
-        out += [w for w in _braces(word[:m.start()] + alt + word[m.end():]) if w not in out]
+        out += [w for w in _braces(word[: m.start()] + alt + word[m.end() :]) if w not in out]
     return out
 
 
@@ -644,9 +943,13 @@ def _expand(target, cwd):
     """A write target as the shell would see it: $PWD / $(pwd) / ~+ / ~ / $HOME / $XDG_CONFIG_HOME resolved, braces and
     globs expanded."""
     out = []
-    target = HOME_VAR_RE.sub(lambda m: os.environ.get(m[1] or m[2]) or str(Path.home() / ".config"
-                                                                           if (m[1] or m[2]) == "XDG_CONFIG_HOME"
-                                                                           else Path.home()), target)
+    target = HOME_VAR_RE.sub(
+        lambda m: (
+            os.environ.get(m[1] or m[2])
+            or str(Path.home() / ".config" if (m[1] or m[2]) == "XDG_CONFIG_HOME" else Path.home())
+        ),
+        target,
+    )
     target = os.path.expanduser(target) if target.startswith("~") and not target.startswith("~+") else target
     for t in _braces(PWD_RE.sub(lambda _m: str(cwd), target)):
         if not GLOB_CHARS.search(t):
@@ -660,13 +963,17 @@ def _expand(target, cwd):
 def _find_hits_aiops(args, cwd, root):
     """True if a destructive `find` could reach `.aiops`: a start path inside it, or an ancestor of it whose
     name/path filters (or lack of filters) match something in the `.aiops` tree."""
-    if not any(a in FIND_ACTIONS for a in args) or _find_only_empty_dirs(args):   # empty dirs only: no artifact
+    if not any(a in FIND_ACTIONS for a in args) or _find_only_empty_dirs(args):  # empty dirs only: no artifact
         return False
-    starts = args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!", "\\(", "\\!")),
-                        len(args))] or ["."]
+    starts = args[
+        : next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!", "\\(", "\\!")), len(args))
+    ] or ["."]
     names = [(args[i + 1], a == "-iname") for i, a in enumerate(args[:-1]) if a in ("-name", "-iname")]
-    paths = [(args[i + 1], a.startswith("-i")) for i, a in enumerate(args[:-1])
-             if a in ("-path", "-ipath", "-wholename", "-iwholename")]
+    paths = [
+        (args[i + 1], a.startswith("-i"))
+        for i, a in enumerate(args[:-1])
+        if a in ("-path", "-ipath", "-wholename", "-iwholename")
+    ]
     aiops = root / ".aiops"
     for start in starts:
         rel = _rel(root, start, cwd)
@@ -678,7 +985,7 @@ def _find_hits_aiops(args, cwd, root):
         if not (aiops == base or base in aiops.parents):
             continue
         if not names and not paths:
-            return True                                 # everything below the start, .aiops included
+            return True  # everything below the start, .aiops included
         entries = [aiops] + list(aiops.rglob("*"))
         for e in entries:
             shown = f"{start.rstrip('/')}/{e.relative_to(base).as_posix()}"
@@ -693,8 +1000,25 @@ def _fnmatch(name, pattern, ci):
 
 
 PATCH_PATH_RE = re.compile(r"^(?:diff --git a/(\S+) b/(\S+)|(?:---|\+\+\+) ([^\t\n ]+)|rename (?:from|to) (\S+))", re.M)
-PATCH_VALUE_OPTS = {"-p", "-o", "--output", "-r", "--reject-file", "-B", "--prefix", "-D", "--ifdef", "-F", "--fuzz",
-                    "-z", "--suffix", "-V", "--version-control", "--exclude", "--include"}
+PATCH_VALUE_OPTS = {
+    "-p",
+    "-o",
+    "--output",
+    "-r",
+    "--reject-file",
+    "-B",
+    "--prefix",
+    "-D",
+    "--ifdef",
+    "-F",
+    "--fuzz",
+    "-z",
+    "--suffix",
+    "-V",
+    "--version-control",
+    "--exclude",
+    "--include",
+}
 AM_CONTROL = {"--continue", "--abort", "--skip", "--quit", "--show-current-patch", "--resolved", "-r"}
 
 
@@ -723,17 +1047,17 @@ def _patch_check(args, cwd, root, git_am=False):
     for f in files:
         rel = _rel(root, f, cwd)
         if rel and _aiops_protected(rel):
-            return "aiops"                             # `patch .aiops/…/plan.md < x`: the file patched in place
+            return "aiops"  # `patch .aiops/…/plan.md < x`: the file patched in place
     readable = [Path(cwd) / f for f in files if (Path(cwd) / f).is_file()]
     if stdin or not readable:
         return "stdin"
     for f in readable:
         for m in PATCH_PATH_RE.finditer(f.read_text(errors="replace")):
             for g in filter(None, m.groups()):
-                if g.startswith('"') and g.endswith('"'):   # git's C-quoted names: "a/.aio\160s/…"
+                if g.startswith('"') and g.endswith('"'):  # git's C-quoted names: "a/.aio\160s/…"
                     g = g[1:-1].encode("latin-1", "backslashreplace").decode("unicode_escape")
                 parts = g.split("/")
-                for k in range(len(parts)):            # every -pN strip level
+                for k in range(len(parts)):  # every -pN strip level
                     for d in dirs:
                         rel = _rel(root, "/".join(filter(None, [d] + parts[k:])), cwd)
                         if rel and _aiops_protected(rel):
@@ -747,16 +1071,20 @@ def _extract_dirs(name, args):
     if name == "unzip":
         if any(a in ("-l", "-t", "-v", "-Z", "-p") for a in args):
             return []
-        dirs = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "-d"] + [a[2:] for a in args if a.startswith("-d")
-                                                                              and len(a) > 2]
+        dirs = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "-d"] + [
+            a[2:] for a in args if a.startswith("-d") and len(a) > 2
+        ]
         return dirs or ["."]
     if name == "tar":
-        if not any(a in ("--extract", "--get") or re.match(r"^-[A-Za-z]*x", a) for a in args) \
-                and not (args and not args[0].startswith("-") and "x" in args[0]):
+        if not any(a in ("--extract", "--get") or re.match(r"^-[A-Za-z]*x", a) for a in args) and not (
+            args and not args[0].startswith("-") and "x" in args[0]
+        ):
             return []
-        dirs = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-C", "--directory")] + \
-            [a[2:] for a in args if a.startswith("-C") and len(a) > 2] + \
-            [a.split("=", 1)[1] for a in args if a.startswith("--directory=")]
+        dirs = (
+            [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-C", "--directory")]
+            + [a[2:] for a in args if a.startswith("-C") and len(a) > 2]
+            + [a.split("=", 1)[1] for a in args if a.startswith("--directory=")]
+        )
         return dirs or ["."]
     return []
 
@@ -770,7 +1098,7 @@ def _incoming_problem(root, rels):
     for rel in rels:
         rel = posixpath.normpath(rel.lstrip("/"))
         if rel.startswith("../") or rel == "..":
-            continue                                   # lands outside the repo
+            continue  # lands outside the repo
         if INCOMING_GUARDED_RE.match(rel) or glob_hit(rel, pglobs):
             return rel
     return None
@@ -788,15 +1116,15 @@ def _archive_file(name, args):
             elif not a.startswith("-"):
                 return a
         return None
-    for i, a in enumerate(args):                       # tar
+    for i, a in enumerate(args):  # tar
         if a in ("-f", "--file") and i + 1 < len(args):
             return args[i + 1]
         if a.startswith("--file="):
             return a.split("=", 1)[1]
-        if a.startswith("-") and not a.startswith("--") and "f" in a:      # -xzf x.tgz, -xzfx.tgz
-            rest = a[a.index("f") + 1:]
+        if a.startswith("-") and not a.startswith("--") and "f" in a:  # -xzf x.tgz, -xzfx.tgz
+            rest = a[a.index("f") + 1 :]
             return rest or (args[i + 1] if i + 1 < len(args) else None)
-        if i == 0 and not a.startswith("-") and "f" in a:                  # old style: `tar xfz x.tgz`
+        if i == 0 and not a.startswith("-") and "f" in a:  # old style: `tar xfz x.tgz`
             return args[1] if len(args) > 1 else None
     return None
 
@@ -805,17 +1133,24 @@ def _archive_members(path):
     """(member names, [(link member, its target)]) of a tar (any compression) or zip archive, or None if it can't be read."""
     import tarfile
     import zipfile
+
     try:
         if zipfile.is_zipfile(path):
             with zipfile.ZipFile(path) as z:
                 infos = z.infolist()
-                links = [(i.filename, z.read(i).decode(errors="replace")) for i in infos
-                         if (i.external_attr >> 16) & 0o170000 == 0o120000]
+                links = [
+                    (i.filename, z.read(i).decode(errors="replace"))
+                    for i in infos
+                    if (i.external_attr >> 16) & 0o170000 == 0o120000
+                ]
                 return [i.filename for i in infos], links
         with tarfile.open(path) as t:
             members = t.getmembers()
-            return [m.name for m in members], [(m.name, m.linkname if m.issym() else posixpath.relpath(m.linkname, posixpath.dirname(m.name) or "."))
-                                               for m in members if m.issym() or m.islnk()]
+            return [m.name for m in members], [
+                (m.name, m.linkname if m.issym() else posixpath.relpath(m.linkname, posixpath.dirname(m.name) or "."))
+                for m in members
+                if m.issym() or m.islnk()
+            ]
     except (OSError, tarfile.TarError, zipfile.BadZipFile, EOFError):
         return None
 
@@ -823,9 +1158,30 @@ def _archive_members(path):
 TAR_REWRITE_RE = re.compile(r"^(--transform|--xform|--absolute-names$|-P$|-[A-Za-z]*P[A-Za-z]*$)")
 
 
-TAR_LONG = ("--strip-components", "--transform", "--xform", "--one-top-level", "--one-file-system", "--absolute-names",
-            "--directory", "--file", "--extract", "--get", "--list", "--create", "--to-stdout", "--to-command", "--totals",
-            "--touch", "--delay-directory-restore", "--dereference", "--delete", "--diff", "--gzip", "--gunzip")
+TAR_LONG = (
+    "--strip-components",
+    "--transform",
+    "--xform",
+    "--one-top-level",
+    "--one-file-system",
+    "--absolute-names",
+    "--directory",
+    "--file",
+    "--extract",
+    "--get",
+    "--list",
+    "--create",
+    "--to-stdout",
+    "--to-command",
+    "--totals",
+    "--touch",
+    "--delay-directory-restore",
+    "--dereference",
+    "--delete",
+    "--diff",
+    "--gzip",
+    "--gunzip",
+)
 
 
 def _norm_tar(args):
@@ -853,8 +1209,12 @@ def _strip_count(args):
 def _dest_guarded(root, base):
     """True if extracting into repo-relative dir `base` could reach the repo root, .aiops/, .claude/ or a protected path."""
     prefix = "" if base in ("", ".") else base.rstrip("/") + "/"
-    return not prefix or any(g.startswith(prefix) for g in (".aiops/", ".claude/")) \
-        or any(g.startswith(prefix) for g, _ in globs(root, "protected-paths")) or prefix.startswith((".aiops/", ".claude/"))
+    return (
+        not prefix
+        or any(g.startswith(prefix) for g in (".aiops/", ".claude/"))
+        or any(g.startswith(prefix) for g, _ in globs(root, "protected-paths"))
+        or prefix.startswith((".aiops/", ".claude/"))
+    )
 
 
 def _incoming_archive(name, args, cwd, root, links=None, written=(), opaque=False):
@@ -865,7 +1225,7 @@ def _incoming_archive(name, args, cwd, root, links=None, written=(), opaque=Fals
     dests = [_via_links(d, cwd, links or {}) for d in _extract_dirs(name, args)]
     dests = [d for d in dests if _rel(root, d, cwd) is not None]
     if not dests:
-        return None                                    # not extracting, or only outside the repo
+        return None  # not extracting, or only outside the repo
     archive = _archive_file(name, args)
     apath = os.path.normpath(str(Path(cwd) / os.path.expanduser(archive))) if archive else ""
     if archive and (opaque or any(w == apath or apath.startswith(w + "/") for w in written)):
@@ -877,13 +1237,20 @@ def _incoming_archive(name, args, cwd, root, links=None, written=(), opaque=Fals
             return "`tar --transform` / `-P` rewrites where members land, so the archive can't be inspected"
         if strip < 0:
             return "`--strip-components` has no count the guard can read"
-        for member, target in listing[1]:                  # links: only where they can't reach out of the destination
+        for member, target in listing[1]:  # links: only where they can't reach out of the destination
             resolved = posixpath.normpath(posixpath.join(posixpath.dirname(member), target))
-            if target.startswith("/") or resolved == ".." or resolved.startswith("../") or \
-                    any(_dest_guarded(root, _rel(root, d, cwd)) for d in dests):
+            if (
+                target.startswith("/")
+                or resolved == ".."
+                or resolved.startswith("../")
+                or any(_dest_guarded(root, _rel(root, d, cwd)) for d in dests)
+            ):
                 return "the archive holds a symlink or hardlink member that can redirect where files land"
-    members = None if listing is None else [
-        "/".join(Path(m.lstrip("/")).parts[strip:]) for m in listing[0] if len(Path(m.lstrip("/")).parts) > strip]
+    members = (
+        None
+        if listing is None
+        else ["/".join(Path(m.lstrip("/")).parts[strip:]) for m in listing[0] if len(Path(m.lstrip("/")).parts) > strip]
+    )
     if members is None:
         # tar and unzip drop `..` member names, so an unreadable archive matters only where guarded paths lie below
         for d in dests:
@@ -897,7 +1264,7 @@ def _incoming_archive(name, args, cwd, root, links=None, written=(), opaque=Fals
         for m in members:
             rel = posixpath.join(base, m)
             landed.append(rel)
-            real = os.path.realpath(os.path.join(real_root, rel))          # through symlinks already in the repo
+            real = os.path.realpath(os.path.join(real_root, rel))  # through symlinks already in the repo
             if real.startswith(real_root + "/"):
                 landed.append(os.path.relpath(real, real_root))
         hit = _incoming_problem(root, landed)
@@ -906,9 +1273,19 @@ def _incoming_archive(name, args, cwd, root, links=None, written=(), opaque=Fals
     return None
 
 
-GIT_VALUE_OPTS = {   # options whose value is the next word (0005 review round 1: a value isn't a ref)
-    "merge": {"-m", "-F", "-s", "-X", "--strategy", "--strategy-option", "--into-name", "--file", "--message",
-              "--cleanup"},
+GIT_VALUE_OPTS = {  # options whose value is the next word (0005 review round 1: a value isn't a ref)
+    "merge": {
+        "-m",
+        "-F",
+        "-s",
+        "-X",
+        "--strategy",
+        "--strategy-option",
+        "--into-name",
+        "--file",
+        "--message",
+        "--cleanup",
+    },
     "rebase": {"-s", "-X", "--strategy", "--strategy-option", "-x", "--exec", "-C", "--onto"},
     "cherry-pick": {"-m", "--mainline", "-X", "--strategy", "--strategy-option"},
 }
@@ -923,12 +1300,12 @@ def _git_operands(sub, rest):
             vals[a] = rest[i + 1]
             i += 2
             continue
-        if len(a) > 2 and a.startswith("-") and not a.startswith("--"):   # clusters and stuck values: -m2, -nm2
+        if len(a) > 2 and a.startswith("-") and not a.startswith("--"):  # clusters and stuck values: -m2, -nm2
             hit = next((k for k, ch in enumerate(a[1:], 1) if "-" + ch in takes), None)
             if hit is not None:
-                val = a[hit + 1:] or (rest[i + 1] if i + 1 < len(rest) else "")
+                val = a[hit + 1 :] or (rest[i + 1] if i + 1 < len(rest) else "")
                 vals["-" + a[hit]] = val
-                i += 1 if a[hit + 1:] else 2
+                i += 1 if a[hit + 1 :] else 2
                 continue
         if a.startswith("--") and "=" in a:
             vals[a.split("=", 1)[0]] = a.split("=", 1)[1]
@@ -944,21 +1321,97 @@ def _git_paths(root, *args):
     return None if out is None else [p for p in out.split("\0") if p]
 
 
-GIT_RUNS_RE = re.compile(   # git -c keys whose value git runs as a command (0005 review rounds 3-4)
+GIT_RUNS_RE = re.compile(  # git -c keys whose value git runs as a command (0005 review rounds 3-4)
     r"^(core\.(editor|pager|sshcommand|fsmonitor|askpass|hookspath)|sequence\.editor|pager\.[^=]+|"
     r"diff\.[^=]*(external|textconv|command)|credential\.[^=]*helper|(merge|diff)tool\.[^=]+|gpg\.[^=]*program|"
     r"filter\.[^=]+\.(clean|smudge|process)|uploadpack\.packobjectshook|alias\.[^=]+|merge\.[^=]+\.driver)=(?P<cmd>.+)$",
-    re.I)
-SAFE_READ_COMMANDS = {"ls", "cat", "echo", "printf", "true", "false", "test", "[", "[[", "pwd", "grep", "rg", "head",
-                      "tail", "wc", "sleep", ":", "which", "type", "stat", "file", "du", "df", "date", "env", "mkdir",
-                      "cd", "pushd", "popd", "find", "tree", "sort", "uniq", "diff", "cmp", "sha256sum", "md5sum"}
+    re.I,
+)
+SAFE_READ_COMMANDS = {
+    "ls",
+    "cat",
+    "echo",
+    "printf",
+    "true",
+    "false",
+    "test",
+    "[",
+    "[[",
+    "pwd",
+    "grep",
+    "rg",
+    "head",
+    "tail",
+    "wc",
+    "sleep",
+    ":",
+    "which",
+    "type",
+    "stat",
+    "file",
+    "du",
+    "df",
+    "date",
+    "env",
+    "mkdir",
+    "cd",
+    "pushd",
+    "popd",
+    "find",
+    "tree",
+    "sort",
+    "uniq",
+    "diff",
+    "cmp",
+    "sha256sum",
+    "md5sum",
+}
 
 
-GIT_READONLY_SUBS = {"status", "log", "diff", "show", "rev-parse", "ls-files", "ls-tree", "cat-file", "describe",
-                     "shortlog", "blame", "grep", "fetch", "rev-list", "name-rev", "for-each-ref", "show-ref",
-                     "merge-base", "remote", "help", "version", "config", "", "add", "commit", "restore", "rm", "mv",
-                     "stash", "clean", "apply", "am", "format-patch", "bisect",
-                     "submodule", "clone", "init", "gc", "fsck", "count-objects", "verify-commit", "verify-tag"}
+GIT_READONLY_SUBS = {
+    "status",
+    "log",
+    "diff",
+    "show",
+    "rev-parse",
+    "ls-files",
+    "ls-tree",
+    "cat-file",
+    "describe",
+    "shortlog",
+    "blame",
+    "grep",
+    "fetch",
+    "rev-list",
+    "name-rev",
+    "for-each-ref",
+    "show-ref",
+    "merge-base",
+    "remote",
+    "help",
+    "version",
+    "config",
+    "",
+    "add",
+    "commit",
+    "restore",
+    "rm",
+    "mv",
+    "stash",
+    "clean",
+    "apply",
+    "am",
+    "format-patch",
+    "bisect",
+    "submodule",
+    "clone",
+    "init",
+    "gc",
+    "fsck",
+    "count-objects",
+    "verify-commit",
+    "verify-tag",
+}
 
 
 def _incoming_git(sub, rest, root, on_main, args=(), refs_moved=False):
@@ -976,13 +1429,16 @@ def _incoming_git(sub, rest, root, on_main, args=(), refs_moved=False):
         return f"an earlier part of this command moves a ref, so `git {sub}` can't be inspected before it runs"
     if sub == "pull":
         gconf = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "-c"]
-        if on_main and ops in ([], ["origin"], ["origin", main]) and \
-                not any(c.startswith(("branch.", "remote.", "url.")) for c in gconf):   # a pull of main itself
+        if (
+            on_main
+            and ops in ([], ["origin"], ["origin", main])
+            and not any(c.startswith(("branch.", "remote.", "url.")) for c in gconf)
+        ):  # a pull of main itself
             return None
         return "`git pull` brings in changes that can't be inspected before they land"
     if sub == "stash" and ops[:1] in (["pop"], ["apply"], ["branch"]):
         if git(root, "rev-parse", "-q", "--verify", "refs/stash") is None:
-            return None                                  # no stash: git refuses on its own
+            return None  # no stash: git refuses on its own
         ref = (ops[2] if ops[0] == "branch" else ops[1]) if len(ops) > (2 if ops[0] == "branch" else 1) else "stash@{0}"
         paths = _git_paths(root, "stash", "show", "-z", "--name-only", "--include-untracked", ref)
         if paths is None:
@@ -995,13 +1451,13 @@ def _incoming_git(sub, rest, root, on_main, args=(), refs_moved=False):
         refs = ops + ([vals["--onto"]] if "--onto" in vals else [])
         if not refs:
             if git(root, "rev-parse", "-q", "--verify", "@{u}") is None:
-                return None                              # no upstream: git refuses on its own
+                return None  # no upstream: git refuses on its own
             refs = ["@{u}"]
         for n, ref in enumerate(refs):
             if ref in trusted:
                 continue
             paths = _git_paths(root, "diff", "-z", "--name-only", f"HEAD...{ref}")
-            if paths is not None and sub == "rebase" and n == 1:   # `rebase <upstream> <branch>` checks out <branch>
+            if paths is not None and sub == "rebase" and n == 1:  # `rebase <upstream> <branch>` checks out <branch>
                 more = _git_paths(root, "diff", "-z", "--name-only", "HEAD", ref)
                 paths = None if more is None else paths + more
             if paths is None:
@@ -1024,7 +1480,7 @@ def _incoming_git(sub, rest, root, on_main, args=(), refs_moved=False):
             return "`git cherry-pick` can't be inspected (unknown commit: fetch it first)"
         for c in commits:
             if any(git(root, "merge-base", "--is-ancestor", c, t) is not None for t in (main, f"origin/{main}")):
-                continue                                 # already on main: trusted like main itself (review round 6)
+                continue  # already on main: trusted like main itself (review round 6)
             parents = (git(root, "rev-list", "--parents", "-n", "1", c) or "").split()[1:]
             if parents:
                 base = f"{c}^{mainline}" if len(parents) > 1 else f"{c}^"
@@ -1039,11 +1495,22 @@ def _incoming_git(sub, rest, root, on_main, args=(), refs_moved=False):
     return None
 
 
-SIGNING_CONFIG_RE = re.compile(r"^(user\.signingkey|gpg\..+|core\.(hookspath|fsmonitor|attributesfile|sshcommand|editor|pager)|sequence\.editor|"
-                               r"include\..+|includeif\..+|filter\..+|alias\..+|diff\..+)$", re.I)
-GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list"}   # not --path/-z: formats
-GIT_CONFIG_WRITES = {"--unset", "--unset-all", "--replace-all", "--add", "--rename-section", "--remove-section",
-                     "-e", "--edit"}
+SIGNING_CONFIG_RE = re.compile(
+    r"^(user\.signingkey|gpg\..+|core\.(hookspath|fsmonitor|attributesfile|sshcommand|editor|pager)|sequence\.editor|"
+    r"include\..+|includeif\..+|filter\..+|alias\..+|diff\..+)$",
+    re.I,
+)
+GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list"}  # not --path/-z: formats
+GIT_CONFIG_WRITES = {
+    "--unset",
+    "--unset-all",
+    "--replace-all",
+    "--add",
+    "--rename-section",
+    "--remove-section",
+    "-e",
+    "--edit",
+}
 GIT_CONFIG_VALUE_OPTS = {"-f", "--file", "--blob", "--type", "--default", "--comment", "--value"}
 GIT_CONFIG_SUB_WRITES = {"set", "unset", "rename-section", "remove-section", "edit"}
 
@@ -1070,9 +1537,9 @@ def _git_config_writes_signing(rest, cwd, root):
         return False
     if not write and any(o in GIT_CONFIG_READS for o in opts):
         return False
-    write = write or len(words) >= 2                       # `git config key value`
+    write = write or len(words) >= 2  # `git config key value`
     in_git_dir = any((r := _rel(root, f, cwd)) is not None and (r == ".git" or r.startswith(".git/")) for f in files)
-    if write and (in_git_dir or (not words and not files)):   # `git config -e` / `git config edit` opens .git/config
+    if write and (in_git_dir or (not words and not files)):  # `git config -e` / `git config edit` opens .git/config
         return True
     return write and bool(words) and bool(SIGNING_CONFIG_RE.match(words[0]))
 
@@ -1096,11 +1563,13 @@ def _toolchain_path(p, root):
     user-writable PATH directory: an agent's write there runs inside the human's next approval. The target is
     resolved (symlinks, `..`) and also probed as a directory (`cp x ~/.local/bin/`, `cp x ~/.config/fish`)."""
     real = os.path.realpath(str(p))
-    probes = [real, real + "/x"]                           # a directory target, existing or not, counts as inside
+    probes = [real, real + "/x"]  # a directory target, existing or not, counts as inside
     homebin = os.path.realpath(str(Path.home() / "bin"))
     dirs = _writable_path_dirs() + [homebin]
-    return any(glob_hit(q, globs(root, "toolchain-paths")) or any(q == d or q.startswith(d + "/") for d in dirs)
-               for q in probes)
+    return any(
+        glob_hit(q, globs(root, "toolchain-paths")) or any(q == d or q.startswith(d + "/") for d in dirs)
+        for q in probes
+    )
 
 
 WHOLE_TREE_RE = re.compile(r"^(\.|\./|:/.*|:\(.*|.*[*?\[].*)$")
@@ -1109,16 +1578,17 @@ WHOLE_TREE_RE = re.compile(r"^(\.|\./|:/.*|:\(.*|.*[*?\[].*)$")
 def _rewrites_tree_from_rev(sub, rest):
     """`git checkout <rev> -- .` / `git restore -s <rev> ':/'`: older versions of everything, protected files included."""
     if sub == "restore":
-        rev = any(a in ("-s", "--source") or a.startswith("--source=") or (a.startswith("-s") and len(a) > 2)
-                  for a in rest)
+        rev = any(
+            a in ("-s", "--source") or a.startswith("--source=") or (a.startswith("-s") and len(a) > 2) for a in rest
+        )
     elif sub == "checkout" and "--" in rest:
-        rev = any(not a.startswith("-") for a in rest[:rest.index("--")])
-    elif sub == "checkout":                                  # `git checkout HEAD~1 .`: a rev, then paths
+        rev = any(not a.startswith("-") for a in rest[: rest.index("--")])
+    elif sub == "checkout":  # `git checkout HEAD~1 .`: a rev, then paths
         operands = [a for a in rest if not a.startswith("-")]
         return len(operands) >= 2 and any(WHOLE_TREE_RE.match(p) for p in operands[1:])
     else:
         return False
-    paths = rest[rest.index("--") + 1:] if "--" in rest else [a for a in rest if not a.startswith("-")]
+    paths = rest[rest.index("--") + 1 :] if "--" in rest else [a for a in rest if not a.startswith("-")]
     return rev and any(WHOLE_TREE_RE.match(p) for p in paths)
 
 
@@ -1136,8 +1606,25 @@ def _in_plugin(target, cwd, root):
 
 
 DELETERS = {"rm", "rmdir", "unlink", "shred"}
-FIND_FILTERS = {"-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex", "-type",
-                "-newer", "-mtime", "-mmin", "-size", "-empty", "-user", "-group", "-perm"}
+FIND_FILTERS = {
+    "-name",
+    "-iname",
+    "-path",
+    "-ipath",
+    "-wholename",
+    "-iwholename",
+    "-regex",
+    "-iregex",
+    "-type",
+    "-newer",
+    "-mtime",
+    "-mmin",
+    "-size",
+    "-empty",
+    "-user",
+    "-group",
+    "-perm",
+}
 
 
 def delete_targets(words):
@@ -1154,30 +1641,67 @@ def delete_targets(words):
             after = True
     if name in DELETERS:
         return ops
-    if name == "link":                                   # hard link: the source becomes writable through the new name
+    if name == "link":  # hard link: the source becomes writable through the new name
         return ops[:1]
-    if (name == "cp" and any(a in ("-l", "--link") or re.match(r"^-[a-zA-Z]*l", a) for a in args)) or \
-            (name == "ln" and not any(re.match(r"^-[a-zA-Z]*s", a) or a == "--symbolic" for a in args)):
+    if (name == "cp" and any(a in ("-l", "--link") or re.match(r"^-[a-zA-Z]*l", a) for a in args)) or (
+        name == "ln" and not any(re.match(r"^-[a-zA-Z]*s", a) or a == "--symbolic" for a in args)
+    ):
         return ops[:-1] if not _target_directory(args) else ops
     if name == "mv":
         return ops if _target_directory(args) else ops[:-1]
     if name == "rsync":
         rops = _rsync_operands(args)
-        linkdest = [a.split("=", 1)[1] for a in args if a.startswith("--link-dest=")] + \
-            [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--link-dest"]
-        out = rops[-1:] if any(a.startswith("--del") for a in args) else []   # --del, --delete*: the destination
+        linkdest = [a.split("=", 1)[1] for a in args if a.startswith("--link-dest=")] + [
+            args[i + 1] for i, a in enumerate(args[:-1]) if a == "--link-dest"
+        ]
+        out = rops[-1:] if any(a.startswith("--del") for a in args) else []  # --del, --delete*: the destination
         return out + linkdest + (rops[:-1] if {"--remove-source-files", "--remove-sent-files"} & set(args) else [])
-    if name == "find" and _find_deletes(args) and not _find_only_empty_dirs(args) \
-            and (not _find_name_filters(args) or _find_negated(args)):   # unfiltered or negated: the whole tree
+    if (
+        name == "find"
+        and _find_deletes(args)
+        and not _find_only_empty_dirs(args)
+        and (not _find_name_filters(args) or _find_negated(args))
+    ):  # unfiltered or negated: the whole tree
         return _find_roots(args)
     return []
 
 
-RSYNC_VALUE_OPTS = {"-e", "--rsh", "-f", "--filter", "--exclude", "--include", "--exclude-from", "--include-from",
-                    "--files-from", "--chmod", "--chown", "--backup-dir", "--suffix", "--partial-dir", "-T",
-                    "--temp-dir", "--compare-dest", "--copy-dest", "--link-dest", "--log-file", "--password-file",
-                    "--bwlimit", "--timeout", "--port", "--max-size", "--min-size", "--modify-window", "-B",
-                    "--block-size", "--rsync-path", "--out-format", "--log-file-format", "--usermap", "--groupmap"}
+RSYNC_VALUE_OPTS = {
+    "-e",
+    "--rsh",
+    "-f",
+    "--filter",
+    "--exclude",
+    "--include",
+    "--exclude-from",
+    "--include-from",
+    "--files-from",
+    "--chmod",
+    "--chown",
+    "--backup-dir",
+    "--suffix",
+    "--partial-dir",
+    "-T",
+    "--temp-dir",
+    "--compare-dest",
+    "--copy-dest",
+    "--link-dest",
+    "--log-file",
+    "--password-file",
+    "--bwlimit",
+    "--timeout",
+    "--port",
+    "--max-size",
+    "--min-size",
+    "--modify-window",
+    "-B",
+    "--block-size",
+    "--rsync-path",
+    "--out-format",
+    "--log-file-format",
+    "--usermap",
+    "--groupmap",
+}
 
 
 def _rsync_operands(args):
@@ -1193,13 +1717,28 @@ def _rsync_operands(args):
     return ops
 
 
-FIND_DELETING = {"rm", "rmdir", "unlink", "shred", "mv", "truncate",
-                 "cp", "sed", "tee", "dd", "install", "perl", "ln", "link"}   # -exec writers count too (round 4)
+FIND_DELETING = {
+    "rm",
+    "rmdir",
+    "unlink",
+    "shred",
+    "mv",
+    "truncate",
+    "cp",
+    "sed",
+    "tee",
+    "dd",
+    "install",
+    "perl",
+    "ln",
+    "link",
+}  # -exec writers count too (round 4)
 
 
 def _find_roots(args):
-    return args[:next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!", "\\(", "\\!")),
-                      len(args))] or ["."]
+    return args[
+        : next((i for i, a in enumerate(args) if a.startswith("-") or a in ("(", "!", "\\(", "\\!")), len(args))
+    ] or ["."]
 
 
 FIND_NEGATIONS = {"-not", "!", "-o", "-or", ","}
@@ -1211,14 +1750,15 @@ def _find_exec_commands(args):
     for i, a in enumerate(args):
         if a in ("-exec", "-execdir", "-ok", "-okdir"):
             end = next((j for j in range(i + 1, len(args)) if args[j] in (";", "\\;", "+")), len(args))
-            out.append(_strip_prefix(args[i + 1:end]))
+            out.append(_strip_prefix(args[i + 1 : end]))
     return out
 
 
 def _find_deletes(args):
     """True if this find deletes: -delete, or an -exec running a deleting command, a shell, eval or xargs."""
-    return "-delete" in args or any(w and (Path(w[0]).name in FIND_DELETING | SHELLS | {"eval", "xargs"})
-                                    for w in _find_exec_commands(args))
+    return "-delete" in args or any(
+        w and (Path(w[0]).name in FIND_DELETING | SHELLS | {"eval", "xargs"}) for w in _find_exec_commands(args)
+    )
 
 
 def _find_negated(args):
@@ -1243,19 +1783,22 @@ def _find_negated(args):
 def _find_only_empty_dirs(args):
     """`find … -type d [-empty] -delete` with no -exec and no negation: -delete removes only empty directories."""
     pairs = list(zip(args, args[1:]))
-    return ("-type", "d") in pairs and "-delete" in args and not _find_exec_commands(args) \
-        and not _find_negated(args)
+    return ("-type", "d") in pairs and "-delete" in args and not _find_exec_commands(args) and not _find_negated(args)
 
 
 def _find_name_filters(args):
     """[(test, pattern)] for -name/-iname/-path/-ipath/-wholename tests."""
-    return [(a, args[i + 1]) for i, a in enumerate(args[:-1])
-            if a in ("-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename")]
+    return [
+        (a, args[i + 1])
+        for i, a in enumerate(args[:-1])
+        if a in ("-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename")
+    ]
 
 
 def _protected_files_under(root, rel):
     """Existing protected files (protected-paths globs) and git-tracked protected or secret files under rel."""
     from glob import glob as _glob
+
     prefix = "" if rel in ("", ".") else rel.rstrip("/") + "/"
     pglobs, sglobs = globs(root, "protected-paths"), globs(root, "secret-paths")
     found = set()
@@ -1266,7 +1809,7 @@ def _protected_files_under(root, rel):
             found.add(Path(f).relative_to(root).as_posix())
         lit = re.split(r"[*?\[]", g, 1)[0].rsplit("/", 1)[0] if re.search(r"[*?\[]", g) else ""
         base = Path(root) / lit
-        if lit and base.is_dir():                        # a bash-style * crosses /: walk the literal prefix
+        if lit and base.is_dir():  # a bash-style * crosses /: walk the literal prefix
             for n, (dirpath, _dirs, fnames) in enumerate(os.walk(base)):
                 if n > 2000:
                     break
@@ -1282,7 +1825,7 @@ def _protected_files_under(root, rel):
 
 def _find_hits_protected(args, cwd, root):
     """A filtered find that deletes: the first protected file under its roots that a name/path test would reach."""
-    if not _find_deletes(args) or _find_negated(args):   # negated tests: delete_targets judges the tree
+    if not _find_deletes(args) or _find_negated(args):  # negated tests: delete_targets judges the tree
         return None
     tests = _find_name_filters(args)
     for r in _find_roots(args):
@@ -1290,8 +1833,12 @@ def _find_hits_protected(args, cwd, root):
         if rel is None:
             continue
         files = _protected_files_under(root, rel)
-        dirs = {p for f in files for p in (Path(f).parents) if str(p) != "." and str(p).startswith(rel.rstrip("/")) or
-                (rel in ("", ".") and str(p) != ".")}        # `-name .github -exec rm -rf`: the directories too
+        dirs = {
+            p
+            for f in files
+            for p in (Path(f).parents)
+            if str(p) != "." and str(p).startswith(rel.rstrip("/")) or (rel in ("", ".") and str(p) != ".")
+        }  # `-name .github -exec rm -rf`: the directories too
         for f in files + sorted(str(d) for d in dirs):
             for t, pat in tests:
                 ci = t.startswith("-i")
@@ -1308,7 +1855,7 @@ def _via_links(target, cwd, links):
     t = os.path.normpath(str(Path(target) if Path(target).is_absolute() else Path(cwd) / target))
     for name, dest in links.items():
         if t == name or t.startswith(name + "/"):
-            rewritten = dest + t[len(name):]
+            rewritten = dest + t[len(name) :]
             return rewritten + ("/" if target.endswith("/") else "")
     return target
 
@@ -1320,13 +1867,13 @@ def _contains_protected(root, target, cwd):
     raw = Path(os.path.expanduser(str(target)))
     raw = raw if raw.is_absolute() else Path(cwd) / raw
     if not str(target).endswith("/") and raw.is_symlink():
-        return None                                      # `rm link` removes the link, not what it points to
+        return None  # `rm link` removes the link, not what it points to
     p = Path(os.path.realpath(str(raw)))
     real_root = Path(os.path.realpath(str(root)))
     if p == real_root or p in real_root.parents:
         return f"'{target}' is the repository itself or a directory above it"
     home = Path(os.path.realpath(str(Path.home())))
-    if p == home or p in home.parents:               # ~/.ssh, the global git config, the installed plugin
+    if p == home or p in home.parents:  # ~/.ssh, the global git config, the installed plugin
         return f"'{target}' is your home directory or a directory above it"
     try:
         rel = p.relative_to(real_root).as_posix()
@@ -1357,18 +1904,22 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
     tar_env = False
     start_cwd = cwd
     for words, redirs in scoped_segments(tokenize(PWD_RE.sub(lambda _m: shlex.quote(str(cwd)), cmd))):
-        if redirs is None:            # subshell scopes are not applied: cd and assignments persist, as on main (a `)`
-            if words == RESET:        # bash keeps inside a word fooled every scoped reading; 0005 review round 9).
-                cwd, dirstack, assigned, links = start_cwd, [], {}, {}   # A new reading starts afresh: state that
-            continue                  # weakens a check is reset, state that only adds blocks persists
+        if redirs is None:  # subshell scopes are not applied: cd and assignments persist, as on main (a `)`
+            if words == RESET:  # bash keeps inside a word fooled every scoped reading; 0005 review round 9).
+                cwd, dirstack, assigned, links = start_cwd, [], {}, {}  # A new reading starts afresh: state that
+            continue  # weakens a check is reset, state that only adds blocks persists
         config_env = sticky_config_env or any(GIT_CONFIG_ENV_RE.match(w) for w in words)
-        words, redirs = ([VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws]
-                         for ws in (words, redirs))
-        extra_targets, prior_written = [], set(written)   # only earlier segments count for time of check
+        words, redirs = (
+            [VAR_RE.sub(lambda m: assigned.get(m[1] or m[2], m[0]), w) for w in ws] for ws in (words, redirs)
+        )
+        extra_targets, prior_written = [], set(written)  # only earlier segments count for time of check
         seg_tar_env = any(w.startswith("TAR_OPTIONS=") for w in words)
-        for w in words:                                  # GIT_EDITOR=… git commit: the variable runs a command
-            m = re.match(r"^(GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PAGER|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_ASKPASS|"
-                         r"SSH_ASKPASS|GIT_SSH|GIT_PROXY_COMMAND|EDITOR|VISUAL|PAGER)=(.+)$", w)
+        for w in words:  # GIT_EDITOR=… git commit: the variable runs a command
+            m = re.match(
+                r"^(GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PAGER|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_ASKPASS|"
+                r"SSH_ASKPASS|GIT_SSH|GIT_PROXY_COMMAND|EDITOR|VISUAL|PAGER)=(.+)$",
+                w,
+            )
             if m:
                 msg = _check_command(m.group(2), cwd, root, locked, reason, st, on_main, depth + 1, gates)
                 if msg:
@@ -1376,10 +1927,10 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             if w.startswith("GIT_WORK_TREE="):
                 extra_targets.append(w.split("=", 1)[1] + "/")
         bare = [w for w in (words[1:] if words[:1] and words[0] in DECLARERS else words) if not w.startswith("-")]
-        if bare and not redirs and all(ASSIGN_RE.match(w) for w in bare):   # `d=.aiops; rm -rf $d`
+        if bare and not redirs and all(ASSIGN_RE.match(w) for w in bare):  # `d=.aiops; rm -rf $d`
             assigned.update(w.split("=", 1) for w in bare)
             tar_env |= any(w.startswith("TAR_OPTIONS=") for w in bare)
-            sticky_config_env |= any(GIT_CONFIG_ENV_RE.match(w) for w in bare)   # `export GIT_CONFIG=…; git config`
+            sticky_config_env |= any(GIT_CONFIG_ENV_RE.match(w) for w in bare)  # `export GIT_CONFIG=…; git config`
             continue
         words = _strip_prefix(words)
         if words and words[0] in ("cd", "pushd"):
@@ -1392,57 +1943,89 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             cwd = dirstack.pop() if dirstack else cwd
             continue
         pending_links = {}
-        if words and Path(words[0]).name == "ln" and any(re.match(r"^-[a-zA-Z]*s", a) or a == "--symbolic"
-                                                          for a in words[1:]):
+        if (
+            words
+            and Path(words[0]).name == "ln"
+            and any(re.match(r"^-[a-zA-Z]*s", a) or a == "--symbolic" for a in words[1:])
+        ):
             tdir = _target_directory(words[1:])
             lops = [a for a in words[1:] if not a.startswith("-") and a not in tdir]
-            pairs = [(src, os.path.join(tdir[0], Path(src).name)) for src in lops] if tdir else \
-                ([(lops[0], lops[-1] if len(lops) > 1 else Path(lops[0]).name)] if lops else [])
-            for src, name in pairs:                      # registered after this segment's own write checks
+            pairs = (
+                [(src, os.path.join(tdir[0], Path(src).name)) for src in lops]
+                if tdir
+                else ([(lops[0], lops[-1] if len(lops) > 1 else Path(lops[0]).name)] if lops else [])
+            )
+            for src, name in pairs:  # registered after this segment's own write checks
                 link = os.path.normpath(str(cwd / name))
                 src = os.path.expanduser(src)
-                dest = src if os.path.isabs(src) else os.path.join(os.path.dirname(link), src)   # relative to the link
-                pending_links[link] = _via_links(os.path.normpath(dest), cwd, links).rstrip("/")   # chains
-        if words and Path(words[0]).name == "git":     # a ref moved here makes a later merge's check stale
+                dest = src if os.path.isabs(src) else os.path.join(os.path.dirname(link), src)  # relative to the link
+                pending_links[link] = _via_links(os.path.normpath(dest), cwd, links).rstrip("/")  # chains
+        if words and Path(words[0]).name == "git":  # a ref moved here makes a later merge's check stale
             gsub, grest, _g = _git_sub(words[1:], cwd)
-            inspected = gsub in ("merge", "rebase", "cherry-pick", "pull") or (gsub == "stash" and grest[:1] in
-                                                                             (["pop"], ["apply"], ["branch"]))
-            if not inspected:   # any git command outside the read-only set may move a ref a later merge relies on
-                    refs_moved |= gsub not in GIT_READONLY_SUBS or (gsub == "fetch" and any(":" in a for a in grest)) \
-                    or any(re.match(r"^remote\.[^=]+\.fetch=", words[i + 1]) for i, a in enumerate(words[:-1]) if a == "-c")
-            for i, a in enumerate(words[:-1]):      # -c core.editor/pager/sequence.editor=…: run as a command
+            inspected = gsub in ("merge", "rebase", "cherry-pick", "pull") or (
+                gsub == "stash" and grest[:1] in (["pop"], ["apply"], ["branch"])
+            )
+            if not inspected:  # any git command outside the read-only set may move a ref a later merge relies on
+                refs_moved |= (
+                    gsub not in GIT_READONLY_SUBS
+                    or (gsub == "fetch" and any(":" in a for a in grest))
+                    or any(
+                        re.match(r"^remote\.[^=]+\.fetch=", words[i + 1]) for i, a in enumerate(words[:-1]) if a == "-c"
+                    )
+                )
+            for i, a in enumerate(words[:-1]):  # -c core.editor/pager/sequence.editor=…: run as a command
                 m = GIT_RUNS_RE.match(words[i + 1]) if a == "-c" else None
                 if m:
-                    msg = _check_command(m.group("cmd").lstrip("!"), cwd, root, locked, reason, st, on_main,
-                                         depth + 1, gates)
+                    msg = _check_command(
+                        m.group("cmd").lstrip("!"), cwd, root, locked, reason, st, on_main, depth + 1, gates
+                    )
                     if msg:
                         return msg
-            run = grest[1:] if gsub == "bisect" and grest[:1] == ["run"] else \
-                [w for w in grest[grest.index("foreach") + 1:] if not w.startswith("-")] \
-                if gsub == "submodule" and "foreach" in grest else None
-            if run:                                  # foreach runs inside each submodule: judge it one level down
-                msg = _check_command(" ".join(run) if gsub == "submodule" else shlex.join(run),
-                                     Path(cwd) / "_submodule_" if gsub == "submodule" else cwd, root, locked,
-                                     reason, st, on_main, depth + 1, gates)
+            run = (
+                grest[1:]
+                if gsub == "bisect" and grest[:1] == ["run"]
+                else [w for w in grest[grest.index("foreach") + 1 :] if not w.startswith("-")]
+                if gsub == "submodule" and "foreach" in grest
+                else None
+            )
+            if run:  # foreach runs inside each submodule: judge it one level down
+                msg = _check_command(
+                    " ".join(run) if gsub == "submodule" else shlex.join(run),
+                    Path(cwd) / "_submodule_" if gsub == "submodule" else cwd,
+                    root,
+                    locked,
+                    reason,
+                    st,
+                    on_main,
+                    depth + 1,
+                    gates,
+                )
                 if msg:
                     return msg
                 opaque = True
-            for i, a in enumerate(words[:-1]):      # git -c alias.x='!cmd' x: the alias runs a shell command
+            for i, a in enumerate(words[:-1]):  # git -c alias.x='!cmd' x: the alias runs a shell command
                 if a == "-c" and re.match(r"^alias\.[^=]+=!", words[i + 1]):
-                    msg = _check_command(words[i + 1].split("=!", 1)[1], cwd, root, locked, reason, st, on_main,
-                                         depth + 1, gates)
+                    msg = _check_command(
+                        words[i + 1].split("=!", 1)[1], cwd, root, locked, reason, st, on_main, depth + 1, gates
+                    )
                     if msg:
                         return msg
             if gsub == "rebase":
-                for i, a in enumerate(grest):         # rebase --exec / -x '<cmd>' / -x<cmd> runs a shell command
-                    script = grest[i + 1] if a in ("-x", "--exec") and i + 1 < len(grest) else \
-                        a.split("=", 1)[1] if a.startswith("--exec=") else \
-                        a[2:] if a.startswith("-x") and len(a) > 2 else None
+                for i, a in enumerate(grest):  # rebase --exec / -x '<cmd>' / -x<cmd> runs a shell command
+                    script = (
+                        grest[i + 1]
+                        if a in ("-x", "--exec") and i + 1 < len(grest)
+                        else a.split("=", 1)[1]
+                        if a.startswith("--exec=")
+                        else a[2:]
+                        if a.startswith("-x") and len(a) > 2
+                        else None
+                    )
                     if script:
                         msg = _check_command(script, cwd, root, locked, reason, st, on_main, depth + 1, gates)
                         if msg:
                             return msg
-        if words and Path(words[0]).name == "find":    # -exec <shell or wrapper> …: check what it runs
+        if words and Path(words[0]).name == "find":  # -exec <shell or wrapper> …: check what it runs
             for ew in _find_exec_commands(words[1:]):
                 inner_find = _nested_command(ew)
                 if inner_find:
@@ -1456,159 +2039,260 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
             msg = _check_command(inner, cwd, root, locked, reason, st, on_main, depth + 1, gates)
             if msg:
                 return msg
-            opaque = True                                # what it wrote isn't tracked: later reads can't trust it
+            opaque = True  # what it wrote isn't tracked: later reads can't trust it
             continue
         if gates and words and Path(words[0]).name == "find":
             hit = _find_hits_protected(words[1:], cwd, root)
             if hit:
-                return _block("G-FILE-05", f"`{' '.join(words)[:80]}` would delete the protected file '{hit}'.",
-                              "narrow the find so it skips protected paths; a human removes protected files.")
+                return _block(
+                    "G-FILE-05",
+                    f"`{' '.join(words)[:80]}` would delete the protected file '{hit}'.",
+                    "narrow the find so it skips protected paths; a human removes protected files.",
+                )
         if gates:
             for t in (e for t in delete_targets(words) for e in _expand(_via_links(t, cwd, links), cwd)):
                 rel = _rel(root, t, cwd)
                 if rel is not None and (_aiops_protected(rel) or rel == ".git" or rel.startswith(".git/")):
-                    continue             # the .aiops / .git rules below name it more precisely
+                    continue  # the .aiops / .git rules below name it more precisely
                 hit = _contains_protected(root, t, cwd)
                 if hit and words[0] == "find" and _find_negated(words[1:]):
-                    return _block("G-FILE-05", f"`{' '.join(words)[:80]}`: a negated or alternative find test can't be "
-                                  f"judged, so the whole tree counts, and {hit}.",
-                                  "name the files, or use only positive -name/-path tests.")
+                    return _block(
+                        "G-FILE-05",
+                        f"`{' '.join(words)[:80]}`: a negated or alternative find test can't be "
+                        f"judged, so the whole tree counts, and {hit}.",
+                        "name the files, or use only positive -name/-path tests.",
+                    )
                 if hit:
-                    return _block("G-FILE-05", f"`{' '.join(words)[:80]}` deletes, moves or hard-links {hit}.",
-                                  "name the paths you mean, outside .aiops/, .git/ and protected paths; a human "
-                                  "removes protected files.")
-        targets = [e for t in redirs + write_targets(words, cwd) + extra_targets
-                   for e in _expand(_via_links(t, cwd, links), cwd)]
+                    return _block(
+                        "G-FILE-05",
+                        f"`{' '.join(words)[:80]}` deletes, moves or hard-links {hit}.",
+                        "name the paths you mean, outside .aiops/, .git/ and protected paths; a human "
+                        "removes protected files.",
+                    )
+        targets = [
+            e
+            for t in redirs + write_targets(words, cwd) + extra_targets
+            for e in _expand(_via_links(t, cwd, links), cwd)
+        ]
         if gates and words and Path(words[0]).name == "find" and _find_hits_aiops(words[1:], cwd, root):
-            return _block("G-ART-04", "this `find` would delete or rewrite part of the .aiops tree.",
-                          "narrow it (e.g. `-not -path './.aiops/*'`), or ask the human to remove artifacts.")
+            return _block(
+                "G-ART-04",
+                "this `find` would delete or rewrite part of the .aiops tree.",
+                "narrow it (e.g. `-not -path './.aiops/*'`), or ask the human to remove artifacts.",
+            )
         if words:
             targets += [_via_links(d, cwd, links) for d in _extract_dirs(Path(words[0]).name, words[1:])]
         for t in targets:
             if t.startswith("/dev/"):
                 continue
             if _in_plugin(t, cwd, root):
-                return _block("G-TOOL-02", f"`{' '.join(words)[:80]}` writes into the installed plugin ({t}).",
-                              "the plugin's code is what the human runs to approve; change it through its own repo.")
+                return _block(
+                    "G-TOOL-02",
+                    f"`{' '.join(words)[:80]}` writes into the installed plugin ({t}).",
+                    "the plugin's code is what the human runs to approve; change it through its own repo.",
+                )
             rel = _rel(root, t, cwd)
-            if not gates and rel is not None:   # an uninitialized repo: no gates, but the safety checks still apply
+            if not gates and rel is not None:  # an uninitialized repo: no gates, but the safety checks still apply
                 p = Path(t).expanduser()
                 p = p if p.is_absolute() else Path(cwd) / p
                 if glob_hit(str(p), globs(root, "secret-paths")) and not _secret_template(p.name):
-                    return _block("G-SEC-01", f"'{p}' is secret material; shell writes count too.",
-                                  "ask the human to change credentials themselves.")
+                    return _block(
+                        "G-SEC-01",
+                        f"'{p}' is secret material; shell writes count too.",
+                        "ask the human to change credentials themselves.",
+                    )
                 if _toolchain_path(p, root) or _holds_toolchain(p, root):
-                    return _block("G-TOOL-04", f"'{p}' is part of what runs when the human approves (PATH, shell "
-                                  "startup, git config, installed plugins).", "ask the human to change it themselves.")
+                    return _block(
+                        "G-TOOL-04",
+                        f"'{p}' is part of what runs when the human approves (PATH, shell "
+                        "startup, git config, installed plugins).",
+                        "ask the human to change it themselves.",
+                    )
                 continue
             if rel is not None and (rel == ".git" or rel.startswith(".git/")):
-                return _block("G-TOOL-03", f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
-                              "use git commands; ask the human for config or hook changes.")
-            if rel is None:   # outside the repo: never secret material, nor what runs inside the human's approval
+                return _block(
+                    "G-TOOL-03",
+                    f"shell writes to '{rel}' (git config, hooks) can hijack signing.",
+                    "use git commands; ask the human for config or hook changes.",
+                )
+            if rel is None:  # outside the repo: never secret material, nor what runs inside the human's approval
                 p = Path(t).expanduser()
                 p = p if p.is_absolute() else Path(cwd) / p
                 if glob_hit(str(p), globs(root, "secret-paths")) and not _secret_template(p.name):
-                    return _block("G-SEC-01", f"'{p}' is secret material; shell writes count too.",
-                                  "ask the human to change credentials themselves.")
+                    return _block(
+                        "G-SEC-01",
+                        f"'{p}' is secret material; shell writes count too.",
+                        "ask the human to change credentials themselves.",
+                    )
                 if _toolchain_path(p, root) or _holds_toolchain(p, root):
-                    return _block("G-TOOL-04", f"'{p}' is part of what runs when the human approves (PATH, shell "
-                                  "startup, git config, installed plugins).", "ask the human to change it themselves.")
+                    return _block(
+                        "G-TOOL-04",
+                        f"'{p}' is part of what runs when the human approves (PATH, shell "
+                        "startup, git config, installed plugins).",
+                        "ask the human to change it themselves.",
+                    )
                 continue
             if _aiops_protected(rel):
-                return _block("G-ART-05", f"shell writes to '{rel}' bypass the gate guard.",
-                              "edit artifacts with the Edit/Write tools; engine state changes go through `sdlc`.")
+                return _block(
+                    "G-ART-05",
+                    f"shell writes to '{rel}' bypass the gate guard.",
+                    "edit artifacts with the Edit/Write tools; engine state changes go through `sdlc`.",
+                )
             prot_hit = glob_hit(rel, globs(root, "protected-paths"))
             hit = prot_hit or (not _secret_template(rel) and glob_hit(rel, globs(root, "secret-paths")))
             if prot_hit:
-                return _block("G-FILE-01", f"'{rel}' is protected ({hit[1] or hit[0]}); shell writes count too.",
-                              "propose the change in chat; a human edits protected files.")
+                return _block(
+                    "G-FILE-01",
+                    f"'{rel}' is protected ({hit[1] or hit[0]}); shell writes count too.",
+                    "propose the change in chat; a human edits protected files.",
+                )
             if hit:
-                return _block("G-SEC-02", f"'{rel}' is secret material ({hit[1] or hit[0]}); shell writes count too.",
-                              "use .env.example for names; ask the human to change real secrets.")
+                return _block(
+                    "G-SEC-02",
+                    f"'{rel}' is secret material ({hit[1] or hit[0]}); shell writes count too.",
+                    "use .env.example for names; ask the human to change real secrets.",
+                )
             if locked and _code_paths(root, [rel]):
-                return _block("G-LOCK-02", f"`{' '.join(words)[:80]}` writes '{rel}': {reason}.",
-                              lock_procedure(st))
+                return _block("G-LOCK-02", f"`{' '.join(words)[:80]}` writes '{rel}': {reason}.", lock_procedure(st))
         written |= {os.path.normpath(str(t if Path(t).is_absolute() else Path(cwd) / t)) for t in targets}
         written |= set(pending_links)
-        links.update(pending_links)                      # after this segment's own checks (review round 3)
+        links.update(pending_links)  # after this segment's own checks (review round 3)
         if words and Path(words[0]).name not in SAFE_READ_COMMANDS | {"git", "tar", "unzip"}:
-            opaque = True                                # an arbitrary command may have rewritten an archive or a ref
+            opaque = True  # an arbitrary command may have rewritten an archive or a ref
         if not words:
             continue
         name, args = Path(words[0]).name, words[1:]
         if name == "tar" and (tar_env or seg_tar_env) and _extract_dirs(name, args):
-            return _block("G-FILE-06" if gates else "G-TOOL-04", "TAR_OPTIONS changes how tar extracts, so the archive "
-                          "can't be inspected.", "unset TAR_OPTIONS and pass the options on the command line.")
+            return _block(
+                "G-FILE-06" if gates else "G-TOOL-04",
+                "TAR_OPTIONS changes how tar extracts, so the archive can't be inspected.",
+                "unset TAR_OPTIONS and pass the options on the command line.",
+            )
         if gates and name in ("tar", "unzip"):
             why = _incoming_archive(name, args, cwd, root, links, prior_written, opaque)
             if why:
-                return _block("G-FILE-06", f"{why}.", "extract outside the repo and copy what you need, or ask the "
-                              "human to change human-owned config.")
+                return _block(
+                    "G-FILE-06",
+                    f"{why}.",
+                    "extract outside the repo and copy what you need, or ask the human to change human-owned config.",
+                )
         if not gates:
             if name == "git":
                 sub, rest, gcwd = _git_sub(args, cwd)
                 rest = _norm_git_config(rest) if sub == "config" else rest
-                if sub == "config" and _git_config_outside(rest, gcwd, root, config_env) \
-                        and _git_config_writes_signing(rest, gcwd, root):
-                    return _block("G-TOOL-05", "git signing, hook, monitor, filter and include settings are "
-                                  "human-owned (they decide who signs approvals, and what runs inside an approval).",
-                                  "ask the human to change git config themselves (globally).")
+                if (
+                    sub == "config"
+                    and _git_config_outside(rest, gcwd, root, config_env)
+                    and _git_config_writes_signing(rest, gcwd, root)
+                ):
+                    return _block(
+                        "G-TOOL-05",
+                        "git signing, hook, monitor, filter and include settings are "
+                        "human-owned (they decide who signs approvals, and what runs inside an approval).",
+                        "ask the human to change git config themselves (globally).",
+                    )
             continue
         why = _patch_check(args, cwd, root) if name == "patch" else None
         if why:
-            return _block("G-ART-06", "this `patch` touches .aiops/, which bypasses the gate guard." if why == "aiops"
-                          else "`patch` from a pipe can't be inspected for .aiops/ changes.",
-                          "edit artifacts with the Edit/Write tools, or pass the patch file by name (`-i` or `<`).")
+            return _block(
+                "G-ART-06",
+                "this `patch` touches .aiops/, which bypasses the gate guard."
+                if why == "aiops"
+                else "`patch` from a pipe can't be inspected for .aiops/ changes.",
+                "edit artifacts with the Edit/Write tools, or pass the patch file by name (`-i` or `<`).",
+            )
         if name == "gh" and args[:1] == ["api"] and any(re.search(r"/pulls/\d+/merge\b|/merges\b", a) for a in args):
-            return _block("G-MERGE-01", "merging through the GitHub API is the human's decision.",
-                          "leave the PR for a CODEOWNER to review and merge.")
+            return _block(
+                "G-MERGE-01",
+                "merging through the GitHub API is the human's decision.",
+                "leave the PR for a CODEOWNER to review and merge.",
+            )
         if name == "git":
             sub, rest, gcwd = _git_sub(args, cwd)
             why = _incoming_git(sub, rest, root, on_main, args, refs_moved or opaque)
             rest = _norm_git_config(rest) if sub == "config" else rest
             if why:
-                return _block("G-FILE-06", f"{why}.", "`git fetch`, then `git merge <ref>` (inspected) for code; a "
-                              "human brings in changes to human-owned config.")
+                return _block(
+                    "G-FILE-06",
+                    f"{why}.",
+                    "`git fetch`, then `git merge <ref>` (inspected) for code; a "
+                    "human brings in changes to human-owned config.",
+                )
             if sub == "config" and _git_config_writes_signing(rest, gcwd, root):
-                return _block("G-TOOL-05", "git signing, hook, monitor, filter and include settings are human-owned "
-                              "(they decide who signs approvals, and what runs inside an approval).",
-                              "ask the human to change git config themselves (globally).")
+                return _block(
+                    "G-TOOL-05",
+                    "git signing, hook, monitor, filter and include settings are human-owned "
+                    "(they decide who signs approvals, and what runs inside an approval).",
+                    "ask the human to change git config themselves (globally).",
+                )
             why = _patch_check(rest, gcwd, root, git_am=sub == "am") if sub in ("apply", "am") else None
             if why:
-                return _block("G-ART-07", f"`git {sub}` with a patch touching .aiops/ bypasses the gate guard."
-                              if why == "aiops" else f"`git {sub}` from stdin can't be inspected for .aiops/ changes.",
-                              "edit artifacts with the Edit/Write tools, or apply a patch file by name.")
+                return _block(
+                    "G-ART-07",
+                    f"`git {sub}` with a patch touching .aiops/ bypasses the gate guard."
+                    if why == "aiops"
+                    else f"`git {sub}` from stdin can't be inspected for .aiops/ changes.",
+                    "edit artifacts with the Edit/Write tools, or apply a patch file by name.",
+                )
             if sub in GIT_TREE_WRITERS:
                 if _rewrites_tree_from_rev(sub, rest):
-                    return _block("G-FILE-02", f"`git {sub}` from another revision with a whole-tree pathspec would "
-                                  "rewrite protected files and artifacts.",
-                                  "name the paths you need (outside protected paths and .aiops/).")
+                    return _block(
+                        "G-FILE-02",
+                        f"`git {sub}` from another revision with a whole-tree pathspec would "
+                        "rewrite protected files and artifacts.",
+                        "name the paths you need (outside protected paths and .aiops/).",
+                    )
                 rels = [r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-")) if r]
                 hit = next((r for r in rels if _aiops_protected(r)), None)
                 if hit:
-                    return _block("G-ART-08", f"`git {sub}` on '{hit}' would delete or rewrite an artifact outside the "
-                                  "gate guard.", "edit artifacts with the Edit/Write tools; ask the human to remove one.")
+                    return _block(
+                        "G-ART-08",
+                        f"`git {sub}` on '{hit}' would delete or rewrite an artifact outside the gate guard.",
+                        "edit artifacts with the Edit/Write tools; ask the human to remove one.",
+                    )
                 pglobs = globs(root, "protected-paths")
-                prot = next((r for r in rels if glob_hit(r, pglobs)
-                             or any(g.startswith(r.rstrip("/") + "/") for g, _ in pglobs)), None)   # a directory
+                prot = next(
+                    (
+                        r
+                        for r in rels
+                        if glob_hit(r, pglobs) or any(g.startswith(r.rstrip("/") + "/") for g, _ in pglobs)
+                    ),
+                    None,
+                )  # a directory
                 if prot:
-                    return _block("G-FILE-03", f"`git {sub}` would rewrite '{prot}', a protected path.",
-                                  "propose the change in chat; a human edits protected files.")
+                    return _block(
+                        "G-FILE-03",
+                        f"`git {sub}` would rewrite '{prot}', a protected path.",
+                        "propose the change in chat; a human edits protected files.",
+                    )
             if on_main and sub in GIT_MAIN_FORBIDDEN:
-                return _block("G-MERGE-02", f"`git {sub}` on {config(root)['main_branch']}: merging is the human's decision.",
-                              "leave the branch for the human to review and merge (/zouj-ai-sdlc:pr).")
+                return _block(
+                    "G-MERGE-02",
+                    f"`git {sub}` on {config(root)['main_branch']}: merging is the human's decision.",
+                    "leave the branch for the human to review and merge (/zouj-ai-sdlc:pr).",
+                )
             if sub == "commit":
                 for i, a in enumerate(rest):
-                    f = rest[i + 1] if a in ("-F", "--file") and i + 1 < len(rest) else \
-                        a.split("=", 1)[1] if a.startswith("--file=") else None
+                    f = (
+                        rest[i + 1]
+                        if a in ("-F", "--file") and i + 1 < len(rest)
+                        else a.split("=", 1)[1]
+                        if a.startswith("--file=")
+                        else None
+                    )
                     path = (gcwd / f) if f and f != "-" else None
                     if path and path.is_file() and "AIOps-Approval" in path.read_text(errors="replace"):
-                        return _block("G-GATE-06", "approval commits are created only by a human approval.",
-                                      "ask the human to type the approval phrase (e.g. `Plan Approved 0001`).")
+                        return _block(
+                            "G-GATE-06",
+                            "approval commits are created only by a human approval.",
+                            "ask the human to type the approval phrase (e.g. `Plan Approved 0001`).",
+                        )
             if not locked:
                 continue
-            checkout_paths = sub == "checkout" and _code_paths(root, [
-                r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-") and (gcwd / a).is_file()) if r])
+            checkout_paths = sub == "checkout" and _code_paths(
+                root,
+                [r for r in (_rel(root, a, gcwd) for a in rest if not a.startswith("-") and (gcwd / a).is_file()) if r],
+            )
             if sub in GIT_LOCKED or (sub == "checkout" and "--" in rest) or checkout_paths:
                 return _block("G-LOCK-03", f"`git {sub}` changes the working tree: {reason}.", lock_procedure(st))
             if sub == "add":
@@ -1618,15 +2302,20 @@ def _check_command(cmd, cwd, root, locked, reason, st, on_main, depth, gates=Tru
                 else:
                     rels = [_rel(root, p, gcwd) for p in paths]
                 if bad := _code_paths(root, rels):
-                    return _block("G-LOCK-04", f"`git add` would stage code ({', '.join(bad[:3])}): {reason}.",
-                                  lock_procedure(st))
+                    return _block(
+                        "G-LOCK-04", f"`git add` would stage code ({', '.join(bad[:3])}): {reason}.", lock_procedure(st)
+                    )
             if sub == "commit":
                 all_flag = any(re.match(r"^-[a-zA-Z]*a", a) or a == "--all" for a in rest)
-                rels = _git_changed(root, staged_only=not all_flag) + \
-                    [_rel(root, p, gcwd) for p in _git_commit_pathspecs(rest)]
+                rels = _git_changed(root, staged_only=not all_flag) + [
+                    _rel(root, p, gcwd) for p in _git_commit_pathspecs(rest)
+                ]
                 if bad := _code_paths(root, rels):
-                    return _block("G-LOCK-05", f"`git commit` would commit code ({', '.join(bad[:3])}): {reason}.",
-                                  lock_procedure(st))
+                    return _block(
+                        "G-LOCK-05",
+                        f"`git commit` would commit code ({', '.join(bad[:3])}): {reason}.",
+                        lock_procedure(st),
+                    )
             continue
         if not locked:
             continue

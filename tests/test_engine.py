@@ -1,4 +1,5 @@
 """State engine: parsing, derived states, approvals, staleness, CI audit."""
+
 import unittest
 
 from helpers import INTENT, PLAN, REVIEW, SPEC, RepoCase, git
@@ -92,7 +93,7 @@ class States(RepoCase):
         self.write("review", REVIEW.format(id="0001", verdict="PASS", commit=git(self.root, "rev-parse", "HEAD")))
         git(self.root, "add", "-A")
         git(self.root, "commit", "-qm", "review")
-        self.assertEqual(self.state().state, 5)                 # before the merge: still waiting on the human
+        self.assertEqual(self.state().state, 5)  # before the merge: still waiting on the human
         git(self.root, "switch", "-q", "main")
         git(self.root, "merge", "-q", "--no-ff", "-m", "merge", "feat/0001-csv-export")
         git(self.root, "switch", "-q", "feat/0001-csv-export")
@@ -109,17 +110,18 @@ class States(RepoCase):
         self.assertIn("changed after it was approved", st.detail)
 
     def test_lock_follows_state_and_idle(self):
-        self.assertTrue(lock(self.root)[0])               # state 1
+        self.assertTrue(lock(self.root)[0])  # state 1
         self.to_execution()
-        self.assertFalse(lock(self.root)[0])              # state 4
+        self.assertFalse(lock(self.root)[0])  # state 4
         git(self.root, "switch", "-qc", "chore/x")
-        self.assertTrue(lock(self.root)[0])               # no active intent (state/active not set)
+        self.assertTrue(lock(self.root)[0])  # no active intent (state/active not set)
         (self.root / ".aiops" / "state" / "active").write_text("0001\n")
         self.assertFalse(lock(self.root)[0])
 
     def test_copied_folder_does_not_open_gates(self):
         import shutil
         from sdlc_engine.machine import gate
+
         self.write("intent", INTENT)
         self.approve("intent")
         copy = self.root / ".aiops" / "0002-copy"
@@ -133,6 +135,7 @@ class States(RepoCase):
     def test_initialized_when_tracked_but_missing(self):
         import shutil
         from sdlc_engine.machine import initialized
+
         self.write("intent", INTENT)
         git(self.root, "add", "-A")
         git(self.root, "commit", "-qm", "intent")
@@ -142,10 +145,12 @@ class States(RepoCase):
 
     def test_spike_profile_and_uninitialized_repo_do_not_lock(self):
         import os
+
         os.environ["SDLC_HOOK_PROFILE"] = "spike"
         self.assertFalse(lock(self.root)[0])
         del os.environ["SDLC_HOOK_PROFILE"]
         import shutil
+
         shutil.rmtree(self.root / ".aiops")
         self.assertFalse(lock(self.root)[0])
 
@@ -153,15 +158,19 @@ class States(RepoCase):
 class Approvals(RepoCase):
     def test_signing_toolchain_is_pinned(self):
         from sdlc_engine import approvals as ap
+
         self.write("intent", INTENT)
-        for key, value in (("gpg.ssh.program", "/tmp/evil-signer"), ("core.hooksPath", "/tmp/hooks"),
-                           ("user.signingkey", "/tmp/k.pub")):
+        for key, value in (
+            ("gpg.ssh.program", "/tmp/evil-signer"),
+            ("core.hooksPath", "/tmp/hooks"),
+            ("user.signingkey", "/tmp/k.pub"),
+        ):
             git(self.root, "config", "--local", key, value)
             ok, msg = ap.approve(self.root, self.d, "intent", via="test")
             self.assertFalse(ok, key)
             self.assertIn("repo-local", msg)
             git(self.root, "config", "--local", "--unset", key)
-        hook = self.root / ".git" / "hooks" / "post-commit"            # a planted hook must not run
+        hook = self.root / ".git" / "hooks" / "post-commit"  # a planted hook must not run
         hook.write_text(f"#!/bin/sh\ntouch {self.root}/hook-ran\n")
         hook.chmod(0o755)
         calls, real = [], ap.subprocess.run
@@ -169,31 +178,38 @@ class Approvals(RepoCase):
         def spy(cmd, *args, **kw):
             calls.append((cmd, kw))
             return real(cmd, *args, **kw)
+
         ap.subprocess.run = spy
         try:
             self.approve("intent")
         finally:
             ap.subprocess.run = real
-        args, kw = next(c for c in calls if "commit-tree" in c[0])     # plumbing: commit-tree runs no hooks at all
-        self.assertTrue(args[0].startswith("/"), args[0])               # git by absolute path, not via PATH
+        args, kw = next(c for c in calls if "commit-tree" in c[0])  # plumbing: commit-tree runs no hooks at all
+        self.assertTrue(args[0].startswith("/"), args[0])  # git by absolute path, not via PATH
         for pinned in ("core.hooksPath=/dev/null", "core.fsmonitor=false", "core.attributesFile=/dev/null"):
             self.assertIn(pinned, args)
         self.assertTrue(any(a.startswith("gpg.ssh.program=/") and a.endswith("ssh-keygen") for a in args), args)
-        self.assertIsNone(kw.get("timeout"))                           # a slow passphrase or touch isn't killed
+        self.assertIsNone(kw.get("timeout"))  # a slow passphrase or touch isn't killed
         self.assertFalse((self.root / "hook-ran").exists())
 
     def test_repo_local_config_is_allow_listed(self):
         from sdlc_engine import approvals as ap
+
         self.write("intent", INTENT)
         inc = self.root.parent / f"{self.root.name}.inc"
         inc.write_text('[gpg "ssh"]\n\tprogram = /tmp/evil-signer\n')
-        for key, value in (("core.fsmonitor", "/tmp/x.sh"), ("core.attributesFile", "/tmp/attrs"),
-                           ("filter.x.clean", "/tmp/x.sh"), ("include.path", str(inc)), ("alias.ci", "!sh")):
+        for key, value in (
+            ("core.fsmonitor", "/tmp/x.sh"),
+            ("core.attributesFile", "/tmp/attrs"),
+            ("filter.x.clean", "/tmp/x.sh"),
+            ("include.path", str(inc)),
+            ("alias.ci", "!sh"),
+        ):
             git(self.root, "config", "--local", key, value)
             problem = ap.signing_problem(self.root)
             self.assertTrue(problem and "repo-local" in problem, (key, problem))
             git(self.root, "config", "--local", "--unset", key)
-        self.assertIsNone(ap.signing_problem(self.root))           # name, email, core.* basics stay allowed
+        self.assertIsNone(ap.signing_problem(self.root))  # name, email, core.* basics stay allowed
 
     def test_approval_runs_no_monitor_or_filter(self):
         marker = self.root.parent / f"{self.root.name}.ran"
@@ -211,13 +227,14 @@ class Approvals(RepoCase):
         self.assertFalse(marker.exists(), marker.read_text() if marker.exists() else "")
         sha = git(self.root, "log", "-1", "--format=%H")
         self.assertEqual(git(self.root, "show", "--name-only", "--format=", sha), ".aiops/0001-csv-export/intent.md")
-        self.assertEqual(git(self.root, "diff", "--cached", "--name-only"), "")    # the index follows the commit
+        self.assertEqual(git(self.root, "diff", "--cached", "--name-only"), "")  # the index follows the commit
 
     def test_approval_reports_a_stuck_index_and_refuses_symlinks(self):
         import os
+
         self.write("intent", INTENT)
         lock = self.root / ".git" / "index.lock"
-        lock.write_text("")                                          # an IDE holds the index
+        lock.write_text("")  # an IDE holds the index
         try:
             ok, msg = approvals.approve(self.root, self.d, "intent", via="test")
         finally:
@@ -234,12 +251,14 @@ class Approvals(RepoCase):
 
     def test_engine_runs_git_by_absolute_path(self):
         from sdlc_engine import machine
+
         self.assertTrue(machine.GIT.startswith("/"), machine.GIT)
         calls, real = [], machine.subprocess.run
 
         def spy(cmd, *a, **kw):
             calls.append(cmd)
             return real(cmd, *a, **kw)
+
         machine.subprocess.run = spy
         try:
             machine.git(self.root, "status")
@@ -252,6 +271,7 @@ class Approvals(RepoCase):
         import subprocess
         from helpers import signing_key
         from sdlc_engine import approvals as ap
+
         cfg = self.root / ".aiops" / "config.json"
         cfg.write_text('{"approval_key_policy": "human"}')
         # 1. an unprotected key: refused before stamping
@@ -272,8 +292,12 @@ class Approvals(RepoCase):
         askpass.chmod(0o700)
         try:
             os.environ.update(env)
-            subprocess.run(["ssh-add", "-q", str(protected)], check=True, capture_output=True,
-                           env={**os.environ, "SSH_ASKPASS": str(askpass), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"})
+            subprocess.run(
+                ["ssh-add", "-q", str(protected)],
+                check=True,
+                capture_output=True,
+                env={**os.environ, "SSH_ASKPASS": str(askpass), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"},
+            )
             problem = ap.signing_problem(self.root)
             self.assertTrue(problem and "ssh-agent" in problem, problem)
         finally:
@@ -345,8 +369,11 @@ class Approvals(RepoCase):
         # forge: an agent writes the stamp itself and commits with its co-author trailer
         self.write("spec", SPEC)
         text = (self.d / "spec.md").read_text()
-        (self.d / "spec.md").write_text(A.set_fields(text, {
-            "status": "Approved", "approved-by": "bot", "approved-sha256": A.approval_hash("spec", text)}))
+        (self.d / "spec.md").write_text(
+            A.set_fields(
+                text, {"status": "Approved", "approved-by": "bot", "approved-sha256": A.approval_hash("spec", text)}
+            )
+        )
         git(self.root, "add", "-A")
         git(self.root, "commit", "-qm", "spec", "-m", "Co-Authored-By: Claude <noreply@anthropic.com>")
         errors = approvals.audit(self.root, self.d, "spec")
@@ -358,11 +385,19 @@ class Approvals(RepoCase):
         self.write("spec", SPEC)
         text = (self.d / "spec.md").read_text()
         h = A.approval_hash("spec", text)
-        (self.d / "spec.md").write_text(A.set_fields(text, {"status": "Approved", "approved-by": "bot",
-                                                             "approved-sha256": h}))
+        (self.d / "spec.md").write_text(
+            A.set_fields(text, {"status": "Approved", "approved-by": "bot", "approved-sha256": h})
+        )
         (self.root / "src" / "app.py").write_text("sneaky\n")
-        git(self.root, "add", "-A")    # forged: right trailer, but bundled with code and the wrong digest
-        git(self.root, "commit", "-qm", "chore(aiops): Spec Approved 0001", "-m", "AIOps-Approval: spec 0001 sha256=deadbeef")
+        git(self.root, "add", "-A")  # forged: right trailer, but bundled with code and the wrong digest
+        git(
+            self.root,
+            "commit",
+            "-qm",
+            "chore(aiops): Spec Approved 0001",
+            "-m",
+            "AIOps-Approval: spec 0001 sha256=deadbeef",
+        )
         errors = approvals.audit(self.root, self.d, "spec")
         self.assertTrue(any("only" in e or "sha256" in e for e in errors), errors)
 
@@ -370,7 +405,7 @@ class Approvals(RepoCase):
         cfg = self.root / ".aiops" / "config.json"
         cfg.write_text('{"require_signed_approvals": false}')
         self.write("intent", INTENT)
-        self.approve("intent")                       # unsigned while signing was off
+        self.approve("intent")  # unsigned while signing was off
         cfg.write_text('{"require_signed_approvals": true}')
         errors = approvals.audit(self.root, self.d, "intent")
         self.assertTrue(errors and "not signed" in errors[0], errors)
@@ -381,19 +416,27 @@ class Approvals(RepoCase):
         self.write("spec", SPEC)
         text = (self.d / "spec.md").read_text()
         digest = A.approval_hash("spec", text)
-        (self.d / "spec.md").write_text(A.set_fields(text, {"status": "Approved", "approved-by": "bot",
-                                                             "approved-sha256": digest}))
+        (self.d / "spec.md").write_text(
+            A.set_fields(text, {"status": "Approved", "approved-by": "bot", "approved-sha256": digest})
+        )
         (self.root / "src" / "app.py").write_text("sneaky\n")
-        git(self.root, "add", "-A")    # right trailer and digest, but bundled with code
-        git(self.root, "commit", "-qm", "chore(aiops): Spec Approved 0001", "-m", f"AIOps-Approval: spec 0001 sha256={digest}")
+        git(self.root, "add", "-A")  # right trailer and digest, but bundled with code
+        git(
+            self.root,
+            "commit",
+            "-qm",
+            "chore(aiops): Spec Approved 0001",
+            "-m",
+            f"AIOps-Approval: spec 0001 sha256={digest}",
+        )
         errors = approvals.audit(self.root, self.d, "spec")
         self.assertTrue(errors and "must change only" in errors[0], errors)
 
     def test_audit_requires_a_touch_key_under_strict(self):
         cfg = self.root / ".aiops" / "config.json"
         self.write("intent", INTENT)
-        self.approve("intent")                                # signed by the ordinary (allow-listed) test key
-        self.assertEqual(approvals.audit(self.root, self.d, "intent"), [])        # team/any: accepted
+        self.approve("intent")  # signed by the ordinary (allow-listed) test key
+        self.assertEqual(approvals.audit(self.root, self.d, "intent"), [])  # team/any: accepted
         # the matching that would accept a real sk- touch key: git's signer fingerprint equals the allow-listed entry's
         sha = git(self.root, "log", "-1", "--format=%H")
         fp = git(self.root, "-c", f"gpg.ssh.allowedSignersFile={self.signers}", "log", "-1", "--format=%GK", sha)
@@ -401,13 +444,15 @@ class Approvals(RepoCase):
         self.assertTrue(fp.startswith("SHA256:"), fp)
         self.assertEqual(approvals._fingerprint(ktype, key), fp)
         cfg.write_text('{"approval_key_policy": "sk", "profile": "strict"}')
-        errors = approvals.audit(self.root, self.d, "intent")                     # strict: CI refuses it too
+        errors = approvals.audit(self.root, self.d, "intent")  # strict: CI refuses it too
         self.assertTrue(errors and "sk-" in errors[0], errors)
         # the allow-list itself: ordinary keys, and sk- keys that skip the touch, are flagged under strict
         blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
-        weak = approvals.non_touch_signers(self.signers.read_text() +
-                                           f'b@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n'
-                                           f'c@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n')
+        weak = approvals.non_touch_signers(
+            self.signers.read_text()
+            + f'b@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n'
+            f'c@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n'
+        )
         self.assertEqual([w.split()[0] for w in weak], ["owner@example.com", "b@example.com"])
         r = self.run_sdlc("doctor")
         self.assertIn("✗ allowed-signers: strict accepts only sk- keys", r.stdout)
@@ -415,6 +460,7 @@ class Approvals(RepoCase):
 
     def test_audit_requires_allow_listed_signer(self):
         from helpers import allowed_signer_line, signing_key
+
         cfg = self.root / ".aiops" / "config.json"
         # 1. unlisted key: signed, but not by an allow-listed signer
         git(self.root, "config", "--global", "user.signingkey", f"{signing_key('intruder')}.pub")
@@ -440,50 +486,59 @@ class Approvals(RepoCase):
         self.assertTrue(approvals.audit(self.root, self.d, "spec"))
         (self.root / ".aiops" / "config" / "legacy-approvals").write_text(f"# pre-signing approvals\n{sha}\n")
         self.assertEqual(approvals.audit(self.root, self.d, "spec"), [])
-        self.assertTrue(approvals.audit(self.root, self.d, "spec", base="base"))   # not in the base's legacy list
+        self.assertTrue(approvals.audit(self.root, self.d, "spec", base="base"))  # not in the base's legacy list
 
     def test_legacy_needs_full_sha_and_clean_commit(self):
         cfg = self.root / ".aiops" / "config.json"
         legacy = self.root / ".aiops" / "config" / "legacy-approvals"
         cfg.write_text('{"require_signed_approvals": false}')
         self.write("intent", INTENT)
-        self.approve("intent")                                   # clean, unsigned
+        self.approve("intent")  # clean, unsigned
         sha = git(self.root, "log", "-1", "--format=%H")
         # a forged spec approval: right fields, but co-authored by Claude
         self.write("spec", SPEC)
         text = (self.d / "spec.md").read_text()
         digest = A.approval_hash("spec", text)
-        (self.d / "spec.md").write_text(A.set_fields(text, {"status": "Approved", "approved-by": "bot",
-                                                             "approved-sha256": digest}))
+        (self.d / "spec.md").write_text(
+            A.set_fields(text, {"status": "Approved", "approved-by": "bot", "approved-sha256": digest})
+        )
         git(self.root, "add", "-A")
-        git(self.root, "commit", "-qm", "spec", "-m", f"AIOps-Approval: spec 0001 sha256={digest}",
-            "-m", "Co-Authored-By: Claude <noreply@anthropic.com>")
+        git(
+            self.root,
+            "commit",
+            "-qm",
+            "spec",
+            "-m",
+            f"AIOps-Approval: spec 0001 sha256={digest}",
+            "-m",
+            "Co-Authored-By: Claude <noreply@anthropic.com>",
+        )
         forged = git(self.root, "log", "-1", "--format=%H")
         cfg.write_text('{"require_signed_approvals": true}')
-        legacy.write_text(f"{sha[:7]}\n")                        # a short sha no longer counts
+        legacy.write_text(f"{sha[:7]}\n")  # a short sha no longer counts
         self.assertTrue(approvals.audit(self.root, self.d, "intent"))
         legacy.write_text(f"{sha}\n")
         self.assertEqual(approvals.audit(self.root, self.d, "intent"), [])
-        git(self.root, "branch", "-f", "main", "HEAD")           # legacy candidates are on main
+        git(self.root, "branch", "-f", "main", "HEAD")  # legacy candidates are on main
         found = [s for s, _ in approvals.unsigned_approvals(self.root)]
         self.assertIn(sha, found)
-        self.assertNotIn(forged, found)                          # --write never legitimises a forged approval
+        self.assertNotIn(forged, found)  # --write never legitimises a forged approval
 
     def test_legacy_write_only_pre_signing_on_main(self):
         cfg = self.root / ".aiops" / "config.json"
         legacy = self.root / ".aiops" / "config" / "legacy-approvals"
         cfg.write_text('{"require_signed_approvals": false, "approval_key_policy": "any"}')
         self.write("intent", INTENT)
-        self.approve("intent")                                   # unsigned, on the feature branch only
+        self.approve("intent")  # unsigned, on the feature branch only
         intent_sha = git(self.root, "log", "-1", "--format=%H")
         self.assertEqual(approvals.unsigned_approvals(self.root), [])
         git(self.root, "switch", "-q", "main")
         git(self.root, "merge", "-q", "--ff-only", "feat/0001-csv-export")
         self.assertEqual([s for s, _ in approvals.unsigned_approvals(self.root)], [intent_sha])
         git(self.root, "add", ".aiops/config/allowed-signers")
-        git(self.root, "commit", "-qm", "chore(aiops): approver keys")      # signing is introduced here
+        git(self.root, "commit", "-qm", "chore(aiops): approver keys")  # signing is introduced here
         self.write("spec", SPEC)
-        self.approve("spec")                                     # unsigned, but after signing was introduced
+        self.approve("spec")  # unsigned, but after signing was introduced
         found = [s for s, _ in approvals.unsigned_approvals(self.root)]
         self.assertEqual(found, [intent_sha])
         # --write confirms each entry; --yes skips the question
@@ -499,6 +554,7 @@ class Approvals(RepoCase):
 
     def test_sk_key_without_touch_rejected(self):
         from sdlc_engine import approvals as ap
+
         (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
         blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
         sk = self.root / "sk.pub"
@@ -506,13 +562,16 @@ class Approvals(RepoCase):
         git(self.root, "config", "--global", "user.signingkey", str(sk))
         self.signers.write_text(f'owner@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n')
         self.assertIsNone(ap.signing_problem(self.root))
-        self.signers.write_text(f'owner@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n')
+        self.signers.write_text(
+            f'owner@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n'
+        )
         problem = ap.signing_problem(self.root)
         self.assertTrue(problem and "no-touch-required" in problem, problem)
 
     def test_no_touch_option_matched_in_any_case(self):
         """Review 0003 round 5: OpenSSH may match option names case-insensitively, so the checks do too."""
         from sdlc_engine import approvals as ap
+
         (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
         blob = "AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t"
         sk = self.root / "sk.pub"
@@ -522,14 +581,15 @@ class Approvals(RepoCase):
             with self.subTest(spelling=spelling):
                 line = f'owner@example.com namespaces="git",{spelling} sk-ssh-ed25519@openssh.com {blob}\n'
                 self.signers.write_text(line)
-                problem = ap.signing_problem(self.root)                          # local: approve and doctor
+                problem = ap.signing_problem(self.root)  # local: approve and doctor
                 self.assertTrue(problem and "no-touch-required" in problem, problem)
-                self.assertEqual(len(ap.non_touch_signers(line)), 1)             # doctor's allow-list row
+                self.assertEqual(len(ap.non_touch_signers(line)), 1)  # doctor's allow-list row
                 self.assertIn("no-touch-required", ap.signer_entries(line)[0][1])  # what the CI audit matches
 
     def test_strict_policy_requires_a_touch_key(self):
         from helpers import signing_key
         from sdlc_engine import approvals as ap
+
         cfg = self.root / ".aiops" / "config.json"
         cfg.write_text('{"approval_key_policy": "sk"}')
         # a passphrase key is a human per signature under "human", but not enough under "sk"
@@ -541,11 +601,13 @@ class Approvals(RepoCase):
         sk = self.root / "sk.pub"
         sk.write_text(f"sk-ssh-ed25519@openssh.com {blob} owner\n")
         git(self.root, "config", "--global", "user.signingkey", str(sk))
-        self.signers.write_text(f'owner@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n')
+        self.signers.write_text(
+            f'owner@example.com namespaces="git",no-touch-required sk-ssh-ed25519@openssh.com {blob}\n'
+        )
         problem = ap.signing_problem(self.root)
         self.assertTrue(problem and "no-touch-required" in problem, problem)
         self.signers.write_text(f'owner@example.com namespaces="git" sk-ssh-ed25519@openssh.com {blob}\n')
-        self.assertIsNone(ap.signing_problem(self.root))                        # an sk- key that needs a touch
+        self.assertIsNone(ap.signing_problem(self.root))  # an sk- key that needs a touch
         # an unknown policy is refused, never treated as "any"
         cfg.write_text('{"approval_key_policy": "bogus"}')
         problem = ap.signing_problem(self.root)
@@ -571,14 +633,14 @@ class Approvals(RepoCase):
         git(self.root, "commit", "-qm", "signers")
         git(self.root, "branch", "base")
         self.write("intent", INTENT)
-        self.approve("intent")                                   # signed by the owner key, which the base lists
-        self.signers.write_text("")                              # the PR even empties its own list
+        self.approve("intent")  # signed by the owner key, which the base lists
+        self.signers.write_text("")  # the PR even empties its own list
         warnings = []
         self.assertEqual(approvals.audit(self.root, self.d, "intent", base="base", warnings=warnings), [])
         self.assertEqual(warnings, [])
 
     def test_audit_bootstraps_when_base_has_no_signer_list(self):
-        git(self.root, "branch", "base")                       # base predates allowed-signers
+        git(self.root, "branch", "base")  # base predates allowed-signers
         self.write("intent", INTENT)
         self.approve("intent")
         warnings = []
@@ -593,10 +655,12 @@ class Approvals(RepoCase):
 class OpenQuestions(RepoCase):
     """The card counts open questions only where they can still block a gate: in an artifact whose gate isn't open.
     Once the human approved it, its unticked questions were accepted with it (0004, at the human's request)."""
+
     def test_approved_artifacts_stop_counting(self):
         from sdlc_engine.machine import evaluate
+
         q = lambda: evaluate(self.root, self.d).open_questions  # noqa: E731
-        self.write("intent", INTENT)                                       # one `- [ ]` question
+        self.write("intent", INTENT)  # one `- [ ]` question
         self.assertEqual(q(), 1)
         self.approve("intent")
         self.assertEqual(q(), 0)
@@ -605,7 +669,7 @@ class OpenQuestions(RepoCase):
         self.approve("spec")
         self.assertEqual(q(), 0)
         (self.d / "intent.md").write_text((self.d / "intent.md").read_text().replace("Users cannot", "Reps cannot"))
-        self.assertEqual(q(), 1)                                            # edited after approval: the gate closed
+        self.assertEqual(q(), 1)  # edited after approval: the gate closed
 
 
 if __name__ == "__main__":

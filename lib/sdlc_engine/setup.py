@@ -4,6 +4,7 @@ Profiles change only how strongly a human approval is proven; every profile runs
 (docs/sdlc.md). External tools are looked up on PATH and run with a short timeout: a missing or hung `claude`/`gh`
 becomes a warning, while missing git, make or python >= 3.9 stops setup before anything is written.
 """
+
 import difflib
 import json
 import os
@@ -29,8 +30,15 @@ def _run(cmd, path, timeout, cwd=None):
     if not exe:
         return None
     try:
-        r = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True, timeout=timeout, cwd=cwd,
-                           stdin=subprocess.DEVNULL, env={**os.environ, "PATH": path})
+        r = subprocess.run(
+            [exe, *cmd[1:]],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            env={**os.environ, "PATH": path},
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     return (r.returncode, (r.stdout or "") + (r.stderr or ""))
@@ -40,8 +48,9 @@ def _outside_repo(path, root):
     """PATH without its directories inside the repo (an activated .venv/bin, ./bin, a relative entry): the agent can
     write there, and preflight runs in the human's session."""
     real = Path(root).resolve()
-    keep = [d for d in path.split(os.pathsep)
-            if d and Path(d).resolve() != real and real not in Path(d).resolve().parents]
+    keep = [
+        d for d in path.split(os.pathsep) if d and Path(d).resolve() != real and real not in Path(d).resolve().parents
+    ]
     return os.pathsep.join(keep)
 
 
@@ -53,8 +62,13 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
     for tool in ("git", "make"):
         ok = shutil.which(tool, path=path) is not None
         rows.append(("✓" if ok else "✗", tool, "" if ok else f"install {tool}"))
-    rows.append(("✓" if v >= (3, 9) else "✗", f"python {'.'.join(map(str, v))} (>= 3.9)",
-                 "" if v >= (3, 9) else "install python 3.9 or newer"))
+    rows.append(
+        (
+            "✓" if v >= (3, 9) else "✗",
+            f"python {'.'.join(map(str, v))} (>= 3.9)",
+            "" if v >= (3, 9) else "install python 3.9 or newer",
+        )
+    )
 
     res = _run(["claude", "--version"], path, timeout)
     m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", res[1]) if res else None
@@ -68,13 +82,18 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
         rows.append(("✓" if ok else "!", f"claude {ver} (>= 2.1)", "" if ok else "update Claude Code to 2.1 or newer"))
 
     if shutil.which("gh", path=path):
-        res = _run(["gh", "auth", "status"], path, timeout)          # never -t/--show-token: no token in the output
+        res = _run(["gh", "auth", "status"], path, timeout)  # never -t/--show-token: no token in the output
         scopes = re.search(r"Token scopes:\s*(.*)", res[1]) if res else None
         if not res or res[0] != 0:
             rows.append(("!", "gh is not logged in (needed to push and open PRs)", "gh auth login"))
         elif scopes and "workflow" not in scopes.group(1):
-            rows.append(("!", "gh token lacks the `workflow` scope (pushing .github/workflows is refused)",
-                         "gh auth refresh -h github.com -s workflow"))
+            rows.append(
+                (
+                    "!",
+                    "gh token lacks the `workflow` scope (pushing .github/workflows is refused)",
+                    "gh auth refresh -h github.com -s workflow",
+                )
+            )
         else:
             rows.append(("✓", "gh logged in", ""))
     else:
@@ -83,8 +102,13 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
     if shutil.which("git", path=path):
         res = _run([approvals.GIT, "config", "--get-all", "credential.helper"], path, timeout, cwd=root)
         ok = bool(res and res[0] == 0 and res[1].strip())
-        rows.append(("✓" if ok else "!", "git credential helper" + ("" if ok else " (git push over https will fail)"),
-                     "" if ok else "gh auth setup-git (or configure any git credential helper)"))
+        rows.append(
+            (
+                "✓" if ok else "!",
+                "git credential helper" + ("" if ok else " (git push over https will fail)"),
+                "" if ok else "gh auth setup-git (or configure any git credential helper)",
+            )
+        )
 
     if profile in ("team", "strict"):
         rows += _signing_rows(root, profile)
@@ -126,8 +150,13 @@ def _signing_rows(root, profile):
     if profile == "strict" and not pubtext.startswith("sk-"):
         return [("!", "strict needs a FIDO sk- key that requires a touch", "see the human steps below")]
     weak = approvals.key_protection(root)
-    return [("!" if weak else "✓", f"signing key: {weak}" if weak else "signing key protected (a human per signature)",
-             "see the human steps below" if weak else "")]
+    return [
+        (
+            "!" if weak else "✓",
+            f"signing key: {weak}" if weak else "signing key protected (a human per signature)",
+            "see the human steps below" if weak else "",
+        )
+    ]
 
 
 def blocking(rows):
@@ -144,7 +173,7 @@ def shown(text):
 
 
 def _text(path):
-    return path.read_bytes().decode("utf-8", "replace")      # a planted file need not be UTF-8
+    return path.read_bytes().decode("utf-8", "replace")  # a planted file need not be UTF-8
 
 
 def show(title, rows):
@@ -156,16 +185,32 @@ def show(title, rows):
 # What each profile writes into a new .aiops/config.json. Only how an approval is proven differs; the workflow and
 # every gate are identical (tests/test_playbook.py).
 PROFILE_CONFIG = {
-    "solo": {"profile": "solo", "require_signed_approvals": False, "commit_approvals": True, "approval_key_policy": "any"},
-    "team": {"profile": "team", "require_signed_approvals": True, "commit_approvals": True, "approval_key_policy": "human"},
-    "strict": {"profile": "strict", "require_signed_approvals": True, "commit_approvals": True, "approval_key_policy": "sk"},
+    "solo": {
+        "profile": "solo",
+        "require_signed_approvals": False,
+        "commit_approvals": True,
+        "approval_key_policy": "any",
+    },
+    "team": {
+        "profile": "team",
+        "require_signed_approvals": True,
+        "commit_approvals": True,
+        "approval_key_policy": "human",
+    },
+    "strict": {
+        "profile": "strict",
+        "require_signed_approvals": True,
+        "commit_approvals": True,
+        "approval_key_policy": "sk",
+    },
 }
 # Pinned to this release: enabling the plugin trusts github.com/zoujagger/zouj-ai-sdlc at that ref, and its hooks run
 # as the user, so the ref moves only through a reviewed change (rerunning setup after an upgrade proposes it).
 REF = f"v{cli.plugin_version()}"
-MARKETPLACE = {"extraKnownMarketplaces": {"zouj": {"source": {"source": "github", "repo": "zoujagger/zouj-ai-sdlc",
-                                                              "ref": REF}}},
-               "enabledPlugins": {"zouj-ai-sdlc@zouj": True}}
+MARKETPLACE = {
+    "extraKnownMarketplaces": {"zouj": {"source": {"source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": REF}}},
+    "enabledPlugins": {"zouj-ai-sdlc@zouj": True},
+}
 GATES = """Gates
   The AI-Native SDLC Playbook workflow, the same in every profile:
   1 BRAINSTORMING → intent.md, opened only by the human: `Intent Approved NNNN`
@@ -174,8 +219,11 @@ GATES = """Gates
   4 EXECUTION, autonomous TDD; the Stop hook requires `make check` green
   5 PRE-REVIEW, fresh-context reviewers → review.md + pr.md; only a human may merge (no merge or push to main by the agent)
   Production deploys are a human gate. The profile only sets how an approval is proven ({proof})."""
-PROOF = {"solo": "typed phrase + an unsigned approval commit", "team": "an SSH-signed commit, a human per signature",
-         "strict": "an SSH-signed commit with an sk- key touch"}
+PROOF = {
+    "solo": "typed phrase + an unsigned approval commit",
+    "team": "an SSH-signed commit, a human per signature",
+    "strict": "an SSH-signed commit with an sk- key touch",
+}
 
 
 def _json(path):
@@ -200,21 +248,36 @@ def inventory(root):
     if settings and _with_marketplace(settings) == settings:
         rows.append(("✓", f"project offers the plugin, pinned to {REF} (.claude/settings.json)", ""))
     elif zouj:
-        rows.append(("!", f"project offers the plugin from {json.dumps(zouj.get('source'))}, not the official "
-                     f"{REF} source (setup proposes the change)", ""))
+        rows.append(
+            (
+                "!",
+                f"project offers the plugin from {json.dumps(zouj.get('source'))}, not the official "
+                f"{REF} source (setup proposes the change)",
+                "",
+            )
+        )
     else:
         rows.append(("·", "project doesn't offer the plugin yet (.claude/settings.json)", ""))
     user = _json(Path.home() / ".claude" / "settings.json") or {}
     enabled = bool((user.get("enabledPlugins") or {}).get("zouj-ai-sdlc@zouj"))
-    rows.append(("✓" if enabled else "·", "plugin enabled in ~/.claude/settings.json" if enabled
-                 else "plugin not enabled for this user (Claude Code offers it from the project settings)", ""))
+    rows.append(
+        (
+            "✓" if enabled else "·",
+            "plugin enabled in ~/.claude/settings.json"
+            if enabled
+            else "plugin not enabled for this user (Claude Code offers it from the project settings)",
+            "",
+        )
+    )
     return rows
 
 
 def _uncommitted(root, rel):
     """True if root/rel is not in HEAD as it is on disk (untracked, or changed since HEAD; no HEAD counts)."""
-    return git(root, "ls-files", "--error-unmatch", "--", rel) is None or \
-        git(root, "diff", "--quiet", "HEAD", "--", rel) is None
+    return (
+        git(root, "ls-files", "--error-unmatch", "--", rel) is None
+        or git(root, "diff", "--quiet", "HEAD", "--", rel) is None
+    )
 
 
 def _as_setup_writes(root, rel):
@@ -224,8 +287,11 @@ def _as_setup_writes(root, rel):
         data = (root / rel).read_bytes()
     except OSError:
         return False
-    template = (cli.TEMPLATES / "scaffold" / rel).read_bytes().replace(cli.REF_PLACEHOLDER.encode(),
-                                                                       f"v{cli.plugin_version()}".encode())
+    template = (
+        (cli.TEMPLATES / "scaffold" / rel)
+        .read_bytes()
+        .replace(cli.REF_PLACEHOLDER.encode(), f"v{cli.plugin_version()}".encode())
+    )
     if data == template:
         return True
     if rel != ".aiops/config.json":
@@ -246,8 +312,10 @@ def unreviewed(root):
     for act, rel in cli.init_actions(root):
         if act != "keep" or not cli.HUMAN_OWNED_RE.match(rel) or not (root / rel).is_file():
             continue
-        staged_off_disk = git(root, "diff", "--cached", "--quiet", "HEAD", "--", rel) is None and \
-            git(root, "diff", "--quiet", "--", rel) is None
+        staged_off_disk = (
+            git(root, "diff", "--cached", "--quiet", "HEAD", "--", rel) is None
+            and git(root, "diff", "--quiet", "--", rel) is None
+        )
         if staged_off_disk or (_uncommitted(root, rel) and not _as_setup_writes(root, rel)):
             out.append(rel)
     return out
@@ -257,6 +325,7 @@ def uncommitted_scaffold(root):
     """Every scaffold file of the installed parts (and .gitignore) on disk that no commit has as it is: what the
     commit step lists. A file of a part that isn't installed is the user's own and is left out."""
     from . import lifecycle
+
     parts = lifecycle.installed_parts(root, lifecycle.load(root))
     rels = [rel for act, rel in cli.init_actions(root, parts=parts) if act != "symlink"] + [".gitignore"]
     return [rel for rel in rels if (root / rel).is_file() and _uncommitted(root, rel)]
@@ -269,12 +338,17 @@ def plan(root, profile, parts=None):
     out, review = [], unreviewed(root)
     for act, rel in cli.init_actions(root, parts=parts):
         if act == "symlink":
-            out.append(("✗", rel, f"{cli.symlink_on_path(root, rel)} is a symlink: remove it, setup won't write through links"))
+            out.append(
+                ("✗", rel, f"{cli.symlink_on_path(root, rel)} is a symlink: remove it, setup won't write through links")
+            )
         elif act == "create":
             note = ""
             if rel == ".aiops/config.json":
-                note = (f"init's defaults; profile {profile} becomes your human step"
-                        if approvals.running_under_agent() else f"profile {profile}: {PROOF[profile]}")
+                note = (
+                    f"init's defaults; profile {profile} becomes your human step"
+                    if approvals.running_under_agent()
+                    else f"profile {profile}: {PROOF[profile]}"
+                )
             out.append(("+", rel, note))
         elif rel in review:
             out.append(("!", rel, "not in any commit yet, and not what setup writes: review it before committing"))
@@ -282,8 +356,11 @@ def plan(root, profile, parts=None):
             out.append(("=", rel, "kept"))
     for rel, (_old, _new, keys) in owned_changes(root, profile).items():
         out = [o for o in out if o[1] != rel]
-        note = ("add extraKnownMarketplaces.zouj and enabledPlugins (nothing else)" if rel.endswith("settings.json")
-                else "set " + ", ".join(f"{k}={json.dumps(v)}" for k, v in keys.items()))
+        note = (
+            "add extraKnownMarketplaces.zouj and enabledPlugins (nothing else)"
+            if rel.endswith("settings.json")
+            else "set " + ", ".join(f"{k}={json.dumps(v)}" for k, v in keys.items())
+        )
         out.append(("~", rel, note))
     return out
 
@@ -303,7 +380,7 @@ def owned_changes(root, profile):
     settings = _json(f)
     if settings is not None:
         merged = _with_marketplace(settings)
-        if merged != settings:                 # missing, or another source/ref (an older release, a fork)
+        if merged != settings:  # missing, or another source/ref (an older release, a fork)
             changes[".claude/settings.json"] = (f.read_text(), json.dumps(merged, indent=2) + "\n", MARKETPLACE)
     return changes
 
@@ -316,14 +393,15 @@ def _with_marketplace(settings):
     return merged
 
 
-OPTIONS = {"--profile": PROFILES, "--stack": cli.STACKS, "--dry-run": None, "--yes": None}   # option: its values
-WITH = "--with"                               # its value is a list of opt-in parts (lifecycle.parse_parts)
+OPTIONS = {"--profile": PROFILES, "--stack": cli.STACKS, "--dry-run": None, "--yes": None}  # option: its values
+WITH = "--with"  # its value is a list of opt-in parts (lifecycle.parse_parts)
 
 
 def parse(args):
     """({option: value, or True for a flag}, None), or (None, why) for an unknown option or value. The only parser:
     every later step reads its result, so a value can't also count as a flag. `--with` holds the sorted part names."""
     from . import lifecycle
+
     opts, i = {}, 0
     while i < len(args):
         name = args[i]
@@ -334,8 +412,10 @@ def parse(args):
             opts[name], i = sorted(set(opts.get(name, [])) | set(parts)), i + 2
             continue
         if name not in OPTIONS:
-            return None, (f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack python|node|go, "
-                          f"--with {','.join(lifecycle.PARTS)} (or all), --dry-run and --yes")
+            return None, (
+                f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack python|node|go, "
+                f"--with {','.join(lifecycle.PARTS)} (or all), --dry-run and --yes"
+            )
         allowed = OPTIONS[name]
         if allowed is None:
             opts[name], i = True, i + 1
@@ -360,14 +440,19 @@ def main(root, args):
         return 1
     tty = _is_tty()
     if profile is None and not dry_run and not tty:
-        print("setup needs choices and there's no terminal to ask them; nothing was written. Run again with:\n"
-              "  sdlc setup --profile solo|team|strict --yes   (or --dry-run to preview)")
+        print(
+            "setup needs choices and there's no terminal to ask them; nothing was written. Run again with:\n"
+            "  sdlc setup --profile solo|team|strict --yes   (or --dry-run to preview)"
+        )
         return 2
     if profile is None and dry_run:
         profile = config(root)["profile"]
         if profile not in PROFILES:
-            print(f".aiops/config.json has profile {profile!r}; it must be solo, team or strict. Fix it (human-owned) "
-                  "or pass --profile; nothing was written.", file=sys.stderr)
+            print(
+                f".aiops/config.json has profile {profile!r}; it must be solo, team or strict. Fix it (human-owned) "
+                "or pass --profile; nothing was written.",
+                file=sys.stderr,
+            )
             return 1
     if profile is None:
         profile = _ask_profile()
@@ -378,6 +463,7 @@ def main(root, args):
         return 1
     show("Inventory", inventory(root))
     from . import lifecycle
+
     parts = lifecycle.installed_parts(root, lifecycle.load(root), opts.get(WITH, []))
     actions = plan(root, profile, parts)
     print("Plan")
@@ -387,20 +473,34 @@ def main(root, args):
     if left_out:
         print(f"  {left_out}")
     owned = owned_changes(root, profile)
-    if owned:                                     # shown before any confirmation (and in --dry-run)
-        print("Changes to human-owned files" + (": the agent can't apply these, they become your human steps"
-                                                 if approvals.running_under_agent() else ""))
+    if owned:  # shown before any confirmation (and in --dry-run)
+        print(
+            "Changes to human-owned files"
+            + (": the agent can't apply these, they become your human steps" if approvals.running_under_agent() else "")
+        )
         for rel, (old, new, _keys) in owned.items():
-            print(shown("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}",
-                                                     f"b/{rel}")).rstrip("\n")))
+            print(
+                shown(
+                    "".join(
+                        difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{rel}", f"b/{rel}")
+                    ).rstrip("\n")
+                )
+            )
     review = unreviewed(root)
-    if review:                                    # shown before any confirmation (and in --dry-run)
+    if review:  # shown before any confirmation (and in --dry-run)
         print("Review before committing: human-owned, not in any commit yet, not what setup writes")
         for rel in review:
             template = (cli.TEMPLATES / "scaffold" / rel).read_text()
-            print(shown("".join(difflib.unified_diff(template.splitlines(True), _text(root / rel).splitlines(True),
-                                                     f"template/{rel}", rel)).rstrip("\n"))
-                  or f"  (same as the template: {rel})")
+            print(
+                shown(
+                    "".join(
+                        difflib.unified_diff(
+                            template.splitlines(True), _text(root / rel).splitlines(True), f"template/{rel}", rel
+                        )
+                    ).rstrip("\n")
+                )
+                or f"  (same as the template: {rel})"
+            )
     print(GATES.format(proof=PROOF[profile]))
     if any(mark == "✗" for mark, _, _ in actions):
         print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
@@ -409,14 +509,20 @@ def main(root, args):
         print("dry run: nothing was written.")
         return 0
     agent = approvals.running_under_agent()
-    if not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):   # the agent never writes a ~ change
-        print("Nothing for the agent to write: the ~ changes above are yours (see the human steps)." if agent and owned
-              else "Already set up: nothing to write.")
+    if not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):  # the agent never writes a ~ change
+        print(
+            "Nothing for the agent to write: the ~ changes above are yours (see the human steps)."
+            if agent and owned
+            else "Already set up: nothing to write."
+        )
         human_steps(root, profile, owned if agent else {}, review=review)
         return 0
     if not yes and not (tty and _confirm()):
-        print("not confirmed: nothing was written. Re-run with --yes to apply without the question."
-              if tty else "no terminal to confirm: nothing was written. Re-run with --yes to apply.")
+        print(
+            "not confirmed: nothing was written. Re-run with --yes to apply without the question."
+            if tty
+            else "no terminal to confirm: nothing was written. Re-run with --yes to apply."
+        )
         return 2
     return apply(root, profile, actions, opts.get("--stack"), review, parts)
 
@@ -448,14 +554,18 @@ def apply(root, profile, actions, stack=None, review=(), parts=None):
         if ".aiops/config.json" in created and not approvals.running_under_agent():
             # a human's new config takes the profile; the agent's is exactly init's, and the profile is a human step
             f = root / ".aiops" / "config.json"
-            cli.write_file(root, ".aiops/config.json",
-                           (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode())
+            cli.write_file(
+                root,
+                ".aiops/config.json",
+                (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode(),
+            )
         if stack and "Makefile" in created:
             wired = cli._wire_stack(root, stack)
         from . import lifecycle
+
         pending = owned_changes(root, profile)
         if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it
-            for rel, (_old, new, _keys) in pending.items():   # the diff was shown in the plan, before the question
+            for rel, (_old, new, _keys) in pending.items():  # the diff was shown in the plan, before the question
                 cli.write_file(root, rel, new.encode())
                 written.append(rel)
                 changed.append(rel)
@@ -488,65 +598,90 @@ def human_steps(root, profile, pending, review=()):
 def steps_for_human(root, profile, pending, review=(), install=True):
     """The human steps as a list. `install=False` leaves out installing the plugin (it is already running: the
     prompt hook's reply)."""
-    steps = ["In Claude Code (or just reopen Claude Code here: the project settings offer the plugin):\n"
-             f"       /plugin marketplace add zoujagger/zouj-ai-sdlc@{REF}\n"
-             "       /plugin install zouj-ai-sdlc@zouj"] if install else []
+    steps = (
+        [
+            "In Claude Code (or just reopen Claude Code here: the project settings offer the plugin):\n"
+            f"       /plugin marketplace add zoujagger/zouj-ai-sdlc@{REF}\n"
+            "       /plugin install zouj-ai-sdlc@zouj"
+        ]
+        if install
+        else []
+    )
     if profile in ("team", "strict") and approvals.signing_problem(root):
         key = "~/.ssh/aiops_signing_sk" if profile == "strict" else "~/.ssh/aiops_signing"
-        gen = (f"ssh-keygen -t ed25519-sk -f {key}            # a FIDO key: a touch for every approval"
-               if profile == "strict" else f"ssh-keygen -t ed25519 -f {key}   # set a passphrase; keep it out of ssh-agent")
-        steps.append("In your own terminal, set up approval signing:\n"
-                     f"       {gen}\n"
-                     "       git config --global gpg.format ssh\n"
-                     f"       git config --global user.signingkey {key}.pub\n"
-                     f"       echo \"$(git config user.email) namespaces=\\\"git\\\" $(cat {key}.pub)\" >> "
-                     ".aiops/config/allowed-signers")
+        gen = (
+            f"ssh-keygen -t ed25519-sk -f {key}            # a FIDO key: a touch for every approval"
+            if profile == "strict"
+            else f"ssh-keygen -t ed25519 -f {key}   # set a passphrase; keep it out of ssh-agent"
+        )
+        steps.append(
+            "In your own terminal, set up approval signing:\n"
+            f"       {gen}\n"
+            "       git config --global gpg.format ssh\n"
+            f"       git config --global user.signingkey {key}.pub\n"
+            f'       echo "$(git config user.email) namespaces=\\"git\\" $(cat {key}.pub)" >> '
+            ".aiops/config/allowed-signers"
+        )
     if profile == "strict" and not cli.codeowners_cover_aiops(root):
-        steps.append("Give /.aiops/ a real owner (strict requires it): in .github/CODEOWNERS replace the @your-org/... "
-                     "placeholders, at least:\n       /.aiops/ @<approver>")
+        steps.append(
+            "Give /.aiops/ a real owner (strict requires it): in .github/CODEOWNERS replace the @your-org/... "
+            "placeholders, at least:\n       /.aiops/ @<approver>"
+        )
     # The profile. A repo with no profile yet gets it from the human's typed phrase, whichever profile it is (the
     # default, team, differs from the template by no key but is still recorded); a set profile changes in a terminal.
     first = no_profile_yet(root)[0]
     if first or ".aiops/config.json" in pending:
         current = config(root)["profile"]
         command = f"{shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}"
-        if current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):   # solo < team < strict
-            steps.append(f"Downgrade requested by the agent's run ({current} to {profile}): approvals would be "
-                         f"proven by {PROOF[profile]} instead of {PROOF[current]}. Skip the next step unless you "
-                         "asked for it.")
+        if current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):  # solo < team < strict
+            steps.append(
+                f"Downgrade requested by the agent's run ({current} to {profile}): approvals would be "
+                f"proven by {PROOF[profile]} instead of {PROOF[current]}. Skip the next step unless you "
+                "asked for it."
+            )
         if first:
             snippet = json.dumps(PROFILE_CONFIG[profile], indent=2).replace("\n", "\n       ")
-            steps.append(f"Choose the profile: type `Setup Profile {profile}` as your whole prompt in Claude "
-                         "Code (.aiops/config.json is human-owned; setup run by the agent leaves it at init's "
-                         "defaults). The phrase sets these keys and commits the file alone:\n"
-                         f"       {snippet}\n"
-                         f"       Or run in your own terminal, then confirm the diff: {command}")
+            steps.append(
+                f"Choose the profile: type `Setup Profile {profile}` as your whole prompt in Claude "
+                "Code (.aiops/config.json is human-owned; setup run by the agent leaves it at init's "
+                "defaults). The phrase sets these keys and commits the file alone:\n"
+                f"       {snippet}\n"
+                f"       Or run in your own terminal, then confirm the diff: {command}"
+            )
         else:
             snippet = json.dumps(pending[".aiops/config.json"][2], indent=2).replace("\n", "\n       ")
-            steps.append(f"Apply profile {profile} in your own terminal (.aiops/config.json is human-owned; setup "
-                         f"run by the agent leaves it as it is). Run, then confirm the diff:\n"
-                         f"       {command}\n"
-                         f"       It sets:\n       {snippet}")
-    for rel, (_old, _new, keys) in pending.items():   # under the agent: the human applies these
+            steps.append(
+                f"Apply profile {profile} in your own terminal (.aiops/config.json is human-owned; setup "
+                f"run by the agent leaves it as it is). Run, then confirm the diff:\n"
+                f"       {command}\n"
+                f"       It sets:\n       {snippet}"
+            )
+    for rel, (_old, _new, keys) in pending.items():  # under the agent: the human applies these
         if rel != ".aiops/config.json":
             snippet = json.dumps(keys, indent=2).replace("\n", "\n       ")
-            steps.append(f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
-                         f"       {snippet}")
-    if review:                                    # unreviewed(), taken before setup wrote anything
-        steps.append("Review these human-owned files yourself before committing them (no commit has them yet, and they "
-                     "hold something setup doesn't write; an unexpected key in allowed-signers would let CI trust it):"
-                     "\n       "
-                     + "\n       ".join(review))
+            steps.append(
+                f"Change {rel} yourself (human-owned; setup run by the agent doesn't touch it), merging:\n"
+                f"       {snippet}"
+            )
+    if review:  # unreviewed(), taken before setup wrote anything
+        steps.append(
+            "Review these human-owned files yourself before committing them (no commit has them yet, and they "
+            "hold something setup doesn't write; an unexpected key in allowed-signers would let CI trust it):"
+            "\n       " + "\n       ".join(review)
+        )
     files = sorted(set(uncommitted_scaffold(root)) - set(review))
-    if files:                                     # exactly these paths: never `git add -A`, never the rest of the index
+    if files:  # exactly these paths: never `git add -A`, never the rest of the index
         paths = " ".join(shlex.quote(f) for f in files)
-        steps.append(f"Commit the scaffold:\n       git add -- {paths} && git commit -m \"chore: adopt zouj-ai-sdlc "
-                     f"(profile {config(root)['profile']})\" -- {paths}")
+        steps.append(
+            f'Commit the scaffold:\n       git add -- {paths} && git commit -m "chore: adopt zouj-ai-sdlc '
+            f'(profile {config(root)["profile"]})" -- {paths}'
+        )
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     return steps
 
 
 # ---------------------------------------------------------------- the first profile, set by a typed phrase
+
 
 def no_profile_yet(root):
     """(True, "") while this repo has no profile and nothing depends on one, else (False, why). That is when the
@@ -555,6 +690,7 @@ def no_profile_yet(root):
     - no artifact is Approved or Closed: no gate has been opened under the default yet.
     Changing a profile later, a downgrade included, is a run in the human's own terminal."""
     from . import lifecycle
+
     f = root / ".aiops" / "config.json"
     if f.is_symlink():
         return False, ".aiops/config.json is a symlink; a profile is written only to a regular file"
@@ -575,8 +711,10 @@ def no_profile_yet(root):
                 continue
             status = A.parse(art.read_text()).get("status")
             if status in ("Approved", "Closed"):
-                return False, (f".aiops/{d.name}/{kind}.md is already {status}: a gate has been opened under the "
-                               "default profile, so changing it now is a deliberate change")
+                return False, (
+                    f".aiops/{d.name}/{kind}.md is already {status}: a gate has been opened under the "
+                    "default profile, so changing it now is a deliberate change"
+                )
     return True, ""
 
 
@@ -586,16 +724,21 @@ def set_first_profile(root, name):
     .aiops/config.json, exactly what a terminal `sdlc setup --profile <name>` writes into a new config, and commits
     that file alone, unsigned. Never changes a profile that is set (no_profile_yet)."""
     from . import lifecycle
+
     if name not in PROFILES:
-        return False, (f"profile NOT set: {f'unknown profile {name!r}' if name else 'no profile was named'}. The "
-                       "human types `Setup Profile solo`, `Setup Profile team` or `Setup Profile strict` as the "
-                       "whole prompt.")
+        return False, (
+            f"profile NOT set: {f'unknown profile {name!r}' if name else 'no profile was named'}. The "
+            "human types `Setup Profile solo`, `Setup Profile team` or `Setup Profile strict` as the "
+            "whole prompt."
+        )
     if not initialized(root):
         return False, "profile NOT set: this repo isn't set up yet (no .aiops/). Run /zouj-ai-sdlc:setup first."
     ok, why = no_profile_yet(root)
     if not ok:
-        return False, (f"profile NOT set: {why}. The typed phrase only sets a repo's first profile. To change one, "
-                       f"the human runs in their own terminal: `{lifecycle.human_command(f'setup --profile {name}')}`.")
+        return False, (
+            f"profile NOT set: {why}. The typed phrase only sets a repo's first profile. To change one, "
+            f"the human runs in their own terminal: `{lifecycle.human_command(f'setup --profile {name}')}`."
+        )
     rel = ".aiops/config.json"
     template = json.loads((cli.TEMPLATES / "scaffold" / rel).read_text())
     try:
@@ -607,9 +750,13 @@ def set_first_profile(root, name):
     if done is None:
         note = f"The change is in the working tree, but committing it failed: commit it yourself ({rel}, alone)."
     else:
-        note = f"Committed alone as `{title}`." + (f" The index was busy and still holds the old file: run "
-                                                    f"`{done[1]}` before your next commit." if done[1] else "")
+        note = f"Committed alone as `{title}`." + (
+            f" The index was busy and still holds the old file: run `{done[1]}` before your next commit."
+            if done[1]
+            else ""
+        )
     steps = steps_for_human(root, name, {}, install=False)
-    return True, (f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n"
-                  "Relay the remaining human steps:\n"
-                  + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1)))
+    return True, (
+        f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n"
+        "Relay the remaining human steps:\n" + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1))
+    )
