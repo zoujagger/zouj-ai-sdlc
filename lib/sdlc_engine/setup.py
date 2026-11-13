@@ -373,7 +373,10 @@ def owned_changes(root, profile):
     f = root / ".aiops" / "config.json"
     cfg = _json(f)
     if cfg is not None:
-        want = {k: v for k, v in PROFILE_CONFIG[profile].items() if cfg.get(k, config(root).get(k)) != v}
+        # No profile yet: compare with the file itself, not the engine defaults (which equal team's keys), so a first
+        # `--profile team` writes the template plus team's keys, what the typed phrase writes (0007 review r2 L1).
+        base = cfg if "profile" not in cfg else {**config(root), **cfg}
+        want = {k: v for k, v in PROFILE_CONFIG[profile].items() if base.get(k) != v}
         if want:
             changes[".aiops/config.json"] = (f.read_text(), json.dumps({**cfg, **want}, indent=2) + "\n", want)
     f = root / ".claude" / "settings.json"

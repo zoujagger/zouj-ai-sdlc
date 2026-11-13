@@ -122,7 +122,9 @@ def card(root, st):
 def terminal_lines(root, st=None):
     """The card lines for a pending human step, [] when there is none:
     - no profile chosen yet: the command for the human's own terminal, and the phrase that sets the profile
-    - the intent waits on the human at a gate (states 1-3) and signing needs a terminal: the approve command.
+    - the intent waits on the human at a gate (states 1-3) and signing needs a terminal: the approve command. That is
+      a signing problem, or the `human` key policy: its key has a passphrase and stays out of ssh-agent, and the
+      prompt hook has no terminal to ask for it (0007 review r2 M1).
     signing_problem may run ssh-keygen, so it is asked only in that second case."""
     from . import lifecycle, setup
 
@@ -131,8 +133,11 @@ def terminal_lines(root, st=None):
             f"- Your terminal: {lifecycle.human_command('').rstrip()}",
             "- No profile chosen yet: the human types `Setup Profile solo|team|strict` as the whole prompt",
         ]
-    if st is not None and st.waiting_on == "human" and st.state in (1, 2, 3) and approvals.signing_problem(root):
-        return [f"- Your terminal: {approvals.approve_command(st.id, KINDS[st.state - 1])}"]
+    if st is not None and st.waiting_on == "human" and st.state in (1, 2, 3):
+        cfg = config(root)
+        passphrase = cfg.get("require_signed_approvals") and cfg.get("approval_key_policy", "human") == "human"
+        if passphrase or approvals.signing_problem(root):
+            return [f"- Your terminal: {approvals.approve_command(st.id, KINDS[st.state - 1])}"]
     return []
 
 

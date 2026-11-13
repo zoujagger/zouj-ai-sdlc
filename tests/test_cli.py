@@ -712,6 +712,23 @@ class Card(RepoCase):
             self.assertIn(f"- Your terminal: {terminal_command()} approve 0001 intent", text)
             self.assertNotIn("Setup Profile", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
 
+    def test_terminal_line_when_a_passphrase_key_signs(self):
+        # 0007 review r2 M1: the recommended team key (a passphrase, kept out of ssh-agent) has no signing problem, yet
+        # the prompt hook has no terminal to ask for the passphrase, so the gate still needs the human's terminal.
+        from unittest import mock
+
+        from sdlc_engine import approvals, cli
+        from sdlc_engine.machine import evaluate
+
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "human"}')
+        self.write("intent", INTENT)
+        with mock.patch.object(approvals, "signing_problem", return_value=None):
+            lines = cli.terminal_lines(self.root, evaluate(self.root, self.d))
+        self.assertEqual(lines, [f"- Your terminal: {approvals.approve_command('0001', 'intent')}"])
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
+        with mock.patch.object(approvals, "signing_problem", return_value=None):
+            self.assertEqual(cli.terminal_lines(self.root, evaluate(self.root, self.d)), [])  # the phrase signs
+
     def test_no_terminal_line_otherwise(self):
         self.assertNotIn("Your terminal", self.session())  # no intent.md yet: waiting on the agent
         self.write("intent", INTENT)

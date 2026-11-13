@@ -1204,6 +1204,20 @@ class FirstProfile(SetupCase):
         for needle in ("profile SET: team", self.S.PROOF["team"], "ssh-keygen -t ed25519 ", "allowed-signers"):
             self.assertIn(needle, msg)
 
+    def test_terminal_team_on_a_new_config_sets_the_profile(self):
+        # 0007 review r2 L1: team's keys equal the engine defaults, so the human's terminal run used to write nothing,
+        # and the repo kept counting as "no profile chosen". It must write what the phrase writes (spec R-3).
+        from sdlc_engine import lifecycle
+
+        for name in self.S.PROFILES:
+            (self.root / CONFIG).write_text(json.dumps(self.template, indent=2) + "\n")
+            r = self.setup_run("--profile", name, "--yes")  # the human's terminal: no session markers
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(self.cfg(), {**self.template, **self.S.PROFILE_CONFIG[name]}, name)
+            self.assertEqual(lifecycle.config_written(self.root), name)
+            self.assertFalse(self.S.no_profile_yet(self.root)[0], name)
+            self.assertNotIn("Setup Profile", r.stdout, name)  # no step to set what was just set
+
     def test_strict_reply_has_codeowners_step(self):
         ok, msg = self.S.set_first_profile(self.root, "strict")
         self.assertTrue(ok, msg)
