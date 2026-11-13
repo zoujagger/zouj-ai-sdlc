@@ -1,6 +1,6 @@
 ---
 id: 0007
-title: First run in five minutes (profile by phrase, terminal command, core scaffold)
+title: First run in five minutes (profile by /setup, terminal command, core scaffold)
 status: Approved
 spec: ./spec.md
 created: 2026-11-10
@@ -10,7 +10,7 @@ approved-via: cli
 approved-sha256: 2aae560fecc6cfdfdcf91619f8e556272bed565a478c79d9bc5d73b8b39988aa
 ---
 
-# Plan: First run in five minutes (profile by phrase, terminal command, core scaffold)
+# Plan: First run in five minutes (profile by /setup, terminal command, core scaffold)
 
 <!-- State 3 PLAN, produced read-only: no source or test file was edited to write it.
      Steps are chronological and file-by-file. Each step is one TDD cycle: proof test first (red), then code (green).
@@ -28,6 +28,13 @@ many tests rely on; the phrase builds on a scaffolded repo; the version bump is 
    `approvals._commit_alone` (`lib/sdlc_engine/approvals.py:133`), `cli.hook_prompt` (`cli.py:747`).
 3. **`sdlc where` and the card (S8).** Over `lifecycle.human_command` (`lifecycle.py:257`).
 4. **Scaffold text and skills (S9-S10), the eval (S11), docs (S12),** then **the release (S13).**
+5. **Amendment (S14-S20, spec amended 2026-11-13).** The typed `/zouj-ai-sdlc:setup <profile>` replaces the
+   `Setup Profile` phrase, and in a repo without `.aiops/` the hook writes the core scaffold first. Order: the
+   dormancy exception in `hooks/engine.sh` (S14), the command in the prompt hook (S15), the fresh-repo scaffold
+   (S16), the playbook walk and the card (S17), then skills (S18), the eval (S19) and docs (S20). Reused:
+   `setup.preflight`, `setup.plan`, `setup.apply`'s create path, `cli.scaffold_root_problem`,
+   `setup.steps_for_human`, `approvals._commit_alone`. S1-S13 stay ticked; S5-S7 and S10-S12 are reworked by
+   S15-S20, and the tests named there are renamed where they name the phrase.
 
 What the existing tests need:
 - `tests/helpers.py::RepoCase` creates `.aiops/` by hand with an edited `config.json` and no install-state before
@@ -154,6 +161,82 @@ known gap in S12.
     `tests/test_cli.py::Docs::test_changelog_has_the_release` (`[0.2.0-alpha.4]` names 0005 and 0007) → fail on
     alpha.3; then `make check` and `make validate`
   - Covers: AC-19
+- [ ] **S14**: The dormancy exception: `hooks/engine.sh` lets the typed setup command through without `.aiops/`.
+  - Files: `hooks/engine.sh` (modify: in the not-initialized branch, for `prompt` only, match the raw JSON payload
+    with a bash regex held in a variable, `"prompt"[[:space:]]*:[[:space:]]*"[[:space:]]*/zouj-ai-sdlc:setup [A-Za-z0-9_-]+[[:space:]]*"`,
+    and continue only on a match, so only the plain form wakes python and the engine's `PROFILE_RE` still decides),
+    `CLAUDE.md` (rule 3 names the exception), `docs/architecture.md` (Design choices: "Gates dormant by default")
+  - Test first: `tests/test_shell_hooks.py::ShellHooks::test_prompt_hook_dormant_except_the_setup_command`: in a
+    repo without `.aiops/`, with a `python3` stub first on a PATH that logs any start, `Intent Approved 0001`,
+    `Setup Profile solo`, `/setup solo` and `/zouj-ai-sdlc:setup solo now` exit 0, print nothing and start no
+    python; `/zouj-ai-sdlc:setup solo` reaches the engine (`sdlc hook prompt` gets the payload) → fails: every prompt
+    exits 0 at once today
+  - Covers: AC-5
+- [ ] **S15**: The prompt hook matches `/zouj-ai-sdlc:setup <name>`, the phrase is removed, and the hook acts only in
+  the session's repo.
+  - Files: `lib/sdlc_engine/cli.py` (modify: `PROFILE_RE` = the qualified command, whole prompt, name
+    case-insensitive; `hook_profile` refuses with the reason and the terminal command unless `project_root(cwd)`
+    equals `project_root(CLAUDE_PROJECT_DIR)`, and no longer returns early without `.aiops/`), `lib/sdlc_engine/
+    setup.py` (modify: `set_first_profile`'s refusals name the command; the reply's scaffold commit message names
+    the profile being set, not `config(root)['profile']`)
+  - Test first: `tests/test_cli.py::ProfilePhrase` renamed `SetupCommand`, every case driven by
+    `/zouj-ai-sdlc:setup …`: `test_whole_prompt_sets_the_profile`, `test_command_with_other_text_is_ignored` (also
+    `/setup solo`, `Setup Profile solo`, a second argument, a bare `/zouj-ai-sdlc:setup` → empty output),
+    `test_unknown_name_lists_profiles`, `test_works_with_the_session_markers_set`,
+    `test_refused_outside_the_session_repo` (a nested template repo as `cwd`), `test_second_command_changes_nothing`,
+    `test_agent_setup_and_writes_still_cannot_change_config`; `tests/test_setup.py::FirstProfile` refusal texts →
+    fail: the hook matches only the phrase and reads no `CLAUDE_PROJECT_DIR`
+  - Covers: AC-1, AC-3, AC-4, AC-6, AC-7
+- [ ] **S16**: In a fresh repo the command writes the core scaffold first (spec R-2a).
+  - Files: `lib/sdlc_engine/setup.py` (modify: `set_first_profile` without `.aiops/` runs `cli.scaffold_root_problem`
+    and `preflight(root, name)`, refuses on a problem or a `✗` row, then `plan(root, name, [])` and creates only the
+    `+` rows through `cli.apply_init`, writes the config as template + profile, records install-state with
+    `parts: []`, commits the config alone, and lists the created files and `steps_for_human` in the reply; an
+    existing human-owned file is never changed, its difference becomes a step)
+  - Test first: `tests/test_setup.py::FirstRun::test_fresh_repo_gets_core_and_the_profile` (16 core files,
+    `.gitignore` lines, `parts: []`, no opt-in file, config = template + `solo`, HEAD touches only the config, the
+    rest uncommitted, the reply gives the commit with exact paths and `(profile solo)`),
+    `::test_existing_files_are_never_changed` (a `CLAUDE.md` and a `.claude/settings.json` of the user's own stay
+    byte-identical; the settings change is a step), `::test_refused_where_setup_would_stop` (a subdirectory of the
+    work tree, `$HOME`, `GIT_DIR` set, a Preflight `✗`: nothing written, the reason in the reply), and
+    `::test_team_and_strict_steps` → fail: `set_first_profile` refuses without `.aiops/`
+  - Covers: AC-8, AC-22, AC-23
+- [ ] **S17**: The playbook walk from a fresh repo, driven only by the hook, and the card's text.
+  - Files: `tests/test_playbook.py` (modify: `PhraseWalk` becomes `CommandWalk`: no agent-run setup; the human's
+    `/zouj-ai-sdlc:setup <p>` and every approval go through `hooks/engine.sh` with both session markers set),
+    `lib/sdlc_engine/cli.py` (modify: `terminal_lines` names `/zouj-ai-sdlc:setup solo|team|strict`)
+  - Test first: `CommandWalk::test_solo`, `::test_team`, `::test_strict`; `tests/test_cli.py::Card::
+    test_terminal_line_when_no_profile_chosen` expects the command → fail: the hook is dormant in a fresh repo and
+    the card names the phrase
+  - Covers: AC-2, AC-10, AC-16
+- [ ] **S18**: Skills and the scaffold text use the command.
+  - Files: `skills/setup/SKILL.md` (R-21: read the hook's reminder first; with none, preview, ask for the profile,
+    ask the human to type `/zouj-ai-sdlc:setup <profile>`; never type or simulate it; `--with` later),
+    `skills/configure/SKILL.md`, `skills/init/SKILL.md`, `skills/onboard/SKILL.md`,
+    `skills/using-zouj-ai-sdlc/SKILL.md`, `templates/scaffold/.aiops/README.md` (modify)
+  - Test first: `tests/test_cli.py::Docs::test_setup_skill_asks_for_the_command` (replaces
+    `test_setup_skill_asks_for_the_phrase`), `::test_no_shipped_file_names_the_phrase` (no `Setup Profile` in any
+    file under `skills/`, `templates/`, `docs/`, README, COMMANDS-QUICK-REF.md, TROUBLESHOOTING.md, SECURITY.md,
+    `evals/`, `lib/` except the commit title constant) → fail: the skills ask for the phrase
+  - Covers: AC-18
+- [ ] **S19**: The eval asks for the command.
+  - Files: `evals/profile-by-phrase/` renamed `evals/profile-by-setup-command/` (`git mv`), `prompt.md`,
+    `graders/asks-for-phrase.md` renamed `asks-for-setup-command.md`, `graders/config-unchanged.md` (compare the whole
+    config with the template, the round 1 L3), `evals/README.md` (modify)
+  - Test first: `tests/test_cli.py::Docs::test_profile_eval_case_is_complete` points at the new case and checks the
+    grader compares the whole template → fails: no such case. Then one run of the case with the plugin
+    (`--case profile-by-setup-command`), quoted for review.md
+  - Covers: AC-21
+- [ ] **S20**: Docs, ADR and CHANGELOG.
+  - Files: `README.md`, `COMMANDS-QUICK-REF.md`, `TROUBLESHOOTING.md`, `docs/adoption.md`, `docs/roadmap.md`,
+    `SECURITY.md`, `docs/architecture.md` (the threat-model row for the typed command and the hook scaffold, Known
+    gaps names `claude -p "/zouj-ai-sdlc:setup solo"`), `docs/adr/0003-first-profile-by-typed-phrase.md` renamed
+    `docs/adr/0003-first-profile-by-typed-setup-command.md` (rewritten: R-1 to R-4, why the phrase was removed),
+    `CHANGELOG.md` `[0.2.0-alpha.4]` (the command, the fresh-repo scaffold; the long line wrapped) (modify)
+  - Test first: `tests/test_setup.py::NoSandbox::test_docs_offer_the_recipe_not_a_sandbox` expects
+    `/zouj-ai-sdlc:setup solo` in "Just looking?"; `tests/test_cli.py::Docs::test_docs_document_where_and_with`;
+    S18's `test_no_shipped_file_names_the_phrase` covers the docs → fail on today's README
+  - Covers: AC-18, AC-19
 
 ## Risks
 | Risk | Likelihood | Impact | Mitigation |
@@ -168,32 +251,39 @@ known gap in S12.
 | `scaffold-history.json` goes stale twice (S9 under `unreleased`, S13 under alpha.4) now that alpha.3 is tagged | High | Low | `tests/test_rules.py::History` fails until regenerated; both steps name the command |
 | Lint passes locally and fails in CI (shellcheck and ruff run only there) | Medium | Low | Check new code for unused names by hand; watch `gh pr checks` after the push |
 | An alpha.3 engine reads alpha.4 install-state and offers the left-out parts as `new` | Low | Low | CHANGELOG states it; upgrading the plugin fixes it |
+| An agent starts its own session with `claude -p "/zouj-ai-sdlc:setup solo"`; in a fresh repo that also scaffolds | Low | Medium: the session's repo only, template config or none, nothing approved; one visible commit; CI reads the base config | Spec flag (accepted, zoujagger); S20 records it in Known gaps for the guard backlog (0006) |
+| The engine.sh pre-filter misreads the JSON prompt (escapes, a newline) and wakes python for other prompts, or misses the command | Medium | Low | S14 tests both directions with a python stub that logs starts; on any doubt the engine's own `PROFILE_RE` decides |
+| Claude Code hands `UserPromptSubmit` the expanded skill text instead of the typed line | Low | High: the command would set nothing | The hooks reference says it is the typed line (2026-11-13); the manual `make dev` check before the merge types it once |
+| The hook writes a scaffold where the human didn't expect one (a subdirectory, a nested repo) | Low | Medium | R-2 condition 1 and `scaffold_root_problem`; S15 and S16 test a nested repo, a subdirectory, `$HOME` and `GIT_DIR` |
+| Re-approving the spec leaves the old plan gate open, so the engine reports state 5 for code that doesn't match the spec | Seen 2026-11-13 | Low | This amendment changes the Steps, which closes the plan gate; `sdlc validate` already flags the missing AC ids. A spec change that should void the plan is a state-machine follow-up, not fixed here |
 
 ## Test definitions
 <!-- One row per acceptance criterion, at least. -->
 | AC | Test (file::name) | Type | Proves |
 |---|---|---|---|
-| AC-1 | `tests/test_setup.py::FirstProfile::test_sets_and_commits_config_alone`, `tests/test_cli.py::ProfilePhrase::test_whole_prompt_sets_the_profile` | integration | the config equals template + `solo`, HEAD is a single-file commit with the trailer, the context says `profile SET` |
-| AC-2 | `tests/test_playbook.py::PhraseWalk::test_solo` | integration | agent-run setup, the phrase, then `Intent Approved 0001` opens the gate with no terminal step |
-| AC-3 | `tests/test_setup.py::FirstProfile::test_refused_when_profile_set`, `::test_refused_when_config_edited`, `::test_refused_when_an_artifact_is_approved_or_closed` | integration | no file or commit changes; the reply has the reason and the terminal command |
-| AC-4 | `tests/test_cli.py::ProfilePhrase::test_phrase_inside_other_text_is_ignored`, `::test_unknown_or_missing_name_lists_profiles` | integration | only the whole prompt counts; a bad name writes nothing and lists the profiles |
-| AC-5 | `tests/test_cli.py::ProfilePhrase::test_dormant_without_aiops` | integration | exit 0, empty output, nothing written |
-| AC-6 | `tests/test_cli.py::ProfilePhrase::test_works_with_the_session_markers_set` | integration | with `CLAUDECODE=1` and `CLAUDE_CODE_CHILD_SESSION=1`, as every hook has them, the profile is set |
-| AC-7 | `tests/test_cli.py::ProfilePhrase::test_agent_setup_and_writes_still_cannot_change_config`, the existing `tests/test_setup.py::Owned` and `tests/test_guards.py` config cases | integration | the agent's `setup --profile`, Edit, Write and shell writes leave the config unchanged |
-| AC-8 | `tests/test_setup.py::FirstProfile::test_team_reply_has_signing_steps`, `::test_strict_reply_has_codeowners_step` | integration | the profile is set and the reply carries the remaining human steps |
+| AC-1 | `tests/test_setup.py::FirstProfile::test_sets_and_commits_config_alone`, `tests/test_cli.py::SetupCommand::test_whole_prompt_sets_the_profile` | integration | the config equals template + `solo`, HEAD is a single-file commit with the trailer, the context says `profile SET` |
+| AC-2 | `tests/test_playbook.py::CommandWalk::test_solo` | integration | from a fresh repo, `/zouj-ai-sdlc:setup solo` then `Intent Approved 0001` through `engine.sh` open the gate with no terminal step and no agent-run setup |
+| AC-3 | `tests/test_setup.py::FirstProfile::test_refused_when_profile_set`, `::test_refused_when_config_edited`, `::test_refused_when_an_artifact_is_approved_or_closed`, `::test_refused_after_an_approval_set_back_to_draft`, `tests/test_cli.py::SetupCommand::test_refused_outside_the_session_repo` | integration | no file or commit changes; the reply has the reason and the terminal command |
+| AC-4 | `tests/test_cli.py::SetupCommand::test_command_with_other_text_is_ignored`, `::test_unknown_name_lists_profiles` | integration | only the whole qualified command counts; `/setup`, the phrase, extra text and a bare command print nothing; a bad name lists the profiles |
+| AC-5 | `tests/test_shell_hooks.py::ShellHooks::test_prompt_hook_dormant_except_the_setup_command` | integration | without `.aiops/`, every other prompt exits 0 with no output and no python start; the command reaches the engine |
+| AC-6 | `tests/test_cli.py::SetupCommand::test_works_with_the_session_markers_set` | integration | with `CLAUDECODE=1` and `CLAUDE_CODE_CHILD_SESSION=1`, as every hook has them, the profile is set |
+| AC-7 | `tests/test_cli.py::SetupCommand::test_agent_setup_and_writes_still_cannot_change_config`, the existing `tests/test_setup.py::Owned` and `tests/test_guards.py` config cases | integration | the agent's `setup --profile`, Edit, Write and shell writes leave the config unchanged |
+| AC-8 | `tests/test_setup.py::FirstProfile::test_team_reply_has_signing_steps`, `::test_strict_reply_has_codeowners_step`, `::test_terminal_team_on_a_new_config_sets_the_profile`, `tests/test_setup.py::FirstRun::test_team_and_strict_steps` | integration | the profile is set, the reply carries the remaining human steps, and a terminal `--profile` writes the same config |
 | AC-9 | `tests/test_cli.py::Where::test_first_line_is_the_terminal_command` | integration | the first line, exit 0, no write, as human and agent, with and without `.aiops/` |
-| AC-10 | `tests/test_cli.py::Card::test_terminal_line_when_no_profile_chosen`, `::test_terminal_line_when_a_gate_needs_the_terminal`, `::test_no_terminal_line_otherwise` | unit | the card line appears only when a human step is pending |
+| AC-10 | `tests/test_cli.py::Card::test_terminal_line_when_no_profile_chosen`, `::test_terminal_line_when_a_gate_needs_the_terminal`, `::test_terminal_line_when_a_passphrase_key_signs`, `::test_no_terminal_line_otherwise` | unit | the card line appears only when a human step is pending, and names `/zouj-ai-sdlc:setup` with no profile chosen |
 | AC-11 | `tests/test_cli.py::InitParts::test_fresh_init_writes_core`, `tests/test_setup.py::Parts::test_default_is_core_with_no_schedule_or_secret` | integration | 16 files, `parts: []`, no `schedule:` and no secret in the created workflows |
 | AC-12 | `tests/test_cli.py::InitParts::test_with_adds_only_that_part`, `::test_with_all`, `::test_unknown_part_refused_before_writing`, `::test_rerun_without_with_keeps_parts`, `tests/test_setup.py::Parts::test_with_maintain_adds_only_maintain` | integration | `--with` adds exactly a part, never removes, and refuses unknown names |
 | AC-13 | `tests/test_lifecycle.py::CoreOnly::test_list_installed_hides_parts_not_installed`, `::test_upgrade_and_repair_create_none_of_them` | integration | no `new` or `missing` row for an uninstalled part; nothing created |
 | AC-14 | `tests/test_lifecycle.py::Compat::test_state_without_parts_reads_as_every_part`, `tests/test_cli.py::InitParts::test_edited_config_without_state_gets_every_part`, `::test_template_config_with_full_scaffold_gets_every_part`, the unchanged lifecycle suites | integration | alpha.3 state and state-less repos behave as before |
 | AC-15 | `tests/test_lifecycle.py::Parts::test_every_scaffold_file_has_one_part`, `::test_every_manifest_line_matches_a_file`, `::test_never_declined_is_core` | unit | the manifest is complete and core holds the security scaffold |
-| AC-16 | `tests/test_playbook.py::CoreWalk::test_solo`, `::test_team`, `::test_strict`, `tests/test_playbook.py::PhraseWalk::test_team`, `::test_strict` | integration | states 1 to 6 hold on a core-only repo and with a profile set by phrase |
+| AC-16 | `tests/test_playbook.py::CoreWalk::test_solo`, `::test_team`, `::test_strict`, `tests/test_playbook.py::CommandWalk::test_team`, `::test_strict` | integration | states 1 to 6 hold on a core-only repo and on a repo set up by the typed command |
 | AC-17 | `tests/test_cli.py::Docs::test_scaffold_explains_auto_mode` | unit | the scaffold README text, and no `defaultMode` in the scaffold settings |
-| AC-18 | `tests/test_setup.py::NoSandbox::test_docs_offer_the_recipe_not_a_sandbox`, `tests/test_cli.py::Docs::test_setup_skill_asks_for_the_phrase`, `::test_skills_name_where_and_with`, `::test_skills_name_the_part_they_need`, `::test_docs_document_where_and_with` | unit | the recipe and the skills reach `solo` with the phrase; `sdlc where` and `--with` are documented |
+| AC-18 | `tests/test_setup.py::NoSandbox::test_docs_offer_the_recipe_not_a_sandbox`, `tests/test_cli.py::Docs::test_setup_skill_asks_for_the_command`, `::test_no_shipped_file_names_the_phrase`, `::test_skills_name_where_and_with`, `::test_skills_name_the_part_they_need`, `::test_docs_document_where_and_with` | unit | the recipe and the skills reach `solo` with the typed command; no shipped file names the phrase; `sdlc where` and `--with` are documented |
 | AC-19 | `tests/test_shell_hooks.py` (version assertion), `tests/test_cli.py::Feedback::test_prints_links_offline` (README pins), `tests/test_rules.py::History::test_current_scaffold_in_history`, `tests/test_cli.py::Docs::test_changelog_has_the_release`; `make check`, `make validate` | unit | version, pins, CHANGELOG and scaffold history agree on 0.2.0-alpha.4 |
 | AC-20 | `tests/test_cli.py::InitParts::test_rerun_after_partial_core_setup_stays_core`, `::test_rerun_after_partial_with_maintain_completes_it` | integration | a rerun after a setup that stopped part-way installs what the first run chose |
-| AC-21 | `tests/test_cli.py::Docs::test_profile_eval_case_is_complete`; `make evals` (case `profile-by-phrase`) | unit + e2e | the case is complete and listed; the agent leaves the config alone and asks for the phrase |
+| AC-21 | `tests/test_cli.py::Docs::test_profile_eval_case_is_complete`; a run of the case `profile-by-setup-command` with the plugin | unit + e2e | the case is complete and listed; the agent leaves the config alone and asks for `/zouj-ai-sdlc:setup solo` |
+| AC-22 | `tests/test_setup.py::FirstRun::test_fresh_repo_gets_core_and_the_profile`, `::test_existing_files_are_never_changed` | integration | a fresh repo gets exactly the core scaffold and the profile, the config alone is committed, no existing file changes |
+| AC-23 | `tests/test_setup.py::FirstRun::test_refused_where_setup_would_stop` | integration | a subdirectory, `$HOME`, `GIT_DIR` or a Preflight `✗`: nothing written, the reason in the reply |
 
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
