@@ -30,7 +30,8 @@ We aim to acknowledge reports within 3 business days.
   - Approval commits are made with a pinned `ssh-keygen`, no hooks and no repo-local signing config.
 - **The profile** (how an approval is proven) lives in the human-owned `.aiops/config.json`. A repo's first
   profile is set by the human typing `Setup Profile solo|team|strict` as their whole prompt, only while the
-  config is the untouched template and nothing is approved. It is committed alone and unsigned, as
+  config is the untouched template and nothing is approved (no Approved or Closed artifact, no approval commit on any
+  ref). It is committed alone and unsigned, as
   `chore(aiops): Setup Profile <name>`; it opens no gate, and CI reads the config from the target branch. Later
   changes are made in the human's own terminal. Known gap: a session the agent starts can type a phrase too
   ([ADR 0003](docs/adr/0003-first-profile-by-typed-phrase.md)); under `team` and `strict` an approval still

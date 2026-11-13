@@ -27,7 +27,9 @@ allowed, as the approval phrases are) and sets the repo's **first** profile.
 **First profile only (spec R-2).** The hook writes only when all of these hold:
 1. The repo is initialized (`.aiops/` exists) and is the session's repo.
 2. `.aiops/config.json` is a regular file whose JSON equals the scaffold template: no `profile` key, no edited key.
-3. No artifact in any `.aiops/NNNN-*/` folder is `Approved` or `Closed`: no gate has been opened under the default.
+3. No artifact in any `.aiops/NNNN-*/` folder is `Approved` or `Closed`, and no commit on any ref carries an
+   `AIOps-Approval:` trailer: no gate has been opened under the default. The history check came from the 0007
+   review: the agent may set an artifact back to `Draft`, so the files alone can't prove it.
 
 Otherwise nothing is written, and the reply names the failed condition and the terminal command. The hook reads no
 environment marker on this path, because none carries information.
@@ -58,7 +60,8 @@ still can't change the config.
   already has a config on its main branch, a profile set on a feature branch changes nothing until a reviewed PR
   merges it.
 - **Accepted gap:** an agent that starts its own session can type the phrase. Conditions 2 and 3 bound the effect
-  to a repo with the untouched template config and nothing approved, where the result is a visible commit. The
+  to a repo with the untouched template config and nothing approved, in its files or its history, where the result
+  is a visible commit. The
   approval phrases have the same exposure: signing covers them under `team` and `strict`, and nothing does under
   `solo`. A pre-bash rule against starting a Claude session that carries a gate or profile phrase is on the guard
   backlog (`docs/architecture.md`, Known gaps).

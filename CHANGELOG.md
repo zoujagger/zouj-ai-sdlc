@@ -23,8 +23,8 @@ The playbook workflow, the gates and what CI audits are unchanged.
 - **`Setup Profile solo|team|strict`, typed as the whole prompt, sets a repo's first profile.** The prompt hook writes
   the template's keys plus that profile's into `.aiops/config.json`, exactly what a terminal `sdlc setup --profile`
   writes into a new config, and commits the file alone, unsigned, as `chore(aiops): Setup Profile <name>` with
-  `AIOps-Profile:` and `Set-By:` trailers. It works only while the config is the untouched template and no artifact is
-  Approved or Closed. Otherwise nothing is written and the reply gives the reason and the terminal command. Changing
+  `AIOps-Profile:` and `Set-By:` trailers. It works only while the config is the untouched template, no artifact is
+  Approved or Closed, and no approval commit is in the history. Otherwise nothing is written and the reply gives the reason and the terminal command. Changing
   a set profile stays a run in your own terminal (`docs/adr/0003-first-profile-by-typed-phrase.md`).
 - **`sdlc where`.** Its first line is the `sdlc` command for your own terminal, with the absolute python and plugin
   paths; the human-only subcommands follow. It writes nothing, and the agent may run it. `sdlc status` and the
@@ -92,7 +92,7 @@ The playbook workflow, the gates and what CI audits are unchanged.
 ### Known issues
 - **A phrase typed into a session the agent starts** (`claude -p "Setup Profile solo"`, or an approval phrase)
   reaches the prompt hook like a human's: Claude Code sets the same markers for every session's hooks. The profile
-  phrase is bounded to a repo with the untouched template config and nothing approved; an approval still needs your
+  phrase is bounded to a repo with the untouched template config and nothing approved, in its files or its history; an approval still needs your
   signature under `team` and `strict`, and nothing covers it under `solo`. A guard is on the backlog
   (`docs/architecture.md`, Known gaps).
 - The shell-parse forms still open after 0005 are listed in `docs/architecture.md`, Known gaps (intent 0006).

@@ -687,7 +687,8 @@ def no_profile_yet(root):
     """(True, "") while this repo has no profile and nothing depends on one, else (False, why). That is when the
     human's typed phrase `Setup Profile <name>` may set the first profile:
     - .aiops/config.json is a regular file that still equals the scaffold template (no `profile` key, nothing edited)
-    - no artifact is Approved or Closed: no gate has been opened under the default yet.
+    - no artifact is Approved or Closed, and no commit on any ref carries an `AIOps-Approval:` trailer: no gate has
+      been opened under the default yet.
     Changing a profile later, a downgrade included, is a run in the human's own terminal."""
     from . import lifecycle
 
@@ -715,6 +716,16 @@ def no_profile_yet(root):
                     f".aiops/{d.name}/{kind}.md is already {status}: a gate has been opened under the "
                     "default profile, so changing it now is a deliberate change"
                 )
+    # The agent may set any artifact back to Draft (G-GATE-05), so the files alone can't prove "nothing approved":
+    # an approval commit in the history of any ref (the 0007 review's MEDIUM) refuses too. Fail closed.
+    found = git(root, "log", "--all", "-1", "--format=%h %s", f"--grep=^{approvals.TRAILER}: ")
+    if found is None:
+        return False, "git couldn't list this repo's history, so an earlier approval can't be ruled out"
+    if found:
+        return False, (
+            f"an approval commit is in this repo's history ({found}): a gate has been opened under the default "
+            "profile, so changing it now is a deliberate change, even if the artifact is back to Draft"
+        )
     return True, ""
 
 

@@ -1143,6 +1143,33 @@ class FirstProfile(SetupCase):
         (d / "intent.md").write_text(INTENT.format(id="0001"))  # a Draft opens nothing
         self.assertTrue(self.S.set_first_profile(self.root, "solo")[0])
 
+    def test_refused_after_an_approval_set_back_to_draft(self):
+        # 0007 review MEDIUM: the agent may set any artifact back to Draft (G-GATE-05), so the status on disk can't
+        # prove "nothing approved". An approval commit in the history of any ref still refuses the phrase.
+        from helpers import INTENT
+        from sdlc_engine import approvals
+
+        rel = ".aiops/0001-csv-export/intent.md"
+        (self.root / rel).parent.mkdir()
+        (self.root / rel).write_text(INTENT.format(id="0001").replace("status: Draft", "status: Approved"))
+        git(self.root, "add", "--", rel)
+        git(
+            self.root,
+            "commit",
+            "-q",
+            "-m",
+            "chore(aiops): Intent Approved 0001",
+            "-m",
+            f"{approvals.TRAILER}: intent 0001 sha256=" + "0" * 64,
+        )
+        (self.root / rel).write_text(INTENT.format(id="0001"))  # set back to Draft on disk, uncommitted
+        self.refused("solo", "approval commit", "history")
+        git(self.root, "commit", "-q", "-m", "back to draft", "--", rel)
+        self.refused("solo", "approval commit", "history")  # set back at HEAD too
+        git(self.root, "checkout", "-q", "-b", "elsewhere", "HEAD~2")  # a branch without it: other refs still count
+        self.assertFalse((self.root / rel).exists())
+        self.refused("solo", "approval commit", "history")
+
     def test_refused_without_aiops(self):
         shutil.rmtree(self.root / ".aiops")
         ok, msg = self.S.set_first_profile(self.root, "solo")
