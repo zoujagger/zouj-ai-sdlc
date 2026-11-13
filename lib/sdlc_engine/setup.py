@@ -54,8 +54,10 @@ def _outside_repo(path, root):
     return os.pathsep.join(keep)
 
 
-def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
-    """[(status, label, fix)] with status ✓ (ok), ! (warning, setup continues) or ✗ (setup stops)."""
+def preflight(root, profile, version=None, path=None, timeout=TIMEOUT, quick=False):
+    """[(status, label, fix)] with status ✓ (ok), ! (warning, setup continues) or ✗ (setup stops). `quick` (the prompt
+    hook's path) leaves out the rows that can only warn and start slow processes: claude, gh (a network call) and the
+    git credential helper."""
     path = _outside_repo(path if path is not None else os.environ.get("PATH", ""), root)
     v = tuple(version or sys.version_info[:3])
     rows = []
@@ -69,7 +71,17 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
             "" if v >= (3, 9) else "install python 3.9 or newer",
         )
     )
+    if not quick:
+        rows += _warning_rows(root, path, timeout)
+    if profile in ("team", "strict"):
+        rows += _signing_rows(root, profile)
+    rows += owned_json_rows(root)
+    return rows
 
+
+def _warning_rows(root, path, timeout):
+    """Preflight's ! rows: Claude Code's version, gh and the git credential helper. None of them stops setup."""
+    rows = []
     res = _run(["claude", "--version"], path, timeout)
     m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", res[1]) if res else None
     if not shutil.which("claude", path=path):
@@ -109,10 +121,6 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
                 "" if ok else "gh auth setup-git (or configure any git credential helper)",
             )
         )
-
-    if profile in ("team", "strict"):
-        rows += _signing_rows(root, profile)
-    rows += owned_json_rows(root)
     return rows
 
 
@@ -685,7 +693,7 @@ def steps_for_human(root, profile, pending, review=(), install=True):
     return steps
 
 
-# ---------------------------------------------------------------- the first profile, set by a typed phrase
+# ---------------------------------------------------------------- the first profile, set by the typed setup command
 
 
 def no_profile_yet(root):
@@ -749,7 +757,7 @@ def scaffold_first(root, name):
     problem = cli.scaffold_root_problem(root) or approval_in_history(root)
     if problem:
         return [], problem
-    stops = [f"{label} ({fix})" for status, label, fix in preflight(root, name) if status == "✗"]
+    stops = [f"{label} ({fix})" for status, label, fix in preflight(root, name, quick=True) if status == "✗"]
     if stops:
         return [], "setup's preflight stops: " + "; ".join(stops)
     actions = cli.init_actions(root, parts=[])
@@ -761,7 +769,7 @@ def scaffold_first(root, name):
         cli.apply_init(root, actions, written)
         lifecycle.record(root, written, profile=name, parts=[])
     except OSError as exc:
-        return [], cli.write_failure(exc, written)
+        return written, cli.write_failure(exc, written)  # the caller says what was written
     return written, None
 
 
@@ -783,8 +791,8 @@ def set_first_profile(root, name):
         created, why = scaffold_first(root, name)
         if why:
             return False, (
-                f"profile NOT set: {why}. Nothing was written. Fix it and type the command again, or run in your own "
-                f"terminal: `{lifecycle.human_command(f'setup --profile {name}')}`."
+                f"profile NOT set: {why}{'' if created else '. Nothing was written'}. Fix it and type the command "
+                f"again, or run in your own terminal: `{lifecycle.human_command(f'setup --profile {name}')}`."
             )
     ok, why = no_profile_yet(root)
     if not ok:
@@ -819,5 +827,40 @@ def set_first_profile(root, name):
     )
     return True, (
         f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n{made}"
-        "Relay the remaining human steps:\n" + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1))
+        + _identity_note(root)
+        + _trust_lists(root)
+        + "Relay the remaining human steps:\n"
+        + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1))
     )
+
+
+def _identity_note(root):
+    """A line when the commit's Set-By comes from this repo's own git config, which the agent can set while the repo
+    has no .aiops/ yet (the gate guards are dormant then). Empty otherwise."""
+    local = [k for k in ("user.name", "user.email") if git(root, "config", "--local", k)]
+    if not local:
+        return ""
+    return (
+        f"Set-By names {approvals.approver(root)}, taken from this repo's own git config ({', '.join(local)}), not "
+        "your global identity: check it before you push.\n"
+    )
+
+
+TRUST_LISTS = (".aiops/config/allowed-signers", ".aiops/config/legacy-approvals", ".aiops/config/allowed-commands")
+
+
+def _trust_lists(root):
+    """The non-comment lines of the human-owned trust lists, so a line committed before the command (which this path
+    never previews) is seen. Empty when every list holds comments only."""
+    out = []
+    for rel in TRUST_LISTS:
+        f = root / rel
+        if f.is_file() and not f.is_symlink():
+            lines = [
+                ln
+                for ln in f.read_text(errors="replace").splitlines()
+                if ln.strip() and not ln.lstrip().startswith("#")
+            ]
+            if lines:
+                out.append(f"{rel} (check that you trust every line):\n" + "\n".join(f"    {ln}" for ln in lines))
+    return "".join(f"{block}\n" for block in out)

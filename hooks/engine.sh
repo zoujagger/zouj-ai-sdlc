@@ -15,7 +15,7 @@ setup_command_re='"prompt"[[:space:]]*:[[:space:]]*"[[:space:]]*/zouj-ai-sdlc:se
 # Initialized = .aiops/ on disk or tracked in git (deleting the folder must not switch the gates off).
 if [[ ! -d "$root/.aiops" ]] && [[ -z "$(git -C "$root" ls-files -- .aiops 2>/dev/null | head -n1)" ]]; then
   # session-start still announces the plugin so people know how to switch it on.
-  [[ "$event" == session-start ]] && echo "zouj-ai-sdlc is installed but this repo is not initialized (no .aiops/), so its gates are off here. To use the AI-native SDLC workflow: /zouj-ai-sdlc:init"
+  [[ "$event" == session-start ]] && echo "zouj-ai-sdlc is installed but this repo is not initialized (no .aiops/), so its gates are off here. To use the AI-native SDLC workflow, type: /zouj-ai-sdlc:setup solo|team|strict"
   # pre-bash still runs: the safety checks (toolchain, plugin, secrets outside the repo) are on in every repo.
   # prompt runs only for the typed setup command; every other prompt stays dormant.
   if [[ "$event" == prompt ]]; then

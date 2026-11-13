@@ -792,7 +792,16 @@ class PromptAndSessionHooks(RepoCase):
         )
         r = self.hook("session-start", {"cwd": str(self.root)})
         self.assertIn("not initialized", r.stdout)
+        self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", r.stdout)  # 0007 r4: the one-command first run
         self.assertNotIn("State Rules", r.stdout)
+        import subprocess
+        from helpers import ROOT
+
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        r = subprocess.run(  # engine.sh answers before python starts: the same hint
+            [str(ROOT / "hooks" / "engine.sh"), "session-start"], input="{}", capture_output=True, text=True, env=env
+        )
+        self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", r.stdout)
 
     def test_post_edit_reports_schema_errors(self):
         self.write("intent", INTENT.replace("## Constraints", "## Limits"))

@@ -37,8 +37,9 @@ TEMPLATES = PLUGIN_ROOT / "templates"
 APPROVE_RE = re.compile(r"^\s*(intent|spec|plan)\s+approved(?:\s+(\d{1,4}))?\s*[.!]?\s*$", re.I)
 # The human's whole prompt `/zouj-ai-sdlc:setup solo|team|strict` sets a repo's first profile (setup.set_first_profile).
 # Claude Code hands UserPromptSubmit a typed skill command as typed. Qualified only: a bare `/setup` may be another
-# plugin's skill. The name is matched in any case; the command exactly.
-PROFILE_RE = re.compile(r"^\s*/zouj-ai-sdlc:setup[ \t]+([A-Za-z0-9_-]+)\s*$")
+# plugin's skill. The name is matched in any case; the command exactly. Only spaces and tabs around it, as the
+# engine.sh pre-filter accepts (a newline arrives there JSON-escaped), so a fresh repo and an initialized one agree.
+PROFILE_RE = re.compile(r"^[ \t]*/zouj-ai-sdlc:setup[ \t]+([A-Za-z0-9_-]+)[ \t]*\Z")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 HUMAN_ONLY = (
     "refusing: this is a human gate and it is running inside Claude Code. Run it in your own terminal, "
@@ -982,7 +983,7 @@ def hook_session_start(data):
     if not initialized(root):
         out(
             "zouj-ai-sdlc is installed but this repo is not initialized (no .aiops/), so its gates are off here. "
-            "To use the AI-native SDLC workflow: /zouj-ai-sdlc:init"
+            "To use the AI-native SDLC workflow, type: /zouj-ai-sdlc:setup solo|team|strict"
         )
         return 0
     d = active_dir(root)

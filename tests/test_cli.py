@@ -538,8 +538,10 @@ class SetupCommand(RepoCase):
         self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
         from sdlc_engine import cli
 
-        for text in ("/zouj-ai-sdlc:setup TEAM", "  /zouj-ai-sdlc:setup  strict  ", "/zouj-ai-sdlc:setup solo\n"):
-            self.assertTrue(cli.PROFILE_RE.match(text), text)  # surrounding whitespace; the name in any case
+        for text in ("/zouj-ai-sdlc:setup TEAM", "  /zouj-ai-sdlc:setup  strict  ", "\t/zouj-ai-sdlc:setup solo"):
+            self.assertTrue(cli.PROFILE_RE.match(text), text)  # spaces and tabs around it; the name in any case
+        for text in ("/zouj-ai-sdlc:setup solo\n", "\n/zouj-ai-sdlc:setup solo"):  # 0007 r4: as engine.sh decides
+            self.assertFalse(cli.PROFILE_RE.match(text), repr(text))  # a fresh repo never sees a newline form
 
     def test_command_with_other_text_is_ignored(self):
         for text in (

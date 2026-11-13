@@ -1135,6 +1135,75 @@ class FirstRun(SetupCase):
             if head:
                 self.assertEqual(git(d, "rev-parse", "HEAD"), head, case)
 
+    def test_refused_when_an_approval_is_in_the_history(self):
+        # 0007 r4 MEDIUM: a fresh repo with an approval commit on any ref refuses before anything is written
+        from sdlc_engine import approvals
+
+        d = self.repo("hist")
+        git(d, "switch", "-qc", "elsewhere")
+        git(
+            d,
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "chore(aiops): Intent Approved 0001",
+            "-m",
+            f"{approvals.TRAILER}: intent 0001 sha256=" + "0" * 64,
+        )
+        git(d, "switch", "-q", "main")
+        head = git(d, "rev-parse", "HEAD")
+        ctx = self.typed("/zouj-ai-sdlc:setup solo", d)
+        self.assertIn("profile NOT set", ctx)
+        self.assertIn("approval commit", ctx)
+        self.assertIn("Nothing was written", ctx)
+        self.assertFalse((d / ".aiops").exists())
+        self.assertFalse((d / "CLAUDE.md").exists())
+        self.assertEqual(git(d, "rev-parse", "HEAD"), head)
+
+    def test_hook_skips_the_slow_preflight_checks(self):
+        # 0007 r4 LOW: on the prompt path, Preflight runs only the rows that can stop setup (git, make, python):
+        # not `gh auth status` (a network call) or `claude --version`
+        d = self.repo("quick")
+        log = self.bin_with() / "gh.log"
+        log.unlink(missing_ok=True)
+        self.assertIn("profile SET: solo", self.typed("/zouj-ai-sdlc:setup solo", d))
+        self.assertFalse(log.exists(), log.read_text() if log.exists() else "")
+
+    def test_a_write_that_failed_part_way_is_reported(self):
+        # 0007 r4 LOW: "Nothing was written" only when nothing was
+        d = self.repo("partial")
+        os.chdir(d)
+
+        def fail_after_one(root, actions, written=None):
+            (root / "CLAUDE.md").write_text("x\n")
+            written.append("CLAUDE.md")
+            raise OSError("disk full")
+
+        from sdlc_engine import setup
+
+        with mock.patch.object(cli, "apply_init", fail_after_one):
+            with mock.patch.dict(os.environ, {"PATH": f"{self.bin_with()}:/usr/bin:/bin"}):
+                ok, msg = setup.set_first_profile(d, "solo")
+        self.assertFalse(ok, msg)
+        self.assertIn("CLAUDE.md", msg)
+        self.assertNotIn("Nothing was written", msg)
+
+    def test_set_by_from_the_repos_own_git_config_is_flagged(self):
+        # 0007 r4 security LOW: before .aiops/ exists the agent can set the repo-local identity that Set-By names
+        d = self.repo("ident")
+        ctx = self.typed("/zouj-ai-sdlc:setup solo", d)  # repo() sets user.name/email in the repo's own config
+        self.assertIn("Set-By", ctx)
+        self.assertIn("this repo's own git config", ctx)
+        d2 = self.repo("ident-global")
+        git(d2, "config", "--unset", "user.name")
+        git(d2, "config", "--unset", "user.email")
+        for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com")):
+            subprocess.run(["git", "config", "--file", self.env["GIT_CONFIG_GLOBAL"], key, value], check=True)
+        ctx = self.typed("/zouj-ai-sdlc:setup solo", d2)
+        self.assertIn("profile SET: solo", ctx)
+        self.assertNotIn("this repo's own git config", ctx)
+
     def test_team_and_strict_steps(self):
         from sdlc_engine import setup
 
@@ -1149,7 +1218,8 @@ class FirstRun(SetupCase):
 
 
 class FirstProfile(SetupCase):
-    """setup.set_first_profile: what the typed phrase `Setup Profile <name>` does (0007 S5: AC-1, AC-3, AC-8)."""
+    """setup.set_first_profile: what the typed `/zouj-ai-sdlc:setup <name>` does in an initialized repo (0007 S5,
+    S15: AC-1, AC-3, AC-8)."""
 
     def setUp(self):
         super().setUp()
@@ -1300,6 +1370,21 @@ class FirstProfile(SetupCase):
         self.assertTrue(ok, msg)
         self.assertIn("Created the core scaffold", msg)
         self.assertEqual(self.cfg()["profile"], "solo")
+
+    def test_reply_lists_the_trust_lists(self):
+        # 0007 r4 security LOW: with no preview on this path, the reply shows what the human-owned trust lists hold
+        # (an allowed-signers line committed before the command would otherwise never be seen)
+        signers = self.root / ".aiops" / "config" / "allowed-signers"
+        signers.write_text(signers.read_text() + 'agent@example.com namespaces="git" ssh-ed25519 AAAAplanted\n')
+        git(self.root, "add", "--", ".aiops")
+        git(self.root, "commit", "-qm", "scaffold")
+        ok, msg = self.S.set_first_profile(self.root, "team")
+        self.assertTrue(ok, msg)
+        self.assertIn("allowed-signers", msg)
+        self.assertIn("agent@example.com", msg)
+        listed = msg.split(".aiops/config/allowed-signers", 1)[1].split("Relay the remaining human steps", 1)[0]
+        self.assertNotIn("#", listed)  # comments left out
+        self.assertNotIn("legacy-approvals", msg)  # an empty (comments only) list isn't shown
 
     def test_symlinked_config_refused(self):
         target = self.root.parent / f"{self.root.name}.target.json"
