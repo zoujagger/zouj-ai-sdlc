@@ -464,8 +464,8 @@ class ShellHooks(RepoCase):
             self.assertIn(piece, arch, piece)
         readme = (ROOT / "README.md").read_text()
         looking = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
-        # 0007: the agent scaffolds and the human types the phrase, so the recipe has no terminal setup run
-        for piece in ("/zouj-ai-sdlc:setup solo", "Setup Profile solo", "git add", "git commit"):
+        # 0007: the human types /zouj-ai-sdlc:setup solo, so the recipe has no terminal setup run
+        for piece in ("/zouj-ai-sdlc:setup solo", "git add", "git commit"):
             self.assertIn(piece, looking, piece)
         self.assertNotIn("bin/sdlc setup --profile", looking)
         self.assertNotIn("--force", (ROOT / "templates" / "scaffold" / "Makefile").read_text())

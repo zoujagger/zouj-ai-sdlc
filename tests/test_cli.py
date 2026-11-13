@@ -810,15 +810,17 @@ class Docs(unittest.TestCase):
         """0007 S18-S20 (AC-18): the `Setup Profile <name>` phrase is gone from everything that ships, except the
         profile commit's title in the engine (`chore(aiops): Setup Profile <name>`)."""
         found = []
-        for top in ("skills", "templates", "lib", "evals"):
-            for f in sorted((self.root / top).rglob("*")):
-                if "results" in f.relative_to(self.root).parts:  # local eval runs, git-ignored
-                    continue
-                if f.is_file() and f.suffix in (".md", ".py", ".json", ".yml", ".yaml", ".sh", ""):
-                    for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
-                        if "Setup Profile" in line and "chore(aiops): Setup Profile" not in line:
-                            found.append(f"{f.relative_to(self.root)}:{n}")
-        self.assertEqual(found, [])
+        files = [self.root / rel for rel in ("README.md", "COMMANDS-QUICK-REF.md", "TROUBLESHOOTING.md", "SECURITY.md")]
+        for top in ("skills", "templates", "lib", "evals", "docs"):
+            files += sorted((self.root / top).rglob("*"))
+        for f in files:
+            if "results" in f.relative_to(self.root).parts:  # local eval runs, git-ignored
+                continue
+            if f.is_file() and f.suffix in (".md", ".py", ".json", ".yml", ".yaml", ".sh", ""):
+                for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
+                    if "Setup Profile" in line and "chore(aiops): Setup Profile" not in line:
+                        found.append(f"{f.relative_to(self.root)}:{n}")
+        self.assertEqual(found, [])  # the CHANGELOG may still tell the history
 
     def test_skills_name_where_and_with(self):
         for rel in ("skills/setup/SKILL.md", "skills/configure/SKILL.md", "skills/using-zouj-ai-sdlc/SKILL.md"):
@@ -832,13 +834,18 @@ class Docs(unittest.TestCase):
         self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", self.text("skills/onboard/SKILL.md"))
 
     def test_docs_document_where_and_with(self):
-        """0007 AC-18, spec R-22: the user docs name `sdlc where`, `--with` and the phrase; the ADR and the threat
-        model record the decision and its gap."""
+        """0007 AC-18, spec R-22: the user docs name `sdlc where`, `--with` and the typed setup command; the ADR and
+        the threat model record the decision and its gap."""
         for rel in ("README.md", "COMMANDS-QUICK-REF.md", "TROUBLESHOOTING.md"):
             text = self.text(rel)
             self.assertIn("sdlc where", text, rel)
             self.assertIn("--with", text, rel)
-            self.assertIn("Setup Profile", text, rel)
+            self.assertIn("/zouj-ai-sdlc:setup solo", text, rel)
+        self.assertTrue((self.root / "docs" / "adr" / "0003-first-profile-by-typed-setup-command.md").is_file())
+        self.assertFalse((self.root / "docs" / "adr" / "0003-first-profile-by-typed-phrase.md").exists())
+        arch = self.text("docs/architecture.md")
+        self.assertIn('claude -p "/zouj-ai-sdlc:setup solo"', arch)  # the accepted gap, under its new name
+        self.assertIn("dormant", arch)
         readme = self.text("README.md")
         install = readme.split("\n## Install", 1)[1].split("\n## ", 1)[0]
         self.assertNotIn("Where is `<plugin>`?", install)  # `sdlc where` answers it
@@ -849,20 +856,28 @@ class Docs(unittest.TestCase):
         quick = self.text("COMMANDS-QUICK-REF.md")
         self.assertIn("| `sdlc where` |", quick)
         self.assertNotIn("`team` default", quick)  # the agent's setup sets no profile
-        adr = self.text("docs/adr/0003-first-profile-by-typed-phrase.md")
-        for piece in ("Status: Accepted", "Setup Profile", "chore(aiops): Setup Profile", "AIOps-Profile:", "unsigned"):
+        adr = self.text("docs/adr/0003-first-profile-by-typed-setup-command.md")
+        for piece in (
+            "Status: Accepted",
+            "/zouj-ai-sdlc:setup <name>",
+            "chore(aiops): Setup Profile",
+            "AIOps-Profile:",
+            "unsigned",
+            "only missing files",
+            "dormant",
+        ):
             self.assertIn(piece, adr, piece)
         arch = self.text("docs/architecture.md")
         model = arch.split("\n## Threat model", 1)[1].split("\n## ", 1)[0]
-        rows = [line for line in model.splitlines() if "Setup Profile" in line]
-        self.assertTrue(any(line.startswith("| The first profile") for line in rows), rows)  # the phrase's own row
+        rows = [line for line in model.splitlines() if "/zouj-ai-sdlc:setup" in line]
+        self.assertTrue(any(line.startswith("| The first profile") for line in rows), rows)  # the command's own row
+        self.assertTrue(any(line.startswith("| The typed setup command writes") for line in rows), rows)  # R-2a
         self.assertTrue(any("`sdlc setup`" in line.split("|")[1] for line in rows), rows)  # the setup row names it
         gaps = arch.split("\n## Known gaps", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("claude -p", gaps)  # a phrase typed into a session the agent starts
-        self.assertIn("Setup Profile", gaps)
-        self.assertIn("0003-first-profile-by-typed-phrase", arch)
+        self.assertIn('claude -p "/zouj-ai-sdlc:setup solo"', gaps)  # a command typed into a session the agent starts
+        self.assertIn("0003-first-profile-by-typed-setup-command", arch)
         for rel in ("docs/adoption.md", "docs/roadmap.md"):  # on main since PR #17
-            self.assertIn("Setup Profile", self.text(rel), rel)
+            self.assertIn("/zouj-ai-sdlc:setup", self.text(rel), rel)
         self.assertNotIn("<plugin>/bin/sdlc setup --profile solo", self.text("docs/adoption.md"))
 
     def test_changelog_has_the_release(self):

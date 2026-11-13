@@ -907,8 +907,9 @@ class NoSandbox(SetupCase):
             self.assertNotIn("sandbox <dir>", text, rel)
         readme = (root / "README.md").read_text()
         recipe = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
-        for piece in ("git init", "/zouj-ai-sdlc:setup", "Setup Profile solo", "/zouj-ai-sdlc:intent"):
+        for piece in ("git init", "/zouj-ai-sdlc:setup solo", "/zouj-ai-sdlc:intent"):
             self.assertIn(piece, recipe, piece)
+        self.assertNotIn("Setup Profile", recipe)
         self.assertNotIn("<plugin>", recipe)  # 0007 AC-18: solo is reached by the phrase, no terminal path
         self.assertNotIn("setup --profile", recipe)
 
