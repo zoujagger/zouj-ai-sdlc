@@ -26,9 +26,13 @@ def running_under_agent():
 
 
 def approver(root):
+    """`Name <email>` from git config, on one printable line: a multi-line or control-character user.name (settable
+    repo-local while the gates are dormant) can't add trailer lines to a commit or rewrite a front-matter field
+    (0007 r11). Non-printable characters are escaped (`\\x0a`)."""
     name = git(root, "config", "user.name") or os.environ.get("USER") or "unknown"
     email = git(root, "config", "user.email")
-    return f"{name} <{email}>" if email else name
+    who = f"{name} <{email}>" if email else name
+    return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in who)
 
 
 PYTHON = "/usr/bin/python3" if Path("/usr/bin/python3").is_file() else "python3"
@@ -147,11 +151,13 @@ def local_config_keys(root):
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
-def _commit_alone(root, rel, title, body, sign):
+def _commit_alone(root, rel, title, body, sign, data=None):
     """Commit `rel` as it is in the working tree, alone, with plumbing: the blob is hashed without filters, the
     tree is built in a throwaway index, and `commit-tree` signs it. Attributes come from the empty tree, so no hook,
-    fsmonitor, filter or worktree scan runs in the human's approval. Returns (sha, fix) where fix is a command the
-    human must run when the real index couldn't follow, or None if the commit failed."""
+    fsmonitor, filter or worktree scan runs in the human's approval. With `data` (bytes), the blob is exactly those
+    bytes, not whatever is on disk by then (0007 r7: a process racing the writer can't swap the content). Returns
+    (sha, fix) where fix is a command the human must run when the real index couldn't follow, or None if the commit
+    failed."""
     base_env = {**os.environ, "GIT_ATTR_SOURCE": EMPTY_TREE}
 
     def run(*args, index=None):
@@ -159,7 +165,13 @@ def _commit_alone(root, rel, title, body, sign):
         r = subprocess.run([GIT, *PINNED, *args], cwd=root, env=env, capture_output=True, text=True)
         return r.stdout.strip() if r.returncode == 0 else None
 
-    blob = run("hash-object", "-w", "--no-filters", "--", rel)
+    if data is None:
+        blob = run("hash-object", "-w", "--no-filters", "--", rel)
+    else:
+        r = subprocess.run(
+            [GIT, *PINNED, "hash-object", "-w", "--stdin"], cwd=root, env=base_env, input=data, capture_output=True
+        )
+        blob = r.stdout.decode().strip() if r.returncode == 0 else None
     head = run("rev-parse", "-q", "--verify", "HEAD^{commit}")
     if not blob:
         return None

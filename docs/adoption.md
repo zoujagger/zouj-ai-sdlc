@@ -7,11 +7,11 @@ workflow with a human at every gate. There is no step without the gates.
 | Step | You get | You do | Move up when |
 |---|---|---|---|
 | 0 Plugin only | The safety guards in every repo: secret reads and writes, force-push, history rewrites, production deploys, your toolchain | Install the plugin ([README](../README.md#install)). No repo is changed | You want the workflow in a repo |
-| 1 `solo`, one repo | The five states and the read-only lock. An approval is the typed phrase plus an unsigned commit | `/zouj-ai-sdlc:setup solo`, type `Setup Profile solo` as your whole prompt, commit the scaffold, then `/zouj-ai-sdlc:intent "<need>"` | A second person merges your changes |
-| 2 `team` | Signed approvals that CI audits; teammates are offered the plugin when they open the repo | In a new repo, `/zouj-ai-sdlc:setup team` and `Setup Profile team`; moving up from `solo`, `<plugin>/bin/sdlc setup --profile team` in your terminal. Then one signing key per approver, `aiops-gates / audit` as a required check, CODEOWNERS on `.aiops/` ([branch protection](../templates/scaffold/docs/branch-protection.md)) | The repo is regulated or high-risk |
+| 1 `solo`, one repo | The five states and the read-only lock. An approval is the typed phrase plus an unsigned commit | Type `/zouj-ai-sdlc:setup solo` as your whole prompt, commit the scaffold, then `/zouj-ai-sdlc:intent "<need>"` | A second person merges your changes |
+| 2 `team` | Signed approvals that CI audits; teammates are offered the plugin when they open the repo | In a new repo, type `/zouj-ai-sdlc:setup team`; moving up from `solo`, `<plugin>/bin/sdlc setup --profile team` in your terminal. Then one signing key per approver, `aiops-gates / audit` as a required check, CODEOWNERS on `.aiops/` ([branch protection](../templates/scaffold/docs/branch-protection.md)) | The repo is regulated or high-risk |
 | 3 `strict` + the loop | An `sk-` key touch per approval, org-wide settings, and the Maintain loop feeding new intents | `<plugin>/bin/sdlc setup --profile strict --with maintain` in your terminal, managed settings ([governance](governance.md#org-level-enforcement)), real queries in `ops/bands.yaml` | — |
 
-The typed phrase sets a repo's **first** profile. Changing one that is set is a run in your own terminal:
+The typed `/zouj-ai-sdlc:setup <profile>` sets a repo's **first** profile. Changing one that is set is a run in your own terminal:
 `sdlc where` (in Claude Code) prints the full command that `<plugin>/bin/sdlc` stands for.
 
 ## Step 0: try it without touching a real project

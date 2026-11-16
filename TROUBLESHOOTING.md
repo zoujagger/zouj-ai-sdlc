@@ -14,14 +14,27 @@ its fix. If you're stuck, `sdlc feedback` prints the issue links and a summary t
   `sdlc where` prints it, and `sdlc status` shows it as `Your terminal:` while a gate waits on your key.
 - **Check the gate:** `sdlc status` shows `intent ✓ · spec … · plan …`.
 
-## Typing `Setup Profile solo` (or `team`, `strict`) does nothing, or says `profile NOT set`
-- **Nothing happens:** the phrase must be the whole message, and the plugin must be loaded in that session, as for an
-  approval. In a repo without `.aiops/` the phrase is ignored: run `/zouj-ai-sdlc:setup` first.
-- **"unknown profile" or "no profile was named":** the names are `solo`, `team` and `strict`.
-- **"a profile is already set here":** the phrase sets a repo's **first** profile only. To change one, run
+## Typing `/zouj-ai-sdlc:setup solo` (or `team`, `strict`) doesn't set the profile, or says `profile NOT set`
+- **Nothing happens:** type the qualified command as the whole message, `/zouj-ai-sdlc:setup solo`: a bare
+  `/setup solo`, or the command with other text, sets nothing. The plugin must be loaded in that session, as for an
+  approval. In a repo without `.aiops/` the command writes the core scaffold first, then sets the profile.
+- **"unknown profile":** the names are `solo`, `team` and `strict`.
+- **"acts only on the session's repo":** your prompt's working directory is in another git repo (a nested checkout,
+  a submodule). Type it from the repo you opened Claude Code in.
+- **"setup's preflight stops" / "not the top of a git repository" / "your home directory":** nothing was written.
+  Fix what it names (`git init`, install `make`, open Claude Code in the project repo), then type the command again.
+- **"only at the top of the work tree":** in a repo with no `.aiops/` yet, open Claude Code at the repo's top, not in
+  a subdirectory, then type the command again.
+- **"this repo's own git config sets …":** a repo-local key that can run code (such as `core.fsmonitor` or
+  `core.hooksPath`) is set. Check you set it yourself, remove it with `git config --local --unset <key>`, and type
+  the command again. Tools set some of these on purpose (husky's `core.hooksPath`, Git LFS's `filter.lfs.*` and
+  `lfs.*`, custom `diff.*`/`merge.*` drivers): unset them for the command, or run
+  `sdlc setup --profile <p>` in your own terminal instead, then set them back. `sdlc approve` and `sdlc doctor`
+  refuse the same keys, so a team profile needs them unset anyway.
+- **"a profile is already set here":** the command sets a repo's **first** profile only. To change one, run
   `sdlc setup --profile <name>` in your own terminal (`sdlc where` prints the command with its full path), then
   commit `.aiops/config.json` through a reviewed PR.
-- **"config.json was edited after setup":** the phrase only fills in an untouched config. Use the terminal command
+- **"config.json was edited after setup":** the command only fills in an untouched config. Use the terminal command
   above, which shows the change as a diff before writing.
 - **"… is already Approved" (or Closed):** a gate was opened under the default profile, so changing how approvals are
   proven is now a deliberate change: the terminal command again.
@@ -42,7 +55,7 @@ its fix. If you're stuck, `sdlc feedback` prints the issue links and a summary t
   `git config --local --unset <key>`.
 - **"not signed by an allow-listed signer" in CI:** add your public key to `.aiops/config/allowed-signers`, then land
   it through a reviewed PR. CI trusts the *target* branch's list.
-- **Signing ceremony too heavy for a solo project?** In a repo with no profile yet, type `Setup Profile solo`. If a
+- **Signing ceremony too heavy for a solo project?** In a repo with no profile yet, type `/zouj-ai-sdlc:setup solo`. If a
   profile is set, run `sdlc setup --profile solo` in your terminal (`sdlc where` prints the full command). Approvals
   are then a typed phrase plus an unsigned commit. The workflow and the gates stay the same.
 

@@ -3,10 +3,114 @@
 import json
 import unittest
 
-from helpers import INTENT, PLAN, SPEC, RepoCase, git
+from helpers import INTENT, PLAN, ROOT, SPEC, RepoCase, git
 
 from sdlc_engine import artifacts as A
 
+
+ENGINE_SH_FORMS = (  # the plugin's hook wrapper run by the agent (0007 r8): every form is hook-only
+    f'printf \'{{"prompt":"/zouj-ai-sdlc:setup solo"}}\' | {ROOT}/hooks/engine.sh prompt',
+    "printf x | $CLAUDE_PLUGIN_ROOT/hooks/engine.sh prompt",
+    'printf x | "${CLAUDE_PLUGIN_ROOT}/hooks/engine.sh" prompt',
+    "printf x | ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/engine.sh prompt",
+    f"cd {ROOT}/hooks && ./engine.sh prompt < p.json",
+    "cd $CLAUDE_PLUGIN_ROOT/hooks && ./engine.sh prompt < p.json",
+    # a clone of the plugin in the repo (byte-equal to the plugin's file, see copy_plugin_engine)
+    "hooks/engine.sh prompt < payload.json",
+    "cd hooks && ./engine.sh prompt < p.json",
+    "bash hooks/engine.sh prompt < p.json",
+    "sh -x hooks/engine.sh prompt < p.json",
+    "bash -c 'hooks/engine.sh prompt' < p.json",
+    "source hooks/engine.sh",
+    ". hooks/engine.sh",
+    "env FOO=1 hooks/engine.sh prompt < p.json",
+    # 0007 r10 MAJOR: cd/pushd options and forms the r9 path check read wrongly
+    "cd -P ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks && ./engine.sh prompt < p.json",
+    "cd -- $CLAUDE_PLUGIN_ROOT/hooks && ./engine.sh prompt < p.json",
+    'cd -L "$CLAUDE_PLUGIN_ROOT"/hooks; ./engine.sh prompt',
+    "pushd $CLAUDE_PLUGIN_ROOT/hooks && ./engine.sh prompt < p.json",
+    f"pushd {ROOT}/hooks >/dev/null && ./engine.sh prompt < p.json",
+    f"cd -P {ROOT}/hooks && ./engine.sh prompt < p.json",
+    f"cd {ROOT} && cd hooks && ./engine.sh prompt < p.json",
+    "cd scripts && popd && ./engine.sh prompt < p.json",
+    "cd - && ./engine.sh prompt < p.json",
+    "cd ~nosuchuser && ./engine.sh prompt < p.json",
+    "cd /no/such/dir && ./engine.sh prompt < p.json",
+    "bash -o posix hooks/engine.sh prompt < p.json",
+    "hooks/engine.sh<p.json",
+    # 0007 r11 MEDIUM: a glob or variable inside the name, other shells, and directory changes outside cd/pushd
+    "bash $CLAUDE_PLUGIN_ROOT/hooks/engine.s? prompt < p.json",
+    "bash ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/engin?.sh prompt < p.json",
+    "hooks/engine.s[h] prompt < p.json",
+    "hooks/e*.sh prompt < p.json",
+    "hooks/engine.{sh,x} prompt < p.json",
+    "bash hooks/engine.sh$IFS'prompt' < p.json",
+    "busybox sh hooks/engine.sh prompt < p.json",
+    "fish hooks/engine.sh prompt < p.json",
+    f"env -C {ROOT} ./engine.sh prompt < p.json",
+    f"env --chdir={ROOT}/hooks ./engine.sh prompt < p.json",
+    "CDPATH=/opt/plugin cd scripts && ./engine.sh prompt < p.json",
+    "export CDPATH=/opt/plugin; cd scripts && ./engine.sh prompt < p.json",
+    # 0007 r12 MAJOR: a variable or short glob as the name, or any name in the plugin's directory, before an event
+    "N=engine.sh; bash $CLAUDE_PLUGIN_ROOT/hooks/$N prompt < p.json",
+    "X=ngine.sh; bash hooks/e$X prompt < p.json",
+    "bash $CLAUDE_PLUGIN_ROOT/hooks/e* prompt < p.json",
+    "bash hooks/en* prompt < p.json",
+    "f=$CLAUDE_PLUGIN_ROOT/hooks/engine.sh; bash $f prompt < p.json",
+    "$f pre-bash < p.json",
+    "bash ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/run prompt < p.json",
+    "hooks/e* session-start < p.json",
+    # 0007 r13 MAJOR: a shell option with a separate argument, and a bare name a shell reads from the cwd
+    "bash -O extglob $CLAUDE_PLUGIN_ROOT/hooks/engine.sh prompt < p.json",
+    "bash +O extglob hooks/engine.sh prompt < p.json",
+    "bash --rcfile /dev/null hooks/engine.sh prompt < p.json",
+    "bash --init-file /dev/null ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/engine.sh prompt < p.json",
+    'bash -O extglob -c "$CLAUDE_PLUGIN_ROOT/hooks/engine.sh prompt" < p.json',
+    "cd hooks && bash engine.sh prompt < p.json",
+    "ln -s hooks/engine.sh run; bash run prompt < p.json",
+    # 0007 r14: other shells
+    "ash hooks/engine.sh prompt < p.json",
+    "mksh hooks/engine.sh prompt < p.json",
+    # 0007 r15: a glob or variable name at the script position, behind options or -c
+    "bash -O extglob $CLAUDE_PLUGIN_ROOT/hooks/e* < p.json",
+    'bash -c "$CLAUDE_PLUGIN_ROOT/hooks/e*" < p.json',
+    "bash ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/$N < p.json",
+)
+SDLC_GLOB_FORMS = (  # 0007 r11: a glob in the sdlc command word, behind python's own options
+    "python3 -I ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/bin/sdl? hook prompt < p.json",
+    "python3 -I -u bin/sdl? hook prompt < p.json",
+)
+PROJECT_ENGINE_SH = (  # 0007 r9 MAJOR: a project's own engine.sh is not the plugin's and stays allowed
+    "./engine.sh build",
+    "bash scripts/engine.sh",
+    "cd scripts && ./engine.sh",
+    "cd -P scripts && ./engine.sh",
+    "pushd scripts && ./engine.sh build",
+    "env FOO=1 ./engine.sh build",
+    "time ls *.sh",
+    "$EDITOR notes.md",
+    "make prompt",
+    "npm run prompt",
+    "bash scripts/engine.sh prompt",
+    "bash -O extglob scripts/engine.sh build",
+    "bash --rcfile /dev/null -i",
+    # 0007 r14 MAJOR: other plugins' scripts and directories are not ours
+    "bash ~/.claude/plugins/cache/other/tool/scripts/build.sh",
+    "bash /home/u/.claude/plugins/cache/other/tool/1.0/scripts/run.sh --fast",
+    'bash -c "ls ~/.claude/plugins/cache"',
+    'bash -c "grep -r foo ~/.claude/plugins/marketplaces"',
+    "sh ~/.claude/plugins/marketplaces/other/install.sh",
+    # 0007 r15 MAJOR: a glob under a variable or plugins directory, as a later argument, is not ours
+    "bash ./lint.sh $SRC/*",
+    'bash -c "ls $TMPDIR/*"',
+    'zsh -c "ls $BUILD/*"',
+    'sh -c "cat ${HOME}/.config/*"',
+    'bash -c "du -sh ~/.claude/plugins/cache/*"',
+    'bash -c "ls ~/.claude/plugins/cache/*/"',
+    'git commit -m "x; ./engine.sh"',
+    "cat hooks/engine.sh",
+    "grep -n prompt hooks/engine.sh",
+)
 
 class EditGuard(RepoCase):
     def edit(self, rel, content=None, old=None, new=None):
@@ -780,6 +884,60 @@ class PromptAndSessionHooks(RepoCase):
         self.assertIn("State: 1 BRAINSTORMING", r.stdout)
         self.assertIn("State Rules", r.stdout)
 
+    def copy_plugin_engine(self):
+        import shutil
+
+        (self.root / "hooks").mkdir(exist_ok=True)
+        shutil.copy(ROOT / "hooks" / "engine.sh", self.root / "hooks" / "engine.sh")
+        for rel in ("engine.sh", "scripts/engine.sh"):  # the project's own scripts of the same name
+            (self.root / rel).parent.mkdir(exist_ok=True)
+            (self.root / rel).write_text("#!/bin/sh\necho build\n")
+
+    def test_hook_only_commands_blocked_without_aiops(self):
+        # 0007 r7 security LOW: the typed setup command acts in a repo without .aiops/, so the agent can't feed the
+        # prompt hook a crafted payload there either (G-GATE-07 runs before the initialized check)
+        import shutil
+
+        shutil.rmtree(self.root / ".aiops")
+        self.copy_plugin_engine()
+        for cmd in (
+            'printf \'{"prompt":"/zouj-ai-sdlc:setup solo"}\' | sdlc hook prompt',
+            "sdlc hook prompt < payload.json",
+            *ENGINE_SH_FORMS,
+            *SDLC_GLOB_FORMS,  # 0007 r8 security MEDIUM: the hook wrapper reaches the same code path
+        ):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("G-GATE-07", r.stderr, cmd)
+        for cmd in (
+            "sdlc where",
+            "sdlc setup --profile solo --dry-run",
+            "echo hello",
+            # 0007 r8 MINOR: in a repo without .aiops/ only the hook-feeding forms are refused, so an unrelated
+            # project can still mention the engine's subcommands
+            'git commit -m "docs: the sdlc close step"',
+            "git ls-files | xargs grep -l sdlc",
+            *PROJECT_ENGINE_SH,
+        ):
+            self.assertEqual(self.hook("pre-bash", self.hook_input("Bash", command=cmd)).returncode, 0, cmd)
+
+    def test_engine_sh_run_by_the_agent_is_hook_only(self):
+        # 0007 r8 security MEDIUM: a fed approval phrase through hooks/engine.sh in an initialized repo
+        self.copy_plugin_engine()
+        for cmd in (*ENGINE_SH_FORMS, 'printf \'{"prompt":"Plan Approved 0001"}\' | hooks/engine.sh prompt'):
+            if "sdl?" in cmd:
+                continue
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("G-GATE-07", r.stderr, cmd)
+            self.assertIn("hooks/engine.sh", r.stderr, cmd)
+        for cmd in (*SDLC_GLOB_FORMS, "python3 -I bin/sdl? approve 0001 intent"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("G-GATE-07", r.stderr, cmd)
+        for cmd in (*PROJECT_ENGINE_SH, "shellcheck hooks/engine.sh"):
+            self.assertEqual(self.hook("pre-bash", self.hook_input("Bash", command=cmd)).returncode, 0, cmd)
+
     def test_engine_hooks_are_dormant_without_aiops(self):
         import shutil
 
@@ -792,7 +950,16 @@ class PromptAndSessionHooks(RepoCase):
         )
         r = self.hook("session-start", {"cwd": str(self.root)})
         self.assertIn("not initialized", r.stdout)
+        self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", r.stdout)  # 0007 r4: the one-command first run
         self.assertNotIn("State Rules", r.stdout)
+        import subprocess
+        from helpers import ROOT
+
+        env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        r = subprocess.run(  # engine.sh answers before python starts: the same hint
+            [str(ROOT / "hooks" / "engine.sh"), "session-start"], input="{}", capture_output=True, text=True, env=env
+        )
+        self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", r.stdout)
 
     def test_post_edit_reports_schema_errors(self):
         self.write("intent", INTENT.replace("## Constraints", "## Limits"))

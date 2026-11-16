@@ -53,10 +53,10 @@ def save(root, st):
     cli.write_file(root, STATE, (json.dumps(st, indent=2, sort_keys=True) + "\n").encode())
 
 
-def record(root, written, profile=None, stack=None, ref=None, parts=None):
-    """Record the scaffold files just written (their bytes on disk) in install-state, and the installed opt-in
-    `parts` when given. Files that were only kept are not claimed. Nothing is written when nothing was, so a rerun
-    leaves the state as it is."""
+def record(root, written, profile=None, stack=None, ref=None, parts=None, data=None):
+    """Record the scaffold files just written (their bytes on disk, or `data[rel]`: the bytes the caller wrote) in
+    install-state, and the installed opt-in `parts` when given. Files that were only kept are not claimed. Nothing is
+    written when nothing was, so a rerun leaves the state as it is."""
     paths = [
         rel for rel in dict.fromkeys(written) if rel not in NOT_OWNED and (cli.TEMPLATES / "scaffold" / rel).is_file()
     ]
@@ -78,7 +78,7 @@ def record(root, written, profile=None, stack=None, ref=None, parts=None):
         st["parts"] = sorted(parts)
     for rel in paths:
         st["files"][rel] = {
-            "sha256": sha256_file(root / rel),
+            "sha256": hashlib.sha256(data[rel]).hexdigest() if data and rel in data else sha256_file(root / rel),
             "version": version,
             "human_owned": bool(cli.HUMAN_OWNED_RE.match(rel)),
         }
@@ -242,6 +242,10 @@ def classify(root, st):
             out[rel] = "dropped"
         elif not f.is_file() or f.is_symlink():
             out[rel] = "missing"
+        elif rel == ".aiops/config.json" and config_written(root):
+            # exactly the template plus one profile: what setup or the typed command writes (r7). "current" here
+            # only reports; config.json is MERGED_JSON, so upgrade pins it and never replaces it (r8, tested)
+            out[rel] = "current"
         elif sha256_file(f) != entry.get("sha256"):
             out[rel] = "modified"
         elif entry.get("version") == version or sha256_bytes(
@@ -263,7 +267,7 @@ def cmd_list_installed(root, args):
     st = load(root)
     if st:
         out(f"zouj-ai-sdlc install state ({STATE})")
-        # the profile is read from .aiops/config.json, its one source: the typed phrase and a hand edit change it there
+        # the profile is read from .aiops/config.json, its one source: the typed setup command and a hand edit change it there
         out(
             f"  recorded: {st.get('plugin_version')} · ref {st.get('ref')} · profile {config(root).get('profile')} · "
             f"stack {st.get('stack') or 'none'}"

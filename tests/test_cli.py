@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -505,9 +506,9 @@ class InitParts(RepoCase):
 CONFIG = ".aiops/config.json"
 
 
-class ProfilePhrase(RepoCase):
-    """The human types `Setup Profile <name>` as the whole prompt; the prompt hook sets the repo's first profile
-    (0007 S6: AC-1, AC-4, AC-5, AC-6, AC-7)."""
+class SetupCommand(RepoCase):
+    """The human types `/zouj-ai-sdlc:setup <name>` as the whole prompt; the prompt hook sets the repo's first profile
+    (0007 S15: AC-1, AC-3, AC-4, AC-6, AC-7). The `Setup Profile` phrase is gone."""
 
     def setUp(self):
         super().setUp()
@@ -515,21 +516,22 @@ class ProfilePhrase(RepoCase):
         self.assertEqual(self.run_sdlc("init", env={"CLAUDECODE": "1"}).returncode, 0)  # the agent scaffolds
         self.before = (self.root / CONFIG).read_bytes()  # the template: no profile yet
 
-    def prompt(self, text, env=None):
-        payload = {"prompt": text, "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
-        r = self.hook("prompt", payload, env={"CLAUDECODE": "1", **(env or {})})  # hooks always run with the marker
+    def prompt(self, text, env=None, cwd=None):
+        payload = {"prompt": text, "cwd": str(cwd or self.root), "hook_event_name": "UserPromptSubmit"}
+        # hooks always run with the marker, and Claude Code names the session's repo
+        r = self.hook("prompt", payload, env={"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root), **(env or {})})
         self.assertEqual(r.returncode, 0, r.stderr)  # a prompt hook never blocks
         return r.stdout
 
-    def context(self, text, env=None):
-        return json.loads(self.prompt(text, env))["hookSpecificOutput"]["additionalContext"]
+    def context(self, text, env=None, cwd=None):
+        return json.loads(self.prompt(text, env, cwd))["hookSpecificOutput"]["additionalContext"]
 
     def profile(self):
         return json.loads((self.root / CONFIG).read_text()).get("profile")
 
     def test_whole_prompt_sets_the_profile(self):
         head = git(self.root, "rev-parse", "HEAD")
-        ctx = self.context("Setup Profile solo")
+        ctx = self.context("/zouj-ai-sdlc:setup solo")
         self.assertIn("zouj-ai-sdlc profile SET: solo", ctx)
         self.assertEqual(self.profile(), "solo")
         self.assertEqual(git(self.root, "log", "-1", "--format=%s"), "chore(aiops): Setup Profile solo")
@@ -537,44 +539,94 @@ class ProfilePhrase(RepoCase):
         self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
         from sdlc_engine import cli
 
-        for text in ("setup profile TEAM", "  Setup  Profile strict.  ", "Setup Profile solo!\n"):
-            self.assertTrue(cli.PROFILE_RE.match(text), text)  # as lenient as the approval phrases
+        for text in ("/zouj-ai-sdlc:setup TEAM", "  /zouj-ai-sdlc:setup  strict  "):
+            self.assertTrue(cli.PROFILE_RE.match(text), text)  # spaces around it; the name in any case
+        # 0007 r4/r5: only what engine.sh can see in the raw JSON (a newline or a tab arrives escaped there)
+        for text in ("/zouj-ai-sdlc:setup solo\n", "\n/zouj-ai-sdlc:setup solo", "\t/zouj-ai-sdlc:setup solo"):
+            self.assertFalse(cli.PROFILE_RE.match(text), repr(text))  # a fresh repo never sees a newline form
 
-    def test_phrase_inside_other_text_is_ignored(self):
+    def test_command_with_other_text_is_ignored(self):
         for text in (
-            "please Setup Profile solo",
-            "Setup Profile solo now",
-            "ok\nSetup Profile solo",
-            "Setup Profile solo\nand start the intent",
-            "`Setup Profile solo`",
-            "Setup Profiles solo",
+            "please /zouj-ai-sdlc:setup solo",
+            "/zouj-ai-sdlc:setup solo now",
+            "/zouj-ai-sdlc:setup solo team",
+            "ok\n/zouj-ai-sdlc:setup solo",
+            "/zouj-ai-sdlc:setup solo\nand start the intent",
+            "`/zouj-ai-sdlc:setup solo`",
+            "/zouj-ai-sdlc:setup",  # bare: the skill asks for the profile
+            "/setup solo",  # not qualified: another plugin's setup may be the one that runs
+            "/ZOUJ-AI-SDLC:SETUP solo",
+            "Setup Profile solo",  # the removed phrase
+            "setup profile solo",
         ):
             self.assertEqual(self.prompt(text), "", text)  # an ordinary prompt: no output
         self.assertEqual((self.root / CONFIG).read_bytes(), self.before)
 
-    def test_unknown_or_missing_name_lists_profiles(self):
-        for text in ("Setup Profile fast", "Setup Profile", "setup profile"):
+    def test_unknown_name_lists_profiles(self):
+        for text in ("/zouj-ai-sdlc:setup fast", "/zouj-ai-sdlc:setup none"):
             ctx = self.context(text)
             self.assertIn("profile NOT set", ctx, text)
             for name in ("solo", "team", "strict"):
-                self.assertIn(f"Setup Profile {name}", ctx)
+                self.assertIn(f"/zouj-ai-sdlc:setup {name}", ctx)
+            self.assertNotIn("Setup Profile", ctx)
         self.assertEqual((self.root / CONFIG).read_bytes(), self.before)
+        # r7 NIT: the name is checked first, so R-6's list comes back even when the session's repo is unknown
+        ctx = self.context("/zouj-ai-sdlc:setup fast", env={"CLAUDE_PROJECT_DIR": ""})
+        for name in ("solo", "team", "strict"):
+            self.assertIn(f"/zouj-ai-sdlc:setup {name}", ctx)
+        self.assertNotIn("--profile fast", ctx)
 
-    def test_dormant_without_aiops(self):
-        shutil.rmtree(self.root / ".aiops")
-        self.assertEqual(self.prompt("Setup Profile solo"), "")
-        self.assertFalse((self.root / ".aiops").exists())
+    def test_refused_outside_the_session_repo(self):
+        nested = self.root / "vendor" / "other"  # a repo of its own, with the template config
+        nested.mkdir(parents=True)
+        git(nested, "init", "-q", "-b", "main")
+        for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com")):
+            git(nested, "config", key, value)
+        shutil.copytree(self.root / ".aiops", nested / ".aiops")
+        nested_before = (nested / CONFIG).read_bytes()
+        ctx = self.context("/zouj-ai-sdlc:setup solo", cwd=nested)
+        self.assertIn("profile NOT set", ctx)
+        self.assertIn("session", ctx)
+        self.assertIn(str(nested), ctx)
+        self.assertEqual((nested / CONFIG).read_bytes(), nested_before)
+        self.assertEqual((self.root / CONFIG).read_bytes(), self.before)
+        ctx = self.context("/zouj-ai-sdlc:setup solo", env={"CLAUDE_PROJECT_DIR": ""})  # unknown: fail closed
+        self.assertIn("profile NOT set", ctx)
+        self.assertEqual((self.root / CONFIG).read_bytes(), self.before)
+        sub = self.root / "src"  # a subdirectory of the session's repo is the same repo
+        sub.mkdir(exist_ok=True)
+        self.assertIn("profile SET: solo", self.context("/zouj-ai-sdlc:setup solo", cwd=sub))
+
+    def test_worktree_redirect_is_refused(self):
+        # 0007 r9 security LOW: core.worktree (allowed in repo-local config) makes git resolve the session's repo to
+        # another one, so both sides of the session check would name that other repo
+        other = Path(tempfile.mkdtemp(dir=self.root.parent))
+        self.addCleanup(shutil.rmtree, other, True)
+        git(other, "init", "-q", "-b", "main")
+        for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com")):
+            git(other, "config", key, value)
+        shutil.copytree(self.root / ".aiops", other / ".aiops")
+        other_before = (other / CONFIG).read_bytes()
+        git(self.root, "config", "core.worktree", str(other))
+        ctx = self.context("/zouj-ai-sdlc:setup solo")
+        self.assertIn("profile NOT set", ctx)
+        self.assertIn("core.worktree", ctx)
+        self.assertIn(f"session's repo {self.root}", ctx)  # r10 NIT: named, not only the redirected directory
+        self.assertEqual((other / CONFIG).read_bytes(), other_before)
+        self.assertEqual((self.root / CONFIG).read_bytes(), self.before)
+        git(self.root, "config", "--unset", "core.worktree")
+        self.assertIn(f"profile SET: solo in {self.root.resolve()}", self.context("/zouj-ai-sdlc:setup solo"))
 
     def test_works_with_the_session_markers_set(self):
         """Claude Code sets both markers for the hooks of every session, a human's included (0007 spec R-2)."""
-        ctx = self.context("Setup Profile solo", env={"CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1"})
+        ctx = self.context("/zouj-ai-sdlc:setup solo", env={"CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1"})
         self.assertIn("profile SET: solo", ctx)
         self.assertEqual(self.profile(), "solo")
 
-    def test_second_phrase_changes_nothing(self):
-        self.context("Setup Profile team")
+    def test_second_command_changes_nothing(self):
+        self.context("/zouj-ai-sdlc:setup team")
         head = git(self.root, "rev-parse", "HEAD")
-        ctx = self.context("Setup Profile solo")  # a downgrade: a terminal run only
+        ctx = self.context("/zouj-ai-sdlc:setup solo")  # a downgrade: a terminal run only
         self.assertIn("profile NOT set", ctx)
         self.assertIn("bin/sdlc setup --profile solo", ctx)
         self.assertEqual((self.profile(), git(self.root, "rev-parse", "HEAD")), ("team", head))
@@ -583,14 +635,16 @@ class ProfilePhrase(RepoCase):
         self.d.mkdir()
         self.write("intent", INTENT)
         self.assertIn("NOT opened", self.context("Intent Approved 0001"))  # the default: a signature per approval
-        self.assertIn("profile SET: solo", self.context("Setup Profile solo"))
+        self.assertIn("profile SET: solo", self.context("/zouj-ai-sdlc:setup solo"))
         self.assertIn("gate OPENED", self.context("Intent Approved 0001"))  # solo: the typed phrase is the proof
-        self.assertIn("profile NOT set", self.context("Setup Profile team"))  # a gate has been opened since
+        self.assertIn("profile NOT set", self.context("/zouj-ai-sdlc:setup team"))  # a gate has been opened since
 
     def test_agent_setup_and_writes_still_cannot_change_config(self):
         r = self.run_sdlc("setup", "--profile", "solo", "--yes", env={"CLAUDECODE": "1"})
         self.assertEqual((self.root / CONFIG).read_bytes(), self.before, r.stdout + r.stderr)
-        self.assertIn("Setup Profile solo", r.stdout)  # the human step is the phrase
+        self.assertIn("/zouj-ai-sdlc:setup solo", r.stdout)  # the human step is the typed command
+        self.assertNotIn("Setup Profile", r.stdout)
+        self.assertIn('(profile solo)" --', r.stdout)  # the scaffold commit names the chosen profile, not the default
         edit = self.hook("pre-edit", self.hook_input("Write", file_path=str(self.root / CONFIG), content="{}"))
         self.assertEqual(edit.returncode, 2, edit.stderr)
         bash = self.hook("pre-bash", self.hook_input("Bash", command=f"echo '{{}}' > {CONFIG}"))
@@ -602,7 +656,7 @@ class ProfilePhrase(RepoCase):
         from helpers import ROOT
 
         payload = json.dumps(
-            {"prompt": "Setup Profile solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
+            {"prompt": "/zouj-ai-sdlc:setup solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
         )
         env = {**self.env, "CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
         r = subprocess.run(
@@ -689,19 +743,19 @@ class Card(RepoCase):
     def test_terminal_line_when_no_profile_chosen(self):
         shutil.rmtree(self.root / ".aiops")
         self.assertEqual(self.run_sdlc("init").returncode, 0)  # the template config: no profile
-        for text in (self.session(),):  # no active intent yet
+        for text in (self.card(), self.session()):  # no intent yet: `sdlc status` says it too (0007 r6, AC-10)
             self.assertIn(f"- Your terminal: {terminal_command()}", text)
-            self.assertIn("Setup Profile solo|team|strict", text)
+            self.assertIn("types `/zouj-ai-sdlc:setup solo|team|strict`", text)
         self.d.mkdir()
         self.write("intent", INTENT)
         for text in (self.card(), self.session()):
             self.assertIn(f"- Your terminal: {terminal_command()}", text)
-            self.assertIn("Setup Profile solo|team|strict", text)
-        payload = {"prompt": "Setup Profile solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
-        self.assertIn("profile SET", self.hook("prompt", payload).stdout)
+            self.assertIn("types `/zouj-ai-sdlc:setup solo|team|strict`", text)
+        payload = {"prompt": "/zouj-ai-sdlc:setup solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
+        self.assertIn("profile SET", self.hook("prompt", payload, env={"CLAUDE_PROJECT_DIR": str(self.root)}).stdout)
         for text in (self.card(), self.session()):  # chosen: solo needs no terminal
             self.assertNotIn("Your terminal", text)
-            self.assertNotIn("Setup Profile", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
+            self.assertNotIn("/zouj-ai-sdlc:setup solo|", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
 
     def test_terminal_line_when_a_gate_needs_the_terminal(self):
         (self.root / ".aiops" / "config.json").write_text(
@@ -710,7 +764,7 @@ class Card(RepoCase):
         self.write("intent", INTENT)  # waiting on the human at the gate
         for text in (self.card(), self.session()):
             self.assertIn(f"- Your terminal: {terminal_command()} approve 0001 intent", text)
-            self.assertNotIn("Setup Profile", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
+            self.assertNotIn("/zouj-ai-sdlc:setup solo|", text.split("## zouj-ai-sdlc", 1)[1].split("\n\n", 1)[0])
 
     def test_terminal_line_when_a_passphrase_key_signs(self):
         # 0007 review r2 M1: the recommended team key (a passphrase, kept out of ssh-agent) has no signing problem, yet
@@ -728,6 +782,20 @@ class Card(RepoCase):
         (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
         with mock.patch.object(approvals, "signing_problem", return_value=None):
             self.assertEqual(cli.terminal_lines(self.root, evaluate(self.root, self.d)), [])  # the phrase signs
+
+    def test_card_runs_no_history_walk(self):
+        # 0007 r6 LOW: the card's no-profile check reads files only; the `git log --all` walk is the command's
+        from unittest import mock
+
+        from sdlc_engine import cli, setup
+
+        shutil.rmtree(self.root / ".aiops")
+        self.assertEqual(self.run_sdlc("init").returncode, 0)  # the template config: no profile
+        with mock.patch.object(setup, "approval_in_history", side_effect=AssertionError("history walked")):
+            lines = cli.terminal_lines(self.root)
+        self.assertTrue(any("/zouj-ai-sdlc:setup solo|team|strict" in line for line in lines), lines)
+        # r7: the hint says the command may still refuse (the card skips the history walk the command makes)
+        self.assertTrue(any("refuses" in line for line in lines), lines)
 
     def test_no_terminal_line_otherwise(self):
         self.assertNotIn("Your terminal", self.session())  # no intent.md yet: waiting on the agent
@@ -764,17 +832,38 @@ class Docs(unittest.TestCase):
         self.assertNotIn("defaultMode", json.dumps(settings))  # the plugin sets no permission mode
         self.assertNotIn("allow", settings["permissions"])
 
-    def test_setup_skill_asks_for_the_phrase(self):
+    def test_setup_skill_asks_for_the_command(self):
+        """0007 S18 (R-21): the skill reads the hook's reminder first; with none, it asks for the typed command."""
         skill = self.text("skills/setup/SKILL.md")
-        self.assertIn("`Setup Profile <profile>`", skill)
+        self.assertIn("`/zouj-ai-sdlc:setup <profile>`", skill)
         self.assertIn("whole prompt", skill)
         self.assertIn("`team` included", skill)  # every profile is recorded
-        self.assertLess(skill.index("--yes"), skill.index("`Setup Profile <profile>`"))  # scaffold, then the phrase
+        for reminder in ("profile SET", "profile NOT set"):
+            self.assertIn(reminder, skill)
+        self.assertLess(skill.index("profile SET"), skill.index("--dry-run"))  # the reminder first, then a preview
+        self.assertIn("`/setup", skill)  # a bare /setup sets nothing: the skill names the qualified form
         self.assertNotIn("For `solo` or `strict`, the printed human step is", skill)  # no terminal step for solo
         self.assertNotIn("run `<plugin>/bin/sdlc setup --profile solo` in their own terminal", skill)
         self.assertRegex(skill, r"(?i)never.*(type|typing|simulat)")  # the agent doesn't type it
-        using = self.text("skills/using-zouj-ai-sdlc/SKILL.md")
-        self.assertIn("Setup Profile", using)  # the bootstrap knows the phrase
+        self.assertNotRegex(skill, r"sdlc setup --profile <profile> --yes")  # the agent never applies a profile
+        for rel in ("skills/using-zouj-ai-sdlc/SKILL.md", "skills/configure/SKILL.md", "skills/init/SKILL.md"):
+            self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", self.text(rel), rel)
+
+    def test_no_shipped_file_names_the_phrase(self):
+        """0007 S18-S20 (AC-18): the `Setup Profile <name>` phrase is gone from everything that ships, except the
+        profile commit's title in the engine (`chore(aiops): Setup Profile <name>`)."""
+        found = []
+        files = [self.root / rel for rel in ("README.md", "COMMANDS-QUICK-REF.md", "TROUBLESHOOTING.md", "SECURITY.md")]
+        for top in ("skills", "templates", "lib", "evals", "docs"):
+            files += sorted((self.root / top).rglob("*"))
+        for f in files:
+            if "results" in f.relative_to(self.root).parts:  # local eval runs, git-ignored
+                continue
+            if f.is_file() and f.suffix in (".md", ".py", ".json", ".yml", ".yaml", ".sh", ""):
+                for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
+                    if "Setup Profile" in line and "chore(aiops): Setup Profile" not in line:
+                        found.append(f"{f.relative_to(self.root)}:{n}")
+        self.assertEqual(found, [])  # the CHANGELOG may still tell the history
 
     def test_skills_name_where_and_with(self):
         for rel in ("skills/setup/SKILL.md", "skills/configure/SKILL.md", "skills/using-zouj-ai-sdlc/SKILL.md"):
@@ -784,17 +873,22 @@ class Docs(unittest.TestCase):
         setup = self.text("skills/setup/SKILL.md")
         for part in ("review", "maintain", "deploy", "governance", "issues"):
             self.assertIn(part, setup, part)
-        self.assertIn("Setup Profile", self.text("skills/configure/SKILL.md"))  # the first profile is the phrase
-        self.assertIn("Setup Profile", self.text("skills/onboard/SKILL.md"))
+        self.assertIn("/zouj-ai-sdlc:setup <profile>", self.text("skills/configure/SKILL.md"))  # the first profile
+        self.assertIn("/zouj-ai-sdlc:setup solo|team|strict", self.text("skills/onboard/SKILL.md"))
 
     def test_docs_document_where_and_with(self):
-        """0007 AC-18, spec R-22: the user docs name `sdlc where`, `--with` and the phrase; the ADR and the threat
-        model record the decision and its gap."""
+        """0007 AC-18, spec R-22: the user docs name `sdlc where`, `--with` and the typed setup command; the ADR and
+        the threat model record the decision and its gap."""
         for rel in ("README.md", "COMMANDS-QUICK-REF.md", "TROUBLESHOOTING.md"):
             text = self.text(rel)
             self.assertIn("sdlc where", text, rel)
             self.assertIn("--with", text, rel)
-            self.assertIn("Setup Profile", text, rel)
+            self.assertIn("/zouj-ai-sdlc:setup solo", text, rel)
+        self.assertTrue((self.root / "docs" / "adr" / "0003-first-profile-by-typed-setup-command.md").is_file())
+        self.assertFalse((self.root / "docs" / "adr" / "0003-first-profile-by-typed-phrase.md").exists())
+        arch = self.text("docs/architecture.md")
+        self.assertIn('claude -p "/zouj-ai-sdlc:setup solo"', arch)  # the accepted gap, under its new name
+        self.assertIn("dormant", arch)
         readme = self.text("README.md")
         install = readme.split("\n## Install", 1)[1].split("\n## ", 1)[0]
         self.assertNotIn("Where is `<plugin>`?", install)  # `sdlc where` answers it
@@ -805,20 +899,29 @@ class Docs(unittest.TestCase):
         quick = self.text("COMMANDS-QUICK-REF.md")
         self.assertIn("| `sdlc where` |", quick)
         self.assertNotIn("`team` default", quick)  # the agent's setup sets no profile
-        adr = self.text("docs/adr/0003-first-profile-by-typed-phrase.md")
-        for piece in ("Status: Accepted", "Setup Profile", "chore(aiops): Setup Profile", "AIOps-Profile:", "unsigned"):
+        adr = self.text("docs/adr/0003-first-profile-by-typed-setup-command.md")
+        for piece in (
+            "Status: Accepted",
+            "/zouj-ai-sdlc:setup <name>",
+            "chore(aiops): Setup Profile",
+            "AIOps-Profile:",
+            "unsigned",
+            "only missing files",
+            "dormant",
+        ):
             self.assertIn(piece, adr, piece)
         arch = self.text("docs/architecture.md")
         model = arch.split("\n## Threat model", 1)[1].split("\n## ", 1)[0]
-        rows = [line for line in model.splitlines() if "Setup Profile" in line]
-        self.assertTrue(any(line.startswith("| The first profile") for line in rows), rows)  # the phrase's own row
+        rows = [line for line in model.splitlines() if "/zouj-ai-sdlc:setup" in line]
+        self.assertTrue(any(line.startswith("| The first profile") for line in rows), rows)  # the command's own row
+        self.assertTrue(any(line.startswith("| The typed setup command writes") for line in rows), rows)  # R-2a
         self.assertTrue(any("`sdlc setup`" in line.split("|")[1] for line in rows), rows)  # the setup row names it
         gaps = arch.split("\n## Known gaps", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("claude -p", gaps)  # a phrase typed into a session the agent starts
-        self.assertIn("Setup Profile", gaps)
-        self.assertIn("0003-first-profile-by-typed-phrase", arch)
+        self.assertIn('claude -p "/zouj-ai-sdlc:setup solo"', gaps)  # a command typed into a session the agent starts
+        self.assertIn("sdlc hook prompt", gaps)  # 0007 r5: a crafted payload in a repo without .aiops/
+        self.assertIn("0003-first-profile-by-typed-setup-command", arch)
         for rel in ("docs/adoption.md", "docs/roadmap.md"):  # on main since PR #17
-            self.assertIn("Setup Profile", self.text(rel), rel)
+            self.assertIn("/zouj-ai-sdlc:setup", self.text(rel), rel)
         self.assertNotIn("<plugin>/bin/sdlc setup --profile solo", self.text("docs/adoption.md"))
 
     def test_changelog_has_the_release(self):
@@ -857,23 +960,33 @@ class Docs(unittest.TestCase):
         import subprocess
         import tempfile
 
-        case = self.root / "evals" / "profile-by-phrase"
+        import re
+
+        case = self.root / "evals" / "profile-by-setup-command"
+        self.assertFalse((self.root / "evals" / "profile-by-phrase").exists())  # renamed (0007 S19)
         for rel in (
             "case.yaml",
             "fixture.sh",
             "prompt.md",
-            "graders/asks-for-phrase.md",
+            "graders/asks-for-setup-command.md",
             "graders/config-unchanged.md",
         ):
             self.assertTrue((case / rel).is_file(), rel)
-        self.assertIn("name: profile-by-phrase", (case / "case.yaml").read_text())
+        self.assertIn("name: profile-by-setup-command", (case / "case.yaml").read_text())
         self.assertIn("scaffold_script: fixture.sh", (case / "case.yaml").read_text())
         self.assertIn("solo", (case / "prompt.md").read_text())
-        self.assertIn("Setup Profile solo", (case / "graders" / "asks-for-phrase.md").read_text())
+        asks = (case / "graders" / "asks-for-setup-command.md").read_text()
+        self.assertIn("`/zouj-ai-sdlc:setup solo`", asks)
+        self.assertNotIn("Setup Profile", asks + (case / "case.yaml").read_text())
         unchanged = (case / "graders" / "config-unchanged.md").read_text()
         self.assertIn(".aiops/config.json", unchanged)
-        self.assertIn("require_signed_approvals", unchanged)  # solo would set it to false
-        self.assertIn("| profile-by-phrase |", self.text("evals/README.md"))
+        # the whole template, not one key (round 1 L3): an added profile or key policy fails the grader
+        pattern = json.loads(re.search(r"^pattern: (.*)$", unchanged, re.M).group(1))
+        template = json.loads(self.text("templates/scaffold/.aiops/config.json"))
+        self.assertTrue(re.search(pattern, self.text("templates/scaffold/.aiops/config.json")))
+        for extra in ({"profile": "solo"}, {"approval_key_policy": "any"}, {"require_signed_approvals": False}):
+            self.assertFalse(re.search(pattern, json.dumps({**template, **extra}, indent=2)), extra)
+        self.assertIn("| profile-by-setup-command |", self.text("evals/README.md"))
         with tempfile.TemporaryDirectory() as tmp:
             work, home = os.path.join(tmp, "work"), os.path.join(tmp, "home")
             os.mkdir(work)

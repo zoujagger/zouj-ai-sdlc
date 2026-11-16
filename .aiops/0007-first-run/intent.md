@@ -1,18 +1,18 @@
 ---
 id: 0007
-title: First run in five minutes (profile by phrase, terminal command, core scaffold)
+title: First run in five minutes (profile by /setup, terminal command, core scaffold)
 status: Approved
 owner: zoujagger
 initiator: zoujagger
 source: check against Anthropic's AI-native SDLC playbook and a first-run review (2026-11-10, plan approved by zoujagger); docs/roadmap.md "Next: adoption" (PR #17)
 created: 2026-11-10
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-10T10:04:53Z
-approved-via: cli
-approved-sha256: d74cd8ae1aa6b266474cbecfe9b98dafe31f53b5b7b35b60ea9ccaba307b6102
+approved-at: 2026-11-13T11:17:16Z
+approved-via: prompt
+approved-sha256: 314ef4a5212031cac0f0aed6cb101b80f0d5dbbdf4a9b195326d1698e7d3b371
 ---
 
-# Intent: First run in five minutes (profile by phrase, terminal command, core scaffold)
+# Intent: First run in five minutes (profile by /setup, terminal command, core scaffold)
 
 <!-- State 1 BRAINSTORMING. Written from the adoption plan zoujagger approved on 2026-11-10, which answered most of the
      interview. Unknowns go in Open questions, never invented. approved-* fields are stamped by the human approval;
@@ -45,10 +45,13 @@ default for routine work once the guardrails are in place, and nothing in the sc
 ## Desired outcome
 - With the plugin installed, a new user reaches their first approved intent in a fresh repo in about **five minutes**
   under `solo`, **without leaving Claude Code**.
-- **The human chooses the profile by typing a phrase as the whole prompt** (`Setup Profile solo|team|strict`), the
-  same proof of human intent as an approval. The agent still can't choose, apply or change a profile.
-  - The phrase sets a repo's **first** profile only. Changing a profile later, a downgrade included, stays a run in
-    the human's own terminal.
+- **The human chooses the profile by typing `/zouj-ai-sdlc:setup solo|team|strict` as the whole prompt**, the same
+  proof of human intent as an approval: the prompt hook sees the command as typed, before the skill runs. There is
+  no other phrase. The agent still can't choose, apply or change a profile.
+  - In a repo that isn't set up yet (no `.aiops/`), the same command also writes the core scaffold first, so one
+    typed command sets up the repo and its profile.
+  - The command sets a repo's **first** profile only. Changing a profile later, a downgrade included, stays a run
+    in the human's own terminal.
   - The hook commits the config change alone, as it does an approval.
 - **`sdlc where` prints the exact command for the human's own terminal** (the python and plugin paths in full). The
   session-start card shows it whenever a human step is pending.
@@ -61,7 +64,7 @@ default for routine work once the guardrails are in place, and nothing in the sc
 - This intent and 0005 ship together as **0.2.0-alpha.4**.
 - The scaffold's `.aiops/README.md` explains how to run state 4 in auto mode, with the guards still on.
 - **The playbook workflow (`docs/sdlc.md`) still holds, proven by tests,** for every profile, for a profile set by
-  phrase, and for both the core and the full scaffold.
+  setup command, and for both the core and the full scaffold.
 
 ## Users & systems affected
 - **Users:**
@@ -81,8 +84,9 @@ default for routine work once the guardrails are in place, and nothing in the sc
 - **The playbook workflow is non-negotiable** (`docs/roadmap.md`). No gateless mode, and no part of the scaffold that
   a gate depends on may be optional.
 - **The agent never chooses a profile.**
-  - The phrase counts only as the whole prompt, like an approval phrase, and only in the session's own repo.
-  - Where a profile is already set, the phrase changes nothing and the reply gives the terminal command.
+  - The command counts only as the whole prompt, in its qualified form (`/zouj-ai-sdlc:setup <profile>`, not a
+    bare `/setup`), like an approval phrase, and only in the session's own repo.
+  - Where a profile is already set, the command changes nothing and the reply gives the terminal command.
   - Agent-run `setup` keeps its current limits on human-owned files.
 - **`.aiops/config.json` stays human-owned.** CI keeps reading the config from the target branch, so a profile set
   locally can't open a gate on its own.
@@ -94,7 +98,9 @@ default for routine work once the guardrails are in place, and nothing in the sc
   - stdlib-only Python ≥ 3.9
   - test-first for `lib/` and `hooks/`
   - every block message states the reason and the procedure
-  - SDLC gate hooks stay dormant without `.aiops/`
+  - SDLC gate hooks stay dormant without `.aiops/`, with one exception: the prompt hook acts on the exact typed
+    `/zouj-ai-sdlc:setup <profile>`, an explicit request to set up this repo (zoujagger, 2026-11-13). Every other
+    prompt stays dormant, and CLAUDE.md's rule says so
   - consumer-facing files live in `templates/scaffold/`
 - **Auto mode is documentation only.** The plugin never sets a permission mode. Claude Code ignores
   `permissions.defaultMode: auto` in project settings, so the docs point to user settings or `--permission-mode`.
@@ -117,3 +123,11 @@ default for routine work once the guardrails are in place, and nothing in the sc
   stubs are opt-in; the spec assigns them to parts (zoujagger, 2026-11-10)
 - [x] Does `sdlc init` also default to core? → **Yes** (zoujagger, 2026-11-10)
 - [x] The release? → **0005 and this intent ship together as 0.2.0-alpha.4** (zoujagger, 2026-11-10)
+- [x] Keep the `Setup Profile <name>` phrase? → **No: removed after the PR #18 review. Only the typed
+  `/zouj-ai-sdlc:setup <profile>` sets the first profile** (zoujagger, 2026-11-13). It still reaches the hook
+  from a session the agent starts (`claude -p`); that residual stays accepted, as for the approval phrases
+- [x] In a fresh repo the hook runs before the skill has created `.aiops/`. Type the command twice, or let the
+  hook scaffold? → **The hook writes the core scaffold too**, as a human's terminal `sdlc setup --profile <p>
+  --yes` would, then sets the profile (zoujagger, 2026-11-13)
+- [x] Which forms count? → **Only the qualified `/zouj-ai-sdlc:setup <profile>`**; a bare `/setup` sets nothing
+  (zoujagger, 2026-11-13)

@@ -464,8 +464,8 @@ class ShellHooks(RepoCase):
             self.assertIn(piece, arch, piece)
         readme = (ROOT / "README.md").read_text()
         looking = readme.split("\n**Just looking?**", 1)[1].split("\n\n", 1)[0]
-        # 0007: the agent scaffolds and the human types the phrase, so the recipe has no terminal setup run
-        for piece in ("/zouj-ai-sdlc:setup solo", "Setup Profile solo", "git add", "git commit"):
+        # 0007: the human types /zouj-ai-sdlc:setup solo, so the recipe has no terminal setup run
+        for piece in ("/zouj-ai-sdlc:setup solo", "git add", "git commit"):
             self.assertIn(piece, looking, piece)
         self.assertNotIn("bin/sdlc setup --profile", looking)
         self.assertNotIn("--force", (ROOT / "templates" / "scaffold" / "Makefile").read_text())
@@ -687,6 +687,59 @@ class ShellHooks(RepoCase):
             cwd=self.root,
         )
         self.assertEqual(r.returncode, 0, r.stderr)  # no python needed when the repo isn't initialized
+
+    def test_prompt_hook_dormant_except_the_setup_command(self):
+        # 0007 S14 (AC-5): without .aiops/, only the typed `/zouj-ai-sdlc:setup <profile>` reaches the engine; every
+        # other prompt exits 0 with no output before python starts. A fake plugin's bin/sdlc logs each start.
+        import shutil
+        import tempfile
+
+        shutil.rmtree(self.root / ".aiops")
+        with tempfile.TemporaryDirectory() as tmp:
+            plugin, log = pathlib.Path(tmp) / "plugin", pathlib.Path(tmp) / "started.log"
+            (plugin / "bin").mkdir(parents=True)
+            (plugin / "bin" / "sdlc").write_text(
+                f"import sys\nopen({str(log)!r}, 'a').write(sys.stdin.read() + '\\n')\n"
+            )
+            env = {**self.env, "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(plugin)}
+
+            def prompt(text, compact=False):
+                # compact: Claude Code's own payload has no space after the colon (probe, 2026-11-13)
+                payload = json.dumps(
+                    {"prompt": text, "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"},
+                    separators=(",", ":") if compact else None,
+                )
+                return subprocess.run(
+                    [str(HOOKS / "engine.sh"), "prompt"],
+                    input=payload,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    cwd=self.root,
+                )
+
+            for text in (
+                "Intent Approved 0001",
+                "Setup Profile solo",
+                "/setup solo",
+                "/zouj-ai-sdlc:setup",
+                "/zouj-ai-sdlc:setup solo now",
+                "please run /zouj-ai-sdlc:setup solo",
+                "/zouj-ai-sdlc:setup solo\nand more",
+            ):
+                r = prompt(text)
+                self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""), text)
+                self.assertFalse(log.exists(), f"python started for {text!r}")
+            for text in ("/zouj-ai-sdlc:setup solo", "  /zouj-ai-sdlc:setup team  ", "/zouj-ai-sdlc:setup fast"):
+                log.unlink(missing_ok=True)
+                self.assertEqual(prompt(text).returncode, 0, text)
+                self.assertTrue(log.exists(), f"the engine never saw {text!r}")
+                self.assertEqual(json.loads(log.read_text())["prompt"], text)
+            log.unlink(missing_ok=True)
+            self.assertEqual(prompt("Intent Approved 0001", compact=True).stdout, "")
+            self.assertFalse(log.exists())
+            self.assertEqual(prompt("/zouj-ai-sdlc:setup solo", compact=True).returncode, 0)
+            self.assertTrue(log.exists(), "the engine never saw the compact payload Claude Code sends")
 
     def test_engine_wrapper_stays_on_when_aiops_is_tracked_but_deleted(self):
         import shutil

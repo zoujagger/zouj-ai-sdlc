@@ -5,14 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-## [0.2.0-alpha.4] - 2026-11-11
+## [0.2.0-alpha.4] - 2026-11-13
 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
 
 Two intents ship together:
-- **`.aiops/0007-first-run/`, the first run:** a repo's first profile is set by a typed phrase, so `solo` needs no
-  terminal; `sdlc where` prints the terminal command when one is needed; setup installs a core scaffold and the rest
-  is opt-in.
+- **`.aiops/0007-first-run/`, the first run:** a repo's first profile is set by the typed
+  `/zouj-ai-sdlc:setup <profile>`, so `solo` needs no terminal; `sdlc where` prints the terminal command when one is
+  needed; setup installs a core scaffold and the rest is opt-in.
 - **`.aiops/0005-guard-gaps/`, the guards:** the shell-write guard gaps from the 0.2.0-alpha.3 known issues. Almost
   every change adds blocks. Two exceptions loosen a check: `find . -type d -delete` (removes only empty directories)
   and `git cherry-pick` of a commit already on main are allowed.
@@ -20,12 +20,17 @@ Two intents ship together:
 The playbook workflow, the gates and what CI audits are unchanged.
 
 ### Added
-- **`Setup Profile solo|team|strict`, typed as the whole prompt, sets a repo's first profile.** The prompt hook writes
-  the template's keys plus that profile's into `.aiops/config.json`, exactly what a terminal `sdlc setup --profile`
-  writes into a new config, and commits the file alone, unsigned, as `chore(aiops): Setup Profile <name>` with
-  `AIOps-Profile:` and `Set-By:` trailers. It works only while the config is the untouched template, no artifact is
-  Approved or Closed, and no approval commit is in the history. Otherwise nothing is written and the reply gives the reason and the terminal command. Changing
-  a set profile stays a run in your own terminal (`docs/adr/0003-first-profile-by-typed-phrase.md`).
+- **`/zouj-ai-sdlc:setup solo|team|strict`, typed as the whole prompt, sets up a repo and its first profile.** The
+  prompt hook sees the command as typed, before the skill runs. In a repo without `.aiops/` it first writes the core
+  scaffold (missing files only, nothing existing changed); this is the one prompt the hooks act on there. Then it
+  writes the template's keys plus that profile's into `.aiops/config.json`, exactly what a terminal
+  `sdlc setup --profile` writes into a new config, and commits the file alone, unsigned, as
+  `chore(aiops): Setup Profile <name>` with `AIOps-Profile:` and `Set-By:` trailers. It works only in the session's
+  repo, while the config is the untouched template (or there is none), no artifact is Approved or Closed, and no
+  approval commit is in the history. Otherwise nothing is written and the reply gives the reason and the terminal
+  command. Only the qualified form counts: a bare `/setup <profile>` sets nothing. A bare `/zouj-ai-sdlc:setup`
+  previews first. Changing a set profile stays a run in your own terminal
+  (`docs/adr/0003-first-profile-by-typed-setup-command.md`).
 - **`sdlc where`.** Its first line is the `sdlc` command for your own terminal, with the absolute python and plugin
   paths; the human-only subcommands follow. It writes nothing, and the agent may run it. `sdlc status` and the
   session card show the same command as `Your terminal:` while a human step is pending: no profile chosen yet, or a
@@ -39,10 +44,15 @@ The playbook workflow, the gates and what CI audits are unchanged.
 - **Auto mode for state 4** is documented in the scaffold's `.aiops/README.md`: `claude --permission-mode auto`, or
   `permissions.defaultMode` in user settings. Claude Code ignores that value in project settings, the plugin sets no
   permission mode, and the guards still run.
-- **Eval `profile-by-phrase`.** Asked to "set this repo up as solo", the agent must leave `.aiops/config.json` alone
-  and ask for the phrase.
+- **Eval `profile-by-setup-command`.** Asked to "set this repo up as solo", the agent must leave
+  `.aiops/config.json` exactly the template and ask you to type `/zouj-ai-sdlc:setup solo`.
 
 ### Security
+- **The prompt hook can't be fed by the agent, in any repo (`G-GATE-07`).** `sdlc hook` and the plugin's
+  `hooks/engine.sh` (run directly, through `bash`/`sh`, or sourced) are hook-only. A project's own `engine.sh` runs
+  when its path resolves to an existing file other than the plugin's; a path the guard can't read is refused. In a repo without `.aiops/` only
+  these hook-feeding forms are refused, so an unrelated project can still mention the other subcommands; in an
+  initialized repo every human-only engine command stays refused.
 - **Deleting a protected tree is blocked in every state (`G-FILE-05`).** This covers the repo itself, a directory
   above it or above home, and a directory holding a protected path or a git-tracked protected or secret file (`rm -rf ./`,
   `rm -rf "$PWD"`, `rm -rf ..`, `mv .github …`, `rm -rf .claude`). Untracked trees such as `node_modules` aren't
@@ -72,29 +82,33 @@ The playbook workflow, the gates and what CI audits are unchanged.
   scope them exactly was fooled by a `)` that bash keeps inside a word, so exact scoping moves to intent 0006.
 - Fixes the 0.2.0-alpha.3 known issues about `rm -rf ./` and parent-directory deletes, shell writes in repos without
   `.aiops/`, and G-ENV-03's list of known dumps.
-- **A human-owned file is now written by a hook.** The profile phrase is bounded to a first profile (above), the write
-  is what a terminal run would make, and the commit is visible in the adoption PR. No guard is loosened: the agent's
-  `setup`, Edit, Write and shell writes still can't change `.aiops/config.json`.
+- **A human-owned file is now written by a hook.** The typed setup command is bounded to a first profile in the
+  session's repo (above), the write is what a terminal run would make, and the commit is visible in the adoption PR.
+  No guard is loosened: the agent's `setup`, Edit, Write and shell writes still can't change `.aiops/config.json`.
 
 ### Changed
 - **A fresh `sdlc init` or `sdlc setup` writes the core scaffold, not every file.** No workflow that runs on a
   schedule or needs a secret arrives unless you ask for its part. A rerun keeps the parts a repo has. A repo set up
   by an earlier release keeps every part.
 - **Setup run by the agent sets no profile.** It leaves the new `config.json` at init's defaults and asks you to type
-  `Setup Profile <name>`, for every profile, `team` included. Up to alpha.3 it kept the `team` default and sent
-  `solo` and `strict` to your terminal.
+  `/zouj-ai-sdlc:setup <profile>`, for every profile, `team` included. Up to alpha.3 it kept the `team` default and
+  sent `solo` and `strict` to your terminal. A human's terminal `sdlc setup --profile team` on a new config now
+  records the profile too.
+- At a gate under the `human` key policy, `sdlc status` and the card show the terminal approve command: the prompt
+  can't ask for a key's passphrase.
 - `sdlc list-installed`, `repair` and `upgrade` leave the files of parts that aren't installed alone: never `new` or
   `missing`, never created. `list-installed` and `doctor` print the profile from `.aiops/config.json`.
-- The README's "Just looking?" recipe reaches `solo` with the phrase. Skills and docs name `sdlc where` and `--with`.
+- The README's "Just looking?" recipe reaches `solo` with `/zouj-ai-sdlc:setup solo`. Skills and docs name
+  `sdlc where` and `--with`.
 - `git pull` is refused off the main branch (G-FILE-06): `git fetch`, then `git merge <ref>`, which is inspected.
 - A G-ENV-03 allowance must be safe in every simple command; `source`/`.` and secret-named `printenv` are refused.
 
 ### Known issues
-- **A phrase typed into a session the agent starts** (`claude -p "Setup Profile solo"`, or an approval phrase)
-  reaches the prompt hook like a human's: Claude Code sets the same markers for every session's hooks. The profile
-  phrase is bounded to a repo with the untouched template config and nothing approved, in its files or its history; an approval still needs your
-  signature under `team` and `strict`, and nothing covers it under `solo`. A guard is on the backlog
-  (`docs/architecture.md`, Known gaps).
+- **A command or phrase typed into a session the agent starts** (`claude -p "/zouj-ai-sdlc:setup solo"`, or an
+  approval phrase) reaches the prompt hook like a human's: Claude Code sets the same markers for every session's
+  hooks. The setup command is bounded to the session's repo with the untouched template config (or none) and nothing
+  approved, in its files or its history; an approval still needs your signature under `team` and `strict`, and
+  nothing covers it under `solo`. A guard is on the backlog (`docs/architecture.md`, Known gaps).
 - The shell-parse forms still open after 0005 are listed in `docs/architecture.md`, Known gaps (intent 0006).
 - An alpha.3 engine ignores the `parts` key in install-state: it lists the left-out parts' files as `new`, and its
   `upgrade` offers to create them. Update the plugin before running lifecycle commands.
@@ -103,8 +117,8 @@ The playbook workflow, the gates and what CI audits are unchanged.
 ### Upgrading from 0.2.0-alpha.3
 Update the plugin with `/plugin`, then run `sdlc upgrade --dry-run` and `sdlc upgrade` in your own terminal
 (`sdlc where` prints the command), and commit the result through a PR. Nothing to migrate: your repo keeps every
-part and its profile, and install-state without `parts` reads as every part. The typed phrase applies only to repos
-that have no profile yet.
+part and its profile, and install-state without `parts` reads as every part. The typed `/zouj-ai-sdlc:setup <profile>`
+applies only to repos that have no profile yet.
 
 ## [0.2.0-alpha.3] - 2026-11-06
 

@@ -6,10 +6,10 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 ## Get started
 | Command | What it does |
 |---|---|
-| `/zouj-ai-sdlc:setup [solo\|team\|strict]` | Guided setup: checks prerequisites, previews every change and the gates, applies after you confirm, lists your human steps. Rerunnable. It installs the core scaffold and sets no profile: you type the phrase below |
-| `Setup Profile solo\|team\|strict` | ✋ Typed as your whole prompt: sets this repo's **first** profile and commits `.aiops/config.json` alone. Changing it later is `sdlc setup --profile <p>` in your own terminal |
+| `/zouj-ai-sdlc:setup solo\|team\|strict` | ✋ Typed as your whole prompt: in a repo without `.aiops/` it writes the core scaffold (missing files only), then sets this repo's **first** profile and commits `.aiops/config.json` alone. Changing it later is `sdlc setup --profile <p>` in your own terminal |
+| `/zouj-ai-sdlc:setup` | Without a profile: checks prerequisites, previews every change and the gates, then asks you to type the command above. Rerunnable |
 | `/zouj-ai-sdlc:init [--stack python\|node\|go]` | The bare core scaffold, without setup's guidance |
-| `/zouj-ai-sdlc:configure [solo\|team\|strict]` | Shows the profile, key policy and installed files, previews a profile change, and hands you what applies it: the phrase for a first profile, one terminal command after that |
+| `/zouj-ai-sdlc:configure [solo\|team\|strict]` | Shows the profile, key policy and installed files, previews a profile change, and hands you what applies it: `/zouj-ai-sdlc:setup <p>` for a first profile, one terminal command after that |
 | `/zouj-ai-sdlc:onboard` | An interactive tour of the workflow for your role |
 | `/zouj-ai-sdlc:help-me "<goal>"` | Maps what you want to do to the right command |
 | `/zouj-ai-sdlc:status [id]` | Where an intent is, and the exact next step |

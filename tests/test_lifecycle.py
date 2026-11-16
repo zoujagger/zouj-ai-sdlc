@@ -122,13 +122,20 @@ class ListInstalled(RepoCase):
     def test_profile_comes_from_config(self):
         """0007 R-9: config.json is the one source for the profile; install-state keeps what setup recorded."""
         self.assertIn("profile team", self.run_sdlc("list-installed").stdout)  # the default: none chosen yet
-        payload = {"prompt": "Setup Profile solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
-        self.assertIn("profile SET", self.hook("prompt", payload).stdout)
-        self.assertEqual(json.loads((self.root / STATE).read_text())["profile"], "team")  # the phrase didn't touch it
+        payload = {"prompt": "/zouj-ai-sdlc:setup solo", "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"}
+        self.assertIn("profile SET", self.hook("prompt", payload, env={"CLAUDE_PROJECT_DIR": str(self.root)}).stdout)
+        self.assertEqual(json.loads((self.root / STATE).read_text())["profile"], "team")  # the command didn't touch it
+        # r7 LOW: a config that is exactly the template plus one profile reads as current, not modified (R-9 keeps
+        # install-state's record of the template)
+        modified = [ln for ln in self.run_sdlc("list-installed").stdout.splitlines() if "modified" in ln]
+        self.assertFalse(any(".aiops/config.json" in ln for ln in modified), modified)
         out = self.run_sdlc("list-installed").stdout
         self.assertIn("profile solo", out)
         self.assertNotIn("profile team", out)
         self.assertIn("profile: solo", self.run_sdlc("doctor").stdout)
+        # r8 MINOR: "current" here must never make the config replaceable: a human's upgrade keeps the profile
+        self.assertEqual(self.run_sdlc("upgrade", "--yes").returncode, 0)
+        self.assertEqual(json.loads((self.root / ".aiops" / "config.json").read_text())["profile"], "solo")
 
     def test_stale_and_dropped(self):
         st = json.loads((self.root / STATE).read_text())

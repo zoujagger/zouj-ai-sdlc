@@ -8,6 +8,7 @@ Rules (only in repos initialized with `.aiops/`):
   * Always: no shell writes to artifacts or `.aiops/config|state`, no forged approvals, no merging into main.
 """
 
+import fnmatch
 import glob
 import os
 import posixpath
@@ -282,13 +283,14 @@ WRAPPERS = (
     r"(sudo|doas|command|exec|env|nohup|time|builtin|xargs|eval|nice|timeout|stdbuf|setsid|ionice|chrt|"
     r"taskset|unbuffer|watch|flock|trap|coproc|strace|ltrace|parallel|python[\d.]*)"
 )
-SHELL_C = r"((busybox|su)\s+)?(\S*/)?(ba|z|da|k|fi)?sh\s+(-\S+\s+)*?-\w*c|script\s+(-\S+\s+)*?-\w*c|su\s+(-\S+\s+)*?-c"
+SHELLS_RE = r"(ba|z|da|k|fi|a|mk|ya|c|tc)?sh"  # one shell list (r14/r15): ash, mksh, yash, csh, tcsh too
+SHELL_C = rf"((busybox|su)\s+)?(\S*/)?{SHELLS_RE}\s+(-\S+\s+)*?-\w*c|script\s+(-\S+\s+)*?-\w*c|su\s+(-\S+\s+)*?-c"
 CMD_POS = (
     rf"(^|[;&|()`\n{{!]|\b(then|do|else|while|until|if|elif|coproc)\s)\s*"
     rf"(((\S*/)?{WRAPPERS}|{SHELL_C})(\s+[^\s$`;&|]+)*?\s+|\w+=\S*\s+)*"
 )
 SHELL_FED_RE = re.compile(
-    r"\|\s*(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\b|\b(source|\.)\s+(<\(|/dev/stdin|/dev/fd|/proc/)"
+    rf"\|\s*(\S*/)?((busybox|su)\s+)?{SHELLS_RE}\b|\b(source|\.)\s+(<\(|/dev/stdin|/dev/fd|/proc/)"
 )
 HUMAN_WORD_RE = re.compile(rf"(^|[\s=;&|(]|:-){HUMAN_SUBS}(\s|$|[;&|)}}])")  # also a `${x:-approve}` default
 ENGINE_RES = (  # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
@@ -303,6 +305,24 @@ ENGINE_RES = (  # matched against the command with quotes and backslashes remove
     re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
+SHELL_PREFIX = rf"(\S*/)?((busybox|su)\s+)?{SHELLS_RE}\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+"
+ENGINE_SH_RE = re.compile(  # 0007 r8: a run of a script named engine.sh; _plugin_engine_sh decides if it's ours
+    rf"{CMD_POS}({SHELL_PREFIX})?"
+    rf"(?P<path>[^\s;&|()<>]*(engine\.sh|[*?\[{{$])[^\s;&|()<>]*)"  # r11: a glob or variable in the name too
+)
+ENGINE_EVENTS = r"(prompt|pre-bash|pre-edit|post-edit|session-start)"
+ENGINE_EVENT_RE = re.compile(  # 0007 r12: whatever its name, a script run with an engine event as its first argument
+    rf"{CMD_POS}(?P<sh>{SHELL_PREFIX})?(?P<path>[^\s;&|()<>]+)\s+{ENGINE_EVENTS}(?=\s|$|[;&|)<>])"
+)
+DIR_ELSEWHERE_RE = re.compile(r"\bCDPATH\b|\benv\b[^;&|\n]*\s(-C|--chdir\b)")  # r11: cd/pushd aren't the only ways
+DIR_CMD_RE = re.compile(r"(^|[\s;&|(])(?P<cmd>cd|pushd|popd)(?P<args>(\s+[^\s;&|)<>]+)*)")
+CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
+SHELL_RUN_RE = re.compile(  # 0007 r13: a shell or source and the rest of its simple command, whatever its options
+    rf"{CMD_POS}(?P<sh>(\S*/)?((busybox|su)\s+)?{SHELLS_RE}|source|\.)(?P<rest>(\s+[^;&|\n]*)?)"
+)
+PLUGIN_DIR_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/")
+UNREADABLE_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/|[$`*?\[{]")  # the plugin's, or unreadable
+HOOK_WORD_RE = re.compile(r"\bhook\b")
 TRAILER_RE = re.compile(r"AIOps-Approval\s*:")
 FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:|\w+=\S*AIOps-")  # printf 'AIOps-%s:', AIOps-$x:, m=AIOps-…
 MARKERS = r"(CLAUDECODE|CLAUDE_CODE_CHILD_SESSION)"
@@ -320,7 +340,96 @@ ENV_RES = (
 )
 
 
-SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
+SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "fish", "ash", "mksh", "yash", "csh", "tcsh"}
+
+
+def _plugin_engine_sh(plain, cwd):
+    """True when the command may run the plugin's hooks/engine.sh (0007 r8-r12). It fails closed. A script run with
+    an engine event as its first argument (`prompt`, `pre-bash`, …), or named engine.sh, runs only when its path is
+    literal and, from the cwd and every `cd`/`pushd` before it, resolves to an existing file that is neither the
+    plugin's nor byte-equal to it. A bare name with no `/` before an event is a PATH command (`make prompt`). The
+    plugin's directory, a variable, a glob, `popd`, `cd -`, a bare `cd`, `CDPATH`, `env -C` or an unknown home counts
+    as the plugin's; so does any name that could expand to engine.sh (`engine.s?`)."""
+    ours_path = (PLUGIN_ROOT / "hooks" / "engine.sh").resolve()
+    try:
+        ours = ours_path.read_bytes()
+    except OSError:
+        ours = None
+    home = str(Path.home())
+
+    def ours_or_unreadable(path, start):
+        if DIR_ELSEWHERE_RE.search(plain) or UNREADABLE_PATH_RE.search(path):
+            return True
+        base = Path(cwd)
+        try:
+            for c in DIR_CMD_RE.finditer(plain[:start]):
+                args = [w for w in c.group("args").split() if w != "--" and not CD_OPTION_RE.match(w)]
+                args = [w for w in args if not re.match(r"^[0-9]*[<>]", w) and w not in ("/dev/null",)]
+                if c.group("cmd") == "popd" or not args or args[0].startswith(("-", "+")):
+                    return True  # back to a directory the parser didn't see
+                d = re.sub(r"^\$(HOME\b|\{HOME\})", lambda _: home, args[0])
+                if UNREADABLE_PATH_RE.search(d):
+                    return True
+                base = base / Path(d).expanduser()
+            target = (base / Path(path).expanduser()).resolve()
+            return target == ours_path or not target.is_file() or same_as_ours(target)
+        except (OSError, RuntimeError):  # an unknown ~user, an unreadable file: refuse as the plugin's
+            return True
+
+    def same_as_ours(target):  # sizes first, so a large file isn't read on every Bash call (r13)
+        return ours is not None and target.stat().st_size == len(ours) and target.read_bytes() == ours
+
+    for m in SHELL_RUN_RE.finditer(plain):  # r13: every word a shell or source is given, options or not
+        words, script_seen, skip = m.group("rest").split(), False, False
+        for word in words:
+            word = re.sub(r"^[0-9]*[<>]+", "", word)
+            if skip:  # an option's own argument (`-O extglob`, `--rcfile f`)
+                skip = False
+                continue
+            if not word or word.startswith(("-", "+")) and "/" not in word:
+                skip = word in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file")
+                continue
+            script = not script_seen  # r15: the first non-option word is the script (or `-c`'s command)
+            script_seen = True
+            name = word.rsplit("/", 1)[-1]
+            if name == "engine.sh":  # resolved from the cwd and any cd before it; fails closed
+                if ours_or_unreadable(word, m.start("rest")):
+                    return True
+                continue
+            if re.search(r"[$`*?\[{]", name):  # r14: a name that could expand to engine.sh
+                pattern = re.sub(r"\{[^}]*\}", "*", re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$\w*|`[^`]*`", "*", name))
+                literal = re.sub(r"[*?]|\[[^\]]*\]", "", pattern)
+                if fnmatch.fnmatchcase("engine.sh", pattern) and (  # any length only at the script position (r15)
+                    len(literal) >= 4 or script and (PLUGIN_DIR_RE.search(word) or "$" in word[: -len(name) or None])
+                ):
+                    return True
+                continue
+            try:  # a literal path, or a bare name read from the cwd first (`bash run prompt`, run -> ours)
+                target = (Path(cwd) / Path(word).expanduser()).resolve()
+                if target.is_file() and (target == ours_path or same_as_ours(target)):
+                    return True
+            except (OSError, RuntimeError):
+                continue
+    for m in ENGINE_EVENT_RE.finditer(plain):  # r12: the event decides, not the name
+        path = m.group("path")
+        if not m.group("sh") and "/" not in path and not UNREADABLE_PATH_RE.search(path) and path != "engine.sh":
+            continue  # a command found on PATH; the plugin's hooks directory is never on it (not after a shell, r13)
+        if ours_or_unreadable(path, m.start("path")):
+            return True
+    for m in ENGINE_SH_RE.finditer(plain):
+        path = m.group("path")
+        name = path.rsplit("/", 1)[-1]
+        if name != "engine.sh":  # r11: a name with a glob or variable that could expand to engine.sh is ours
+            pattern = re.sub(r"\{[^}]*\}", "*", re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$\w*", "*", name))
+            literal = re.sub(r"[*?]|\[[^\]]*\]", "", pattern)
+            if fnmatch.fnmatchcase("engine.sh", pattern) and (  # r15: a bare `*` in the plugins directory isn't
+                len(literal) >= 4 or (PLUGIN_DIR_RE.search(path) and literal)
+            ):
+                return True
+            continue
+        if ours_or_unreadable(path, m.start("path")):
+            return True
+    return False
 
 
 def _dynamic_engine_call(cmd, plain):
@@ -339,7 +448,15 @@ def _dynamic_engine_call(cmd, plain):
             words[i] in WRAPPER_WORDS
             or re.match(r"^[A-Za-z_]\w*=", words[i])
             or re.match(r"^python[\d.]*$", Path(words[i]).name)
-            or (i and words[i - 1] in WRAPPER_WORDS and words[i].startswith("-"))
+            or (  # options of a wrapper or of python (`python3 -I bin/sdl? hook`, 0007 r11)
+                i
+                and words[i].startswith("-")
+                and (
+                    words[i - 1] in WRAPPER_WORDS
+                    or re.match(r"^python[\d.]*$", Path(words[i - 1]).name)
+                    or words[i - 1].startswith("-")
+                )
+            )
         ):
             i += 1
         if i + 1 < len(words) and Path(words[i]).name in SHELLS and re.search(r"[$`?*\[{]", words[i + 1]):
@@ -879,7 +996,18 @@ def check_bash(data):
     root = project_root(cwd)
     if not cmd.strip():
         return None
+    hook_sh = _plugin_engine_sh(plain, cwd)
+    human_only = hook_sh or any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain)
     if not initialized(root):  # SDLC gates dormant; the safety checks run in every repo (0005, gap 2)
+        # 0007 r7/r8: the prompt hook acts here on the setup command, so a fed payload must not reach it. Only the
+        # hook-feeding forms are refused, so an unrelated project can still name the other subcommands.
+        if hook_sh or (human_only and HOOK_WORD_RE.search(plain)):
+            return _block(
+                "G-GATE-07",
+                "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
+                "stop and ask the human: they type the command or phrase in the prompt themselves "
+                "(`/zouj-ai-sdlc:setup solo|team|strict` sets up this repo), or run it in their own terminal.",
+            )
         return _check_command(cmd, Path(cwd), root, False, "", None, False, depth=0, gates=False)
     if TRAILER_RE.search(plain) or (
         FORMAT_TRAILER_RE.search(plain) and "Approval" in plain and re.search(r"\bgit\b", plain)
@@ -903,10 +1031,11 @@ def check_bash(data):
             "`sdlc uninstall` removes the workflow's files; it is human-only.",
             "preview it with `sdlc uninstall --dry-run`; the human runs the real uninstall in their own terminal.",
         )
-    if any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain):
+    if human_only:
         return _block(
             "G-GATE-07",
-            "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
+            "`sdlc approve|close|unlock|hook|legacy-approvals` and the plugin's `hooks/engine.sh` are human-only "
+            "(or hook-only).",
             "stop and ask the human: they type `Intent|Spec|Plan Approved NNNN` in the prompt, "
             "or run the command in their own terminal.",
         )

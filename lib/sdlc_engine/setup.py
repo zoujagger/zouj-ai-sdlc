@@ -54,8 +54,10 @@ def _outside_repo(path, root):
     return os.pathsep.join(keep)
 
 
-def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
-    """[(status, label, fix)] with status ✓ (ok), ! (warning, setup continues) or ✗ (setup stops)."""
+def preflight(root, profile, version=None, path=None, timeout=TIMEOUT, quick=False):
+    """[(status, label, fix)] with status ✓ (ok), ! (warning, setup continues) or ✗ (setup stops). `quick` (the prompt
+    hook's path) leaves out the rows that can only warn and start slow processes: claude, gh (a network call) and the
+    git credential helper."""
     path = _outside_repo(path if path is not None else os.environ.get("PATH", ""), root)
     v = tuple(version or sys.version_info[:3])
     rows = []
@@ -69,7 +71,17 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
             "" if v >= (3, 9) else "install python 3.9 or newer",
         )
     )
+    if not quick:
+        rows += _warning_rows(root, path, timeout)
+    if profile in ("team", "strict"):
+        rows += _signing_rows(root, profile)
+    rows += owned_json_rows(root)
+    return rows
 
+
+def _warning_rows(root, path, timeout):
+    """Preflight's ! rows: Claude Code's version, gh and the git credential helper. None of them stops setup."""
+    rows = []
     res = _run(["claude", "--version"], path, timeout)
     m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", res[1]) if res else None
     if not shutil.which("claude", path=path):
@@ -109,10 +121,6 @@ def preflight(root, profile, version=None, path=None, timeout=TIMEOUT):
                 "" if ok else "gh auth setup-git (or configure any git credential helper)",
             )
         )
-
-    if profile in ("team", "strict"):
-        rows += _signing_rows(root, profile)
-    rows += owned_json_rows(root)
     return rows
 
 
@@ -374,7 +382,7 @@ def owned_changes(root, profile):
     cfg = _json(f)
     if cfg is not None:
         # No profile yet: compare with the file itself, not the engine defaults (which equal team's keys), so a first
-        # `--profile team` writes the template plus team's keys, what the typed phrase writes (0007 review r2 L1).
+        # `--profile team` writes the template plus team's keys, what the typed setup command writes (0007 review r2 L1).
         base = cfg if "profile" not in cfg else {**config(root), **cfg}
         want = {k: v for k, v in PROFILE_CONFIG[profile].items() if base.get(k) != v}
         if want:
@@ -630,13 +638,15 @@ def steps_for_human(root, profile, pending, review=(), install=True):
             "Give /.aiops/ a real owner (strict requires it): in .github/CODEOWNERS replace the @your-org/... "
             "placeholders, at least:\n       /.aiops/ @<approver>"
         )
-    # The profile. A repo with no profile yet gets it from the human's typed phrase, whichever profile it is (the
-    # default, team, differs from the template by no key but is still recorded); a set profile changes in a terminal.
+    # The profile. A repo with no profile yet gets it from the human's typed `/zouj-ai-sdlc:setup <profile>`, whichever
+    # profile it is (the default, team, differs from the template by no key but is still recorded); a set profile
+    # changes in a terminal.
     first = no_profile_yet(root)[0]
     if first or ".aiops/config.json" in pending:
         current = config(root)["profile"]
         command = f"{shlex.quote(str(cli.PLUGIN_ROOT / 'bin' / 'sdlc'))} setup --profile {profile}"
-        if current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):  # solo < team < strict
+        # a downgrade only from a profile that is set: with none yet, `current` is just the engine default
+        if not first and current in PROFILES and PROFILES.index(profile) < PROFILES.index(current):  # solo<team<strict
             steps.append(
                 f"Downgrade requested by the agent's run ({current} to {profile}): approvals would be "
                 f"proven by {PROOF[profile]} instead of {PROOF[current]}. Skip the next step unless you "
@@ -645,9 +655,9 @@ def steps_for_human(root, profile, pending, review=(), install=True):
         if first:
             snippet = json.dumps(PROFILE_CONFIG[profile], indent=2).replace("\n", "\n       ")
             steps.append(
-                f"Choose the profile: type `Setup Profile {profile}` as your whole prompt in Claude "
+                f"Choose the profile: type `/zouj-ai-sdlc:setup {profile}` as your whole prompt in Claude "
                 "Code (.aiops/config.json is human-owned; setup run by the agent leaves it at init's "
-                "defaults). The phrase sets these keys and commits the file alone:\n"
+                "defaults). The typed command sets these keys and commits the file alone:\n"
                 f"       {snippet}\n"
                 f"       Or run in your own terminal, then confirm the diff: {command}"
             )
@@ -677,29 +687,33 @@ def steps_for_human(root, profile, pending, review=(), install=True):
         paths = " ".join(shlex.quote(f) for f in files)
         steps.append(
             f'Commit the scaffold:\n       git add -- {paths} && git commit -m "chore: adopt zouj-ai-sdlc '
-            f'(profile {config(root)["profile"]})" -- {paths}'
+            f'(profile {profile if first else config(root)["profile"]})" -- {paths}'  # the one being set, or the real one
         )
     steps.append('Start the workflow: /zouj-ai-sdlc:intent "<your first need>"')
     return steps
 
 
-# ---------------------------------------------------------------- the first profile, set by a typed phrase
+# ---------------------------------------------------------------- the first profile, set by the typed setup command
 
 
-def no_profile_yet(root):
+def no_profile_yet(root, history=True):
     """(True, "") while this repo has no profile and nothing depends on one, else (False, why). That is when the
-    human's typed phrase `Setup Profile <name>` may set the first profile:
+    human's typed `/zouj-ai-sdlc:setup <name>` may set the first profile:
     - .aiops/config.json is a regular file that still equals the scaffold template (no `profile` key, nothing edited)
     - no artifact is Approved or Closed, and no commit on any ref carries an `AIOps-Approval:` trailer: no gate has
       been opened under the default yet.
-    Changing a profile later, a downgrade included, is a run in the human's own terminal."""
+    Changing a profile later, a downgrade included, is a run in the human's own terminal. `history=False` skips the
+    `git log --all` walk: the state card only hints, and the command itself always walks it."""
     from . import lifecycle
 
     f = root / ".aiops" / "config.json"
     if f.is_symlink():
         return False, ".aiops/config.json is a symlink; a profile is written only to a regular file"
     if not f.is_file():
-        return False, "there is no .aiops/config.json to set it in (run /zouj-ai-sdlc:setup first)"
+        return False, (
+            "there is no .aiops/config.json to set it in, though .aiops/ exists (ask Claude to run `sdlc setup --yes`, "
+            "which recreates the missing scaffold files, then type the command again)"
+        )
     written = lifecycle.config_written(root)
     if written:
         return False, f"a profile is already set here ({written})"
@@ -719,48 +733,134 @@ def no_profile_yet(root):
                     f".aiops/{d.name}/{kind}.md is already {status}: a gate has been opened under the "
                     "default profile, so changing it now is a deliberate change"
                 )
-    # The agent may set any artifact back to Draft (G-GATE-05), so the files alone can't prove "nothing approved":
-    # an approval commit in the history of any ref (the 0007 review's MEDIUM) refuses too. Fail closed.
+    why = approval_in_history(root) if history else None
+    return (False, why) if why else (True, "")
+
+
+def approval_in_history(root):
+    """Why the history rules out a first profile, else None. The agent may set any artifact back to Draft (G-GATE-05),
+    so the files alone can't prove "nothing approved": an approval commit in the history of any ref (the 0007
+    review's MEDIUM) refuses too. Fail closed."""
     found = git(root, "log", "--all", "-1", "--format=%h %s", f"--grep=^{approvals.TRAILER}: ")
     if found is None:
-        return False, "git couldn't list this repo's history, so an earlier approval can't be ruled out"
+        return "git couldn't list this repo's history, so an earlier approval can't be ruled out"
     if found:
-        return False, (
+        return (
             f"an approval commit is in this repo's history ({found}): a gate has been opened under the default "
             "profile, so changing it now is a deliberate change, even if the artifact is back to Draft"
         )
-    return True, ""
+    return None
 
 
-def set_first_profile(root, name):
-    """(ok, message) for the human's typed phrase `Setup Profile <name>` (the prompt hook calls this in-process, as
-    it does approvals.approve). Sets this repo's first profile: writes the template's keys plus the profile's into
-    .aiops/config.json, exactly what a terminal `sdlc setup --profile <name>` writes into a new config, and commits
-    that file alone, unsigned. Never changes a profile that is set (no_profile_yet)."""
+def _differs(root, rel):
+    """True when the kept file isn't the plugin's template byte for byte (or can't be read)."""
+    try:  # r14/r15: the bytes init writes (cli.rendered_template), not the raw template
+        return (root / rel).read_bytes() != cli.rendered_template(rel)
+    except OSError:
+        return True
+
+
+class KeptList(list):
+    """The files scaffold_first wrote, with `.kept`: the scaffold files that existed and were kept (0007 r12)."""
+
+    kept = ()
+
+
+def scaffold_first(root, name):
+    """(created, None) after writing the core scaffold into a repo with no .aiops/, as a human's terminal
+    `sdlc setup --profile <name> --yes` would with no --with (spec R-2a), or ([], why) with nothing written. Only
+    missing files are created; an existing file is never changed (its difference becomes a human step)."""
     from . import lifecycle
 
+    problem = cli.scaffold_root_problem(root) or approval_in_history(root)
+    if problem:
+        return [], problem
+    stops = [f"{label} ({fix})" for status, label, fix in preflight(root, name, quick=True) if status == "✗"]
+    if stops:
+        return [], "setup's preflight stops: " + "; ".join(stops)
+    actions = cli.init_actions(root, parts=[])
+    links = cli.symlink_refusal(root, actions)
+    if links:
+        return [], links
+    written = KeptList()
+    try:
+        cli.apply_init(root, actions, written)
+        lifecycle.record(root, written, profile=name, parts=[])
+    except OSError as exc:
+        return written, cli.write_failure(exc, written)  # the caller says what was written
+    written.kept = [rel for act, rel in actions if act == "keep" and _differs(root, rel)]  # r12/r13: named to the human
+    return written, None
+
+
+def set_first_profile(root, name, cwd=None):
+    """(ok, message) for the human's typed `/zouj-ai-sdlc:setup <name>` (the prompt hook calls this in-process, as
+    it does approvals.approve). Sets this repo's first profile: writes the template's keys plus the profile's into
+    .aiops/config.json, exactly what a terminal `sdlc setup --profile <name>` writes into a new config, and commits
+    that file alone, unsigned. Never changes a profile that is set (no_profile_yet). `cwd` is the prompt's
+    directory: a fresh repo is scaffolded only from its top (AC-23)."""
+    from . import lifecycle
+
+    terminal = lifecycle.human_command(f"setup --profile {name}")
     if name not in PROFILES:
         return False, (
             f"profile NOT set: {f'unknown profile {name!r}' if name else 'no profile was named'}. The "
-            "human types `Setup Profile solo`, `Setup Profile team` or `Setup Profile strict` as the "
-            "whole prompt."
+            "human types `/zouj-ai-sdlc:setup solo`, `/zouj-ai-sdlc:setup team` or `/zouj-ai-sdlc:setup strict` "
+            "as the whole prompt."
         )
-    if not initialized(root):
-        return False, "profile NOT set: this repo isn't set up yet (no .aiops/). Run /zouj-ai-sdlc:setup first."
+    keys = approvals.local_config_keys(root)  # before any git command that could run one of them (core.fsmonitor)
+    if keys:
+        return False, (
+            f"profile NOT set: this repo's own git config sets {', '.join(keys)}, which can run code or change how "
+            "git behaves, so the hook won't run git here. Nothing was written. Remove them "
+            f"(`git config --local --unset <key>`) and type the command again, or run in your own terminal: "
+            f"`{terminal}`."
+        )
+    created = []
+    if not initialized(root):  # a fresh repo: the core scaffold first (spec R-2a)
+        if cwd and Path(cwd).resolve() != root.resolve():
+            return False, (
+                "profile NOT set: setup writes the scaffold only at the top of the work tree "
+                f"({printable(str(root))}), and the prompt's directory is {printable(str(cwd))}. Nothing was "
+                "written. Open Claude Code at the repo's top and type the command again, or run in your own terminal "
+                f"there: `{terminal}`."
+            )
+        created, why = scaffold_first(root, name)
+        why = why and printable(why)  # r13: it quotes paths and OS errors
+        if why and created:  # r12: typed again, the command would take the initialized path and not finish
+            return False, (
+                f"profile NOT set: {why}. Fix the cause, ask Claude to run `sdlc setup --yes` (it creates only the "
+                "missing files), then type the command again, or run in your own terminal: "
+                f"`{lifecycle.human_command(f'setup --profile {name}')}`."
+            )
+        if why:
+            return False, (
+                f"profile NOT set: {why}. Nothing was written. Fix it and type the command "
+                f"again, or run in your own terminal: `{lifecycle.human_command(f'setup --profile {name}')}`."
+            )
     ok, why = no_profile_yet(root)
     if not ok:
         return False, (
-            f"profile NOT set: {why}. The typed phrase only sets a repo's first profile. To change one, "
+            f"profile NOT set: {why}. The typed setup command only sets a repo's first profile. To change one, "
             f"the human runs in their own terminal: `{lifecycle.human_command(f'setup --profile {name}')}`."
         )
     rel = ".aiops/config.json"
     template = json.loads((cli.TEMPLATES / "scaffold" / rel).read_text())
+    data = (json.dumps({**template, **PROFILE_CONFIG[name]}, indent=2) + "\n").encode()
     try:
-        cli.write_file(root, rel, (json.dumps({**template, **PROFILE_CONFIG[name]}, indent=2) + "\n").encode())
+        cli.write_file(root, rel, data)
     except OSError as exc:
-        return False, f"profile NOT set: {rel} could not be written ({exc}). Nothing changed."
+        done_before = (
+            f" The core scaffold was written first and stays: {', '.join(created)}; type the command again once the "
+            "cause is fixed."
+            if created
+            else " Nothing changed."
+        )
+        return False, f"profile NOT set: {rel} could not be written ({exc}).{done_before}"
+    if created:  # install-state records the config as written, profile included, as a terminal run does (r5)
+        lifecycle.record(root, [rel], profile=name, data={rel: data})  # the bytes written, as the commit (r8)
     title = f"chore(aiops): Setup Profile {name}"
-    done = approvals._commit_alone(root, rel, title, f"AIOps-Profile: {name}\nSet-By: {approvals.approver(root)}", [])
+    body = f"AIOps-Profile: {name}\nSet-By: {approvals.approver(root)}"
+    done = approvals._commit_alone(root, rel, title, body, [], data=data)  # the bytes written, not a re-read
     if done is None:
         note = f"The change is in the working tree, but committing it failed: commit it yourself ({rel}, alone)."
     else:
@@ -769,8 +869,103 @@ def set_first_profile(root, name):
             if done[1]
             else ""
         )
-    steps = steps_for_human(root, name, {}, install=False)
-    return True, (
-        f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n"
-        "Relay the remaining human steps:\n" + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1))
+    try:
+        changed = (root / rel).read_bytes() != data
+    except OSError:
+        changed = True
+    if changed:  # something rewrote it after the hook's write: the commit holds the hook's bytes, the disk doesn't
+        note += (
+            f" WARNING: {rel} changed on disk after the hook wrote it; the commit holds what the hook wrote. Check "
+            f"`git diff -- {rel}` before you commit anything."
+        )
+    # Review on both paths (0007 r6): in a repo the agent scaffolded, a human-owned file it changed while the gates
+    # were off is named here, before the steps, so the human sees it directly, and stays out of the suggested commit.
+    pending, review = (owned_changes(root, name) if created else {}), unreviewed(root)
+    steps = steps_for_human(root, name, pending, review, install=False)
+    check = (
+        "Review before committing (human-owned, in no commit, not what setup writes; left out of the commit "
+        "below): " + ", ".join(printable(f) for f in review) + "\n"
+        if review
+        else ""
     )
+    files = [f for f in created if f != ".gitignore"]
+    kept = [f for f in getattr(created, "kept", ()) if f != ".gitignore"]
+    made = (
+        f"Created the core scaffold ({len(files)} files"
+        + (f"; {len(kept)} existing kept as they are, listed below" if kept else "")
+        + (", and the engine-state lines were added to .gitignore" if ".gitignore" in created else "")
+        + "):\n"
+        + "\n".join(f"  + {f}" for f in files)
+        + "\n"
+        if created
+        else ""
+    )
+    if kept:  # r12: the agent may have committed them while the gates were dormant (a CI audit that runs `true`)
+        made += (
+            "Kept existing, NOT the plugin's version: compare each with the plugin's templates/scaffold/ before you "
+            "push (the CI audit and CODEOWNERS especially):\n" + "\n".join(f"  = {printable(f)}" for f in kept) + "\n"
+        )
+    notice = (
+        f"profile SET: {name} in {printable(str(root))}. From now on an approval is proven by {PROOF[name]}. "
+        f"{note}\n{made}"
+        + _identity_note(root)
+        + _trust_lists(root)
+        + check
+    )
+    return True, Reply(
+        notice + "Relay the remaining human steps:\n" + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1)),
+        notice,
+    )
+
+
+class Reply(str):
+    """The setup command's reply, with the part the human sees directly (`notice`) kept apart, so text from the
+    repo (a planted user.name or trust-list line) can't decide where it ends (0007 r9)."""
+
+    def __new__(cls, text, notice):
+        obj = super().__new__(cls, text)
+        obj.notice = notice
+        return obj
+
+
+def _identity_note(root):
+    """A line when the commit's Set-By comes from this repo's own git config, which the agent can set while the repo
+    has no .aiops/ yet (the gate guards are dormant then). Empty otherwise."""
+    local = [k for k in ("user.name", "user.email") if git(root, "config", "--local", k)]
+    if not local:
+        return ""
+    return (
+        f"Set-By names {printable(approvals.approver(root))}, taken from this repo's own git config "
+        f"({', '.join(local)}), not your global identity: check it before you push.\n"
+    )
+
+
+TRUST_LIST_CAP = 20  # lines shown per list in the setup command's reply
+TRUST_LISTS = (".aiops/config/allowed-signers", ".aiops/config/legacy-approvals", ".aiops/config/allowed-commands")
+
+
+def _trust_lists(root):
+    """The non-comment lines (at most TRUST_LIST_CAP each, then a count) of the human-owned trust lists, so a line
+    committed before the command (which this path never previews) is seen. Empty when every list holds comments
+    only."""
+    out = []
+    for rel in TRUST_LISTS:
+        f = root / rel
+        if f.is_file() and not f.is_symlink():
+            lines = [
+                ln
+                for ln in f.read_text(errors="replace").splitlines()
+                if ln.strip() and not ln.lstrip().startswith("#")
+            ]
+            if lines:
+                more = len(lines) - TRUST_LIST_CAP  # a huge planted list can't bury the warnings (0007 r8)
+                shown = "\n".join(f"    {printable(ln)}" for ln in lines[:TRUST_LIST_CAP])
+                if more > 0:
+                    shown += f"\n    (+{more} more, see {rel})"
+                out.append(f"{rel} (check that you trust every line):\n" + shown)
+    return "".join(f"{block}\n" for block in out)
+
+
+def printable(line):
+    """line with every non-printable character escaped (\\x1b…), so a planted line can't hide itself in a terminal."""
+    return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in line)

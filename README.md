@@ -25,7 +25,7 @@ Start from what you're doing. Every route runs the same playbook workflow, with 
 | You want to… | Run | Playbook stage |
 |---|---|---|
 | Try the workflow first | a throwaway repo: see **Just looking?** under Install | (any, risk-free) |
-| Set up this repo | `/zouj-ai-sdlc:setup`, then type `Setup Profile solo`, `team` or `strict` | (once per repo, before the loop) |
+| Set up this repo | type `/zouj-ai-sdlc:setup solo` (or `team`, `strict`) | (once per repo, before the loop) |
 | Build a feature or change | `/zouj-ai-sdlc:intent "<need>"` → spec → plan → implement | Plan → Design → Build |
 | Fix a bug | `/zouj-ai-sdlc:fix "<bug>"` (failing test first) | Test |
 | Act on an alert or issue | `/zouj-ai-sdlc:triage alert:<metric>` → a new intent | Maintain → Plan (a new intent) |
@@ -57,18 +57,16 @@ Pick **one** path:
 ```text
 /plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-alpha.4
 /plugin install zouj-ai-sdlc@zouj
-/zouj-ai-sdlc:setup
+/zouj-ai-sdlc:setup solo
 ```
-Setup checks the prerequisites, asks for a profile, previews every change and the gates, applies after you confirm,
-and prints the steps only you can do (signing, CODEOWNERS, commit). Rerun it any time: it changes nothing when
-everything is in place.
-
-**You set the profile, by typing it.** Run by Claude, setup scaffolds the repo and leaves `.aiops/config.json` with
-no profile. It then asks you to type `Setup Profile solo` (or `team`, or `strict`) as your whole prompt. That sets the
-repo's first profile and commits `.aiops/config.json` alone, as `chore(aiops): Setup Profile <name>`. Claude can't
-do it for you: a tool call can't author a prompt, and setup run by Claude never changes that file. The phrase works
-once per repo, while the config is untouched and nothing is approved. Changing a profile later is a run in your own
-terminal: `sdlc setup --profile solo|team|strict [--dry-run] [--yes]`.
+**You set the profile, by typing it.** Typed as your whole prompt, `/zouj-ai-sdlc:setup solo` (or `team`, or
+`strict`) writes the core scaffold into a repo that has none (missing files only: nothing you have is changed), sets
+the repo's first profile, and commits `.aiops/config.json` alone, as `chore(aiops): Setup Profile <name>`. The reply
+lists every file it created and the steps only you can do (signing, CODEOWNERS, committing the rest). Claude can't do
+it for you: a tool call can't author a prompt, and setup run by Claude never changes that file. It works once per
+repo, while the config is untouched and nothing is approved. Want to look first? Type `/zouj-ai-sdlc:setup` alone:
+it checks the prerequisites, previews every change and the gates, then asks you to type the command. Changing a
+profile later is a run in your own terminal: `sdlc setup --profile solo|team|strict [--dry-run] [--yes]`.
 
 The same install from a terminal, with no session open:
 ```bash
@@ -99,7 +97,7 @@ with `sdlc setup --with <part>[,<part>…]` (or `--with all`):
 `--with` only adds. A rerun without it keeps the parts you have, and the setup preview names the ones left out.
 
 **B. Just the plugin.** The same two `/plugin` commands, then `/zouj-ai-sdlc:init` (or
-`sdlc init [--stack python|node|go] [--with <parts>]`) in each repo, then `Setup Profile <name>`.
+`sdlc init [--stack python|node|go] [--with <parts>]`) in each repo, then type `/zouj-ai-sdlc:setup <profile>`.
 
 **C. For a team, declaratively.** Commit this to the project's `.claude/settings.json` (`init` and `setup` write it
 for you); Claude Code then offers the plugin to everyone who opens the repo:
@@ -114,9 +112,9 @@ for you); Claude Code then offers the plugin to everyone who opens the repo:
 
 **Just looking?** Try it in a throwaway repo, so no real project is touched:
 `mkdir /tmp/sdlc-try && cd /tmp/sdlc-try && git init -q && git commit -q --allow-empty -m init`, then start `claude`
-there. Run `/zouj-ai-sdlc:setup solo` and confirm its preview. When it asks, type `Setup Profile solo` as your whole
-prompt: that sets the profile, with no signing key and no command to find. Commit the scaffold with the command
-setup prints (`git add … && git commit -m "chore: adopt zouj-ai-sdlc"`).
+there. Type `/zouj-ai-sdlc:setup solo` as your whole prompt: that writes the core scaffold and sets the profile, with
+no signing key and no command to find. Commit the scaffold with the command the reply gives
+(`git add … && git commit -m "chore: adopt zouj-ai-sdlc (profile solo)"`).
 Start with `/zouj-ai-sdlc:intent "greet people in French"`, walk the five states, then delete the directory.
 
 **Profiles** change only how a human approval is proven; the workflow and every gate are the same:
@@ -201,7 +199,7 @@ Local hooks are a strong deterrent, not a sandbox. The CI audit plus CODEOWNERS 
 | Tests / evals | `tests/`, `evals/` | deterministic guard tests (`make test`) · behavioural evals (`make evals`, the `claude plugin eval` format) |
 
 ## Configuration (per repo, human-owned)
-- `.aiops/config.json`: `profile` (set once by the typed `Setup Profile <name>`, changed by `sdlc setup --profile` in your terminal), `lock_when_idle` (default true), `commit_approvals`, `main_branch`, `require_signed_approvals` (default **true**).
+- `.aiops/config.json`: `profile` (set once by the typed `/zouj-ai-sdlc:setup <profile>`, changed by `sdlc setup --profile` in your terminal), `lock_when_idle` (default true), `commit_approvals`, `main_branch`, `require_signed_approvals` (default **true**).
 - `.aiops/config/allowed-signers` (keys allowed to approve) and `legacy-approvals` (pre-signing approvals the audit still accepts).
 - `.aiops/config/{readonly-exempt,protected-paths,secret-paths,test-paths}` extend the plugin's `defaults/`.
 - `SDLC_HOOK_PROFILE=spike` lifts the read-only lock and `make check` for throwaway exploration. The approval and merge gates still hold.

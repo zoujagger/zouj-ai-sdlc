@@ -15,7 +15,8 @@ A profile changes only **how** a human approval is proven, never whether a gate 
 - `strict`: an `sk-` key touch, plus CODEOWNERS on `.aiops/`
 
 The profile and key policy live in `.aiops/config.json`, which is human-owned. This skill only reads and previews.
-The human applies the change: by the typed phrase for a repo's first profile, in their own terminal after that.
+The human applies the change: by typing `/zouj-ai-sdlc:setup <profile>` for a repo's first profile, in their own
+terminal after that.
 
 1. **Where things stand.** Run `sdlc list-installed` and `sdlc doctor`. Show the human:
    - the profile and key policy, from doctor's `profile:` row
@@ -28,8 +29,9 @@ The human applies the change: by the typed phrase for a repo's first profile, in
    setup for `team` and `strict`, a real CODEOWNERS owner for `strict`) and the Gates summary, verbatim. Nothing is
    written.
 4. **Hand over.** How the human applies it depends on what the preview's human steps say:
-   - **No profile is set yet** (the step reads "Choose the profile"): ask them to type `Setup Profile <profile>` as
-     their whole prompt, and wait for the `profile SET` reminder. Never type it for them.
+   - **No profile is set yet** (the step reads "Choose the profile"): ask them to type `/zouj-ai-sdlc:setup <profile>`
+     (one of `/zouj-ai-sdlc:setup solo|team|strict`) as their whole prompt, and wait for the `profile SET` reminder.
+     Never type it for them.
    - **A profile is set:** give them the command to run in their own terminal, exactly:
 
      `<python> -I <plugin>/bin/sdlc setup --profile <profile>`

@@ -341,9 +341,10 @@ class CoreWalk(Playbook):
     parts = None
 
 
-class PhraseWalk(Playbook):
-    """The first run as 0007 describes it, with no terminal step for the profile: the agent scaffolds (core, init's
-    defaults), the human types `Setup Profile <p>`, and the walk goes on through the prompt hook (AC-2, AC-16)."""
+class CommandWalk(Playbook):
+    """The first run as 0007 describes it: in a fresh repo the human types `/zouj-ai-sdlc:setup <p>`, with no agent-run
+    setup and no terminal step. The hook writes the core scaffold and the profile; every later gate is a typed phrase.
+    Each prompt goes through hooks/engine.sh, as in a session (0007 S17: AC-2, AC-16)."""
 
     parts = None
 
@@ -352,31 +353,24 @@ class PhraseWalk(Playbook):
         payload = json.dumps({"prompt": text, "cwd": str(d), "hook_event_name": "UserPromptSubmit"})
         env = {
             **self.env,
-            "PATH": str(self.bin_with()),
+            "PATH": f"{self.bin_with()}:/usr/bin:/bin",  # the stubs first; bash for engine.sh
             "CLAUDE_PROJECT_DIR": str(d),
+            "CLAUDE_PLUGIN_ROOT": str(ROOT),
             "CLAUDECODE": "1",
             "CLAUDE_CODE_CHILD_SESSION": "1",
         }  # what every session's hooks see
         r = subprocess.run(
-            [sys.executable, SDLC, "hook", "prompt"], cwd=d, input=payload, capture_output=True, text=True, env=env
+            [str(ROOT / "hooks" / "engine.sh"), "prompt"], cwd=d, input=payload, capture_output=True, text=True, env=env
         )
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"] if r.stdout.strip() else ""
 
     def scaffold(self, d, profile, env):
-        r = subprocess.run(
-            [sys.executable, SDLC, "setup", "--profile", profile, "--yes"],
-            cwd=d,
-            input="",
-            capture_output=True,
-            text=True,
-            env={**env, "CLAUDECODE": "1"},
-        )  # the agent's run
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn(f"type `Setup Profile {profile}` as your whole prompt", r.stdout)
-        template = json.loads((ROOT / "templates" / "scaffold" / ".aiops" / "config.json").read_text())
-        self.assertEqual(json.loads((d / ".aiops" / "config.json").read_text()), template)  # no profile yet
-        self.assertIn(f"profile SET: {profile}", self.typed(d, f"Setup Profile {profile}"))
+        self.assertFalse((d / ".aiops").exists())  # a fresh repo: nothing ran before the human's command
+        self.assertEqual(self.typed(d, "Intent Approved 0001"), "")  # dormant: any other prompt does nothing
+        ctx = self.typed(d, f"/zouj-ai-sdlc:setup {profile}")
+        self.assertIn(f"profile SET: {profile}", ctx)
+        self.assertIn("Created the core scaffold", ctx)
         self.assertEqual(
             git(d, "show", "--name-only", "--format=%s", "HEAD").split("\n"),
             [f"chore(aiops): Setup Profile {profile}", "", ".aiops/config.json"],

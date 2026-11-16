@@ -14,7 +14,7 @@ G-GATE-03 gate intent-spec-plan approved-* fields on a new artifact are written 
 G-GATE-04 gate intent-spec-plan approved-* fields are written only by a human approval
 G-GATE-05 gate intent-spec-plan setting an artifact's gate status is a human decision
 G-GATE-06 gate intent-spec-plan approval commits are created only by a human approval
-G-GATE-07 gate intent-spec-plan human-only engine commands (approve, close, unlock, hook, legacy-approvals, uninstall)
+G-GATE-07 gate every-repo human-only engine commands (approve, close, unlock, hook, legacy-approvals, uninstall) and hooks/engine.sh
 G-ENV-02 gate intent-spec-plan changing CLAUDECODE / CLAUDE_CODE_CHILD_SESSION or clearing the environment
 
 # Read-only lock (states 1-3)

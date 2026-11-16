@@ -35,8 +35,11 @@ from .schema import validate
 
 TEMPLATES = PLUGIN_ROOT / "templates"
 APPROVE_RE = re.compile(r"^\s*(intent|spec|plan)\s+approved(?:\s+(\d{1,4}))?\s*[.!]?\s*$", re.I)
-# The human's whole prompt `Setup Profile solo|team|strict` sets a repo's first profile (setup.set_first_profile).
-PROFILE_RE = re.compile(r"^\s*setup\s+profile(?:\s+([a-z0-9_-]+))?\s*[.!]?\s*$", re.I)
+# The human's whole prompt `/zouj-ai-sdlc:setup solo|team|strict` sets a repo's first profile (setup.set_first_profile).
+# Claude Code hands UserPromptSubmit a typed skill command as typed. Qualified only: a bare `/setup` may be another
+# plugin's skill. The name is matched in any case; the command exactly. Only spaces around it, as the engine.sh
+# pre-filter sees them (a newline or a tab arrives there JSON-escaped), so a fresh repo and an initialized one agree.
+PROFILE_RE = re.compile(r"^ */zouj-ai-sdlc:setup +([A-Za-z0-9_-]+) *\Z")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 HUMAN_ONLY = (
     "refusing: this is a human gate and it is running inside Claude Code. Run it in your own terminal, "
@@ -121,17 +124,18 @@ def card(root, st):
 
 def terminal_lines(root, st=None):
     """The card lines for a pending human step, [] when there is none:
-    - no profile chosen yet: the command for the human's own terminal, and the phrase that sets the profile
+    - no profile chosen yet: the command for the human's own terminal, and the typed setup command that sets it
     - the intent waits on the human at a gate (states 1-3) and signing needs a terminal: the approve command. That is
       a signing problem, or the `human` key policy: its key has a passphrase and stays out of ssh-agent, and the
       prompt hook has no terminal to ask for it (0007 review r2 M1).
     signing_problem may run ssh-keygen, so it is asked only in that second case."""
     from . import lifecycle, setup
 
-    if setup.no_profile_yet(root)[0]:
+    if setup.no_profile_yet(root, history=False)[0]:  # files only: no history walk on every status (0007 r6)
         return [
             f"- Your terminal: {lifecycle.human_command('').rstrip()}",
-            "- No profile chosen yet: the human types `Setup Profile solo|team|strict` as the whole prompt",
+            "- No profile chosen yet: the human types `/zouj-ai-sdlc:setup solo|team|strict` as the whole prompt "
+            "(it refuses, and says why, if a gate was ever opened here)",
         ]
     if st is not None and st.waiting_on == "human" and st.state in (1, 2, 3):
         cfg = config(root)
@@ -171,12 +175,17 @@ def cmd_status(root, args):
     if as_json:
         out(json.dumps([r.as_dict() for r in rows], indent=2))
         return 0
+    pending = "\n".join(terminal_lines(root))  # a human step pending with no intent active (0007 AC-10)
     if not rows:
         out('No intents yet. Start one: /zouj-ai-sdlc:intent "<need>"  (or: sdlc new <slug>)')
+        if pending:
+            out(pending)
         return 0
     out("| Intent | State | Detail | Next |\n|---|---|---|---|")
     for r in rows:
         out(f"| {r.dir.name} | {r.state} {r.name} | {r.detail} | {r.next} |")
+    if pending:
+        out(pending)
     return 0
 
 
@@ -416,6 +425,12 @@ def _wire_stack(root, stack):
 
 
 REF_PLACEHOLDER = "__ZOUJ_SDLC_REF__"
+
+
+def rendered_template(rel):
+    """The bytes init writes for scaffold file `rel`: the template with the plugin's ref filled in."""
+    data = (TEMPLATES / "scaffold" / rel).read_bytes()
+    return data.replace(REF_PLACEHOLDER.encode(), f"v{plugin_version()}".encode())
 PROFILES = ("solo", "team", "strict")
 STACKS = ("python", "node", "go")  # the presets in templates/stacks/; --stack takes only these names
 
@@ -583,9 +598,7 @@ def apply_init(root, actions, written=None):
     for act, rel in actions:
         if act != "create":
             continue
-        data = (scaffold / rel).read_bytes()
-        if REF_PLACEHOLDER.encode() in data:
-            data = data.replace(REF_PLACEHOLDER.encode(), f"v{plugin_version()}".encode())
+        data = rendered_template(rel)
         write_file(root, rel, data, (scaffold / rel).stat().st_mode & 0o777)
         written.append(rel)
     if symlink_on_path(root, ".aiops/state"):
@@ -928,18 +941,44 @@ def _pre(check):
 
 
 def hook_profile(data, m):
-    """The human typed `Setup Profile <name>` as the whole prompt: set this repo's first profile. Like an approval,
-    it runs in-process and reads no CLAUDECODE / CLAUDE_CODE_CHILD_SESSION marker: Claude Code sets both for the
-    hooks of every session, so they say nothing about who typed the prompt. Dormant without .aiops/."""
-    root = project_root(data.get("cwd"))
-    if not initialized(root):
-        return 0
-    from . import setup
+    """The human typed `/zouj-ai-sdlc:setup <name>` as the whole prompt: set this repo's first profile (and, in a repo
+    without .aiops/, its core scaffold first). Like an approval, it runs in-process and reads no CLAUDECODE /
+    CLAUDE_CODE_CHILD_SESSION marker: Claude Code sets both for the hooks of every session, so they say nothing
+    about who typed the prompt. It acts only on the session's repo (CLAUDE_PROJECT_DIR); unknown, it refuses."""
+    from . import lifecycle, setup
 
-    _ok, msg = setup.set_first_profile(root, (m.group(1) or "").lower())
+    root, name = project_root(data.get("cwd")), m.group(1).lower()
+    session = os.environ.get("CLAUDE_PROJECT_DIR") or ""
+    if name not in setup.PROFILES:  # the name first: R-6's list, wherever the prompt came from (r7)
+        _ok, msg = setup.set_first_profile(root, name)
+    elif not session or project_root(session) != root:
+        msg = (
+            "profile NOT set: the setup command acts only on the session's repo "
+            f"({setup.printable(session or 'unknown')}), and the prompt's working directory resolves to "
+            f"{setup.printable(str(root))}. Nothing was written. Type it from the session's repo, or run in your own "
+            f"terminal there: `{lifecycle.human_command(f'setup --profile {name}')}`."
+        )
+    elif any(git(Path(d), "config", "core.worktree") for d in (session, data.get("cwd") or session)):
+        msg = (  # r9: it points git at another work tree, so both sides of the check above would name that one
+            f"profile NOT set: this repo's git config sets core.worktree, which points git at another directory: "
+            f"the session's repo {setup.printable(session)} resolves to {setup.printable(str(root))}. Nothing was "
+            "written. Remove it (`git config --unset core.worktree`) and type the command again, or run in your own "
+            "terminal there: "
+            f"`{lifecycle.human_command(f'setup --profile {name}')}`."
+        )
+    else:
+        _ok, msg = setup.set_first_profile(root, name, cwd=data.get("cwd"))
+    # The agent relays the steps; the result and its warnings also go straight to the human (systemMessage), so an
+    # agent that planted a signer or an identity can't keep them from the person they warn. The notice is built
+    # apart (setup.Reply), never cut out of text that holds the repo's own strings (r9).
+    notice = getattr(msg, "notice", msg).strip()
+    notice = "\n".join(setup.printable(line) for line in notice.split("\n"))  # refusals quote repo strings too (r10)
     out(
         json.dumps(
-            {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": f"zouj-ai-sdlc {msg}"}}
+            {
+                "systemMessage": f"zouj-ai-sdlc {notice}",
+                "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": f"zouj-ai-sdlc {msg}"},
+            }
         )
     )
     return 0
@@ -973,7 +1012,7 @@ def hook_session_start(data):
     if not initialized(root):
         out(
             "zouj-ai-sdlc is installed but this repo is not initialized (no .aiops/), so its gates are off here. "
-            "To use the AI-native SDLC workflow: /zouj-ai-sdlc:init"
+            "To use the AI-native SDLC workflow, type: /zouj-ai-sdlc:setup solo|team|strict"
         )
         return 0
     d = active_dir(root)
