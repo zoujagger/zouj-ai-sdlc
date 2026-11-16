@@ -119,9 +119,11 @@ setup command.
   `e*.sh`, `engine.sh$IFS…`), `popd`, `cd -`, an unknown home, `CDPATH` or `env -C`/`--chdir` counts as the
   plugin's (so `cd $PROJ && ./engine.sh` is refused too). A shell or `source` is checked word by word, whatever
   its options (`bash -O extglob …`, `--rcfile f`), and a bare name it is given is resolved from the cwd. **As a
-  class, static parsing can't close this route**: a non-literal event (`./x.sh $E`), a copy under another name run
-  later (also through an inline `PATH=$PWD:$PATH run prompt`), the script fed on stdin (`bash < …/engine.sh`), its text run by `bash -c "$(cat …)"`, or a script file the
-  agent wrote that pipes a payload into `python3 -I <plugin>/bin/sdlc hook prompt` still feed the hook. Their effect
+  class, static parsing can't close this route**: a non-literal event (`./x.sh $E`), an event inherited by a sourced
+  script (`set -- prompt; . <plugin>/hooks/e*`), a copy under another name run later (also through an inline
+  `PATH=$PWD:$PATH run prompt`), the script fed on stdin (`bash < …/engine.sh`), its text run by
+  `bash -c "$(cat …)"`, or a script file the agent wrote that pipes a payload into
+  `python3 -I <plugin>/bin/sdlc hook prompt` still feed the hook. Their effect
   is the accepted residual below (an agent-started session), and on that path the session-repo condition holds
   only as far as the caller's `CLAUDE_PROJECT_DIR` does (Claude Code sets it for a real hook). Signing under `team`
   and `strict`, and the planned pre-bash rule against agent-started sessions, are the controls. Another plugin's

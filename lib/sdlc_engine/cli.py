@@ -425,6 +425,12 @@ def _wire_stack(root, stack):
 
 
 REF_PLACEHOLDER = "__ZOUJ_SDLC_REF__"
+
+
+def rendered_template(rel):
+    """The bytes init writes for scaffold file `rel`: the template with the plugin's ref filled in."""
+    data = (TEMPLATES / "scaffold" / rel).read_bytes()
+    return data.replace(REF_PLACEHOLDER.encode(), f"v{plugin_version()}".encode())
 PROFILES = ("solo", "team", "strict")
 STACKS = ("python", "node", "go")  # the presets in templates/stacks/; --stack takes only these names
 
@@ -592,9 +598,7 @@ def apply_init(root, actions, written=None):
     for act, rel in actions:
         if act != "create":
             continue
-        data = (scaffold / rel).read_bytes()
-        if REF_PLACEHOLDER.encode() in data:
-            data = data.replace(REF_PLACEHOLDER.encode(), f"v{plugin_version()}".encode())
+        data = rendered_template(rel)
         write_file(root, rel, data, (scaffold / rel).stat().st_mode & 0o777)
         written.append(rel)
     if symlink_on_path(root, ".aiops/state"):

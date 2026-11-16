@@ -283,13 +283,14 @@ WRAPPERS = (
     r"(sudo|doas|command|exec|env|nohup|time|builtin|xargs|eval|nice|timeout|stdbuf|setsid|ionice|chrt|"
     r"taskset|unbuffer|watch|flock|trap|coproc|strace|ltrace|parallel|python[\d.]*)"
 )
-SHELL_C = r"((busybox|su)\s+)?(\S*/)?(ba|z|da|k|fi)?sh\s+(-\S+\s+)*?-\w*c|script\s+(-\S+\s+)*?-\w*c|su\s+(-\S+\s+)*?-c"
+SHELLS_RE = r"(ba|z|da|k|fi|a|mk|ya|c|tc)?sh"  # one shell list (r14/r15): ash, mksh, yash, csh, tcsh too
+SHELL_C = rf"((busybox|su)\s+)?(\S*/)?{SHELLS_RE}\s+(-\S+\s+)*?-\w*c|script\s+(-\S+\s+)*?-\w*c|su\s+(-\S+\s+)*?-c"
 CMD_POS = (
     rf"(^|[;&|()`\n{{!]|\b(then|do|else|while|until|if|elif|coproc)\s)\s*"
     rf"(((\S*/)?{WRAPPERS}|{SHELL_C})(\s+[^\s$`;&|]+)*?\s+|\w+=\S*\s+)*"
 )
 SHELL_FED_RE = re.compile(
-    r"\|\s*(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\b|\b(source|\.)\s+(<\(|/dev/stdin|/dev/fd|/proc/)"
+    rf"\|\s*(\S*/)?((busybox|su)\s+)?{SHELLS_RE}\b|\b(source|\.)\s+(<\(|/dev/stdin|/dev/fd|/proc/)"
 )
 HUMAN_WORD_RE = re.compile(rf"(^|[\s=;&|(]|:-){HUMAN_SUBS}(\s|$|[;&|)}}])")  # also a `${x:-approve}` default
 ENGINE_RES = (  # matched against the command with quotes and backslashes removed, so `"sdl\c"` reads `sdlc`
@@ -304,7 +305,6 @@ ENGINE_RES = (  # matched against the command with quotes and backslashes remove
     re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
-SHELLS_RE = r"(ba|z|da|k|fi|a|mk|ya|c|tc)?sh"  # r14: ash, mksh, yash, csh, tcsh too
 SHELL_PREFIX = rf"(\S*/)?((busybox|su)\s+)?{SHELLS_RE}\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+"
 ENGINE_SH_RE = re.compile(  # 0007 r8: a run of a script named engine.sh; _plugin_engine_sh decides if it's ours
     rf"{CMD_POS}({SHELL_PREFIX})?"
@@ -340,7 +340,7 @@ ENV_RES = (
 )
 
 
-SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
+SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "fish", "ash", "mksh", "yash", "csh", "tcsh"}
 
 
 def _plugin_engine_sh(plain, cwd):
@@ -380,10 +380,17 @@ def _plugin_engine_sh(plain, cwd):
         return ours is not None and target.stat().st_size == len(ours) and target.read_bytes() == ours
 
     for m in SHELL_RUN_RE.finditer(plain):  # r13: every word a shell or source is given, options or not
-        for word in m.group("rest").split():
+        words, script_seen, skip = m.group("rest").split(), False, False
+        for word in words:
             word = re.sub(r"^[0-9]*[<>]+", "", word)
-            if not word or word.startswith(("-", "+")) and "/" not in word:
+            if skip:  # an option's own argument (`-O extglob`, `--rcfile f`)
+                skip = False
                 continue
+            if not word or word.startswith(("-", "+")) and "/" not in word:
+                skip = word in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file")
+                continue
+            script = not script_seen  # r15: the first non-option word is the script (or `-c`'s command)
+            script_seen = True
             name = word.rsplit("/", 1)[-1]
             if name == "engine.sh":  # resolved from the cwd and any cd before it; fails closed
                 if ours_or_unreadable(word, m.start("rest")):
@@ -392,8 +399,8 @@ def _plugin_engine_sh(plain, cwd):
             if re.search(r"[$`*?\[{]", name):  # r14: a name that could expand to engine.sh
                 pattern = re.sub(r"\{[^}]*\}", "*", re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$\w*|`[^`]*`", "*", name))
                 literal = re.sub(r"[*?]|\[[^\]]*\]", "", pattern)
-                if fnmatch.fnmatchcase("engine.sh", pattern) and (
-                    len(literal) >= 4 or PLUGIN_DIR_RE.search(word) or "$" in word[: -len(name) or None]
+                if fnmatch.fnmatchcase("engine.sh", pattern) and (  # any length only at the script position (r15)
+                    len(literal) >= 4 or script and (PLUGIN_DIR_RE.search(word) or "$" in word[: -len(name) or None])
                 ):
                     return True
                 continue
@@ -413,11 +420,11 @@ def _plugin_engine_sh(plain, cwd):
         path = m.group("path")
         name = path.rsplit("/", 1)[-1]
         if name != "engine.sh":  # r11: a name with a glob or variable that could expand to engine.sh is ours
-            if PLUGIN_DIR_RE.search(path):
-                return True
             pattern = re.sub(r"\{[^}]*\}", "*", re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$\w*", "*", name))
             literal = re.sub(r"[*?]|\[[^\]]*\]", "", pattern)
-            if len(literal) >= 4 and fnmatch.fnmatchcase("engine.sh", pattern):
+            if fnmatch.fnmatchcase("engine.sh", pattern) and (  # r15: a bare `*` in the plugins directory isn't
+                len(literal) >= 4 or (PLUGIN_DIR_RE.search(path) and literal)
+            ):
                 return True
             continue
         if ours_or_unreadable(path, m.start("path")):

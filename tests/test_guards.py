@@ -71,6 +71,10 @@ ENGINE_SH_FORMS = (  # the plugin's hook wrapper run by the agent (0007 r8): eve
     # 0007 r14: other shells
     "ash hooks/engine.sh prompt < p.json",
     "mksh hooks/engine.sh prompt < p.json",
+    # 0007 r15: a glob or variable name at the script position, behind options or -c
+    "bash -O extglob $CLAUDE_PLUGIN_ROOT/hooks/e* < p.json",
+    'bash -c "$CLAUDE_PLUGIN_ROOT/hooks/e*" < p.json',
+    "bash ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/$N < p.json",
 )
 SDLC_GLOB_FORMS = (  # 0007 r11: a glob in the sdlc command word, behind python's own options
     "python3 -I ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/bin/sdl? hook prompt < p.json",
@@ -96,6 +100,13 @@ PROJECT_ENGINE_SH = (  # 0007 r9 MAJOR: a project's own engine.sh is not the plu
     'bash -c "ls ~/.claude/plugins/cache"',
     'bash -c "grep -r foo ~/.claude/plugins/marketplaces"',
     "sh ~/.claude/plugins/marketplaces/other/install.sh",
+    # 0007 r15 MAJOR: a glob under a variable or plugins directory, as a later argument, is not ours
+    "bash ./lint.sh $SRC/*",
+    'bash -c "ls $TMPDIR/*"',
+    'zsh -c "ls $BUILD/*"',
+    'sh -c "cat ${HOME}/.config/*"',
+    'bash -c "du -sh ~/.claude/plugins/cache/*"',
+    'bash -c "ls ~/.claude/plugins/cache/*/"',
     'git commit -m "x; ./engine.sh"',
     "cat hooks/engine.sh",
     "grep -n prompt hooks/engine.sh",
