@@ -834,7 +834,7 @@ def set_first_profile(root, name, cwd=None):
         )
         return False, f"profile NOT set: {rel} could not be written ({exc}).{done_before}"
     if created:  # install-state records the config as written, profile included, as a terminal run does (r5)
-        lifecycle.record(root, [rel], profile=name)
+        lifecycle.record(root, [rel], profile=name, data={rel: data})  # the bytes written, as the commit (r8)
     title = f"chore(aiops): Setup Profile {name}"
     body = f"AIOps-Profile: {name}\nSet-By: {approvals.approver(root)}"
     done = approvals._commit_alone(root, rel, title, body, [], data=data)  # the bytes written, not a re-read
@@ -897,11 +897,12 @@ def _identity_note(root):
     )
 
 
+TRUST_LIST_CAP = 20  # lines shown per list in the setup command's reply
 TRUST_LISTS = (".aiops/config/allowed-signers", ".aiops/config/legacy-approvals", ".aiops/config/allowed-commands")
 
 
 def _trust_lists(root):
-    """The non-comment lines of the human-owned trust lists, so a line committed before the command (which this path
+    """The non-comment lines (at most TRUST_LIST_CAP each, then a count) of the human-owned trust lists, so a line committed before the command (which this path
     never previews) is seen. Empty when every list holds comments only."""
     out = []
     for rel in TRUST_LISTS:
@@ -913,9 +914,11 @@ def _trust_lists(root):
                 if ln.strip() and not ln.lstrip().startswith("#")
             ]
             if lines:
-                out.append(
-                    f"{rel} (check that you trust every line):\n" + "\n".join(f"    {_shown(ln)}" for ln in lines)
-                )
+                more = len(lines) - TRUST_LIST_CAP  # a huge planted list can't bury the warnings (0007 r8)
+                shown = "\n".join(f"    {_shown(ln)}" for ln in lines[:TRUST_LIST_CAP])
+                if more > 0:
+                    shown += f"\n    (+{more} more, see {rel})"
+                out.append(f"{rel} (check that you trust every line):\n" + shown)
     return "".join(f"{block}\n" for block in out)
 
 

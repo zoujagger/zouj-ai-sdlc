@@ -303,6 +303,10 @@ ENGINE_RES = (  # matched against the command with quotes and backslashes remove
     re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
+ENGINE_SH_RE = re.compile(  # 0007 r8: the plugin's hook wrapper feeds `sdlc hook`; the agent never runs it
+    rf"{CMD_POS}((\S*/)?(ba|z|da|k)?sh\s+(-\S+\s+)*|(source|\.)\s+)?(\S*/)?engine\.sh(\s|$|[;&|)])"
+)
+HOOK_WORD_RE = re.compile(r"\bhook\b")
 TRAILER_RE = re.compile(r"AIOps-Approval\s*:")
 FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:|\w+=\S*AIOps-")  # printf 'AIOps-%s:', AIOps-$x:, m=AIOps-…
 MARKERS = r"(CLAUDECODE|CLAUDE_CODE_CHILD_SESSION)"
@@ -879,9 +883,12 @@ def check_bash(data):
     root = project_root(cwd)
     if not cmd.strip():
         return None
-    human_only = any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain)
+    hook_sh = bool(ENGINE_SH_RE.search(plain))
+    human_only = hook_sh or any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain)
     if not initialized(root):  # SDLC gates dormant; the safety checks run in every repo (0005, gap 2)
-        if human_only:  # 0007 r7: the prompt hook acts here on the setup command, so a fed payload must not
+        # 0007 r7/r8: the prompt hook acts here on the setup command, so a fed payload must not reach it. Only the
+        # hook-feeding forms are refused, so an unrelated project can still name the other subcommands.
+        if hook_sh or (human_only and HOOK_WORD_RE.search(plain)):
             return _block(
                 "G-GATE-07",
                 "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
@@ -914,7 +921,8 @@ def check_bash(data):
     if human_only:
         return _block(
             "G-GATE-07",
-            "`sdlc approve|close|unlock|hook|legacy-approvals` are human-only (or hook-only).",
+            "`sdlc approve|close|unlock|hook|legacy-approvals` and the plugin's `hooks/engine.sh` are human-only "
+            "(or hook-only).",
             "stop and ask the human: they type `Intent|Spec|Plan Approved NNNN` in the prompt, "
             "or run the command in their own terminal.",
         )

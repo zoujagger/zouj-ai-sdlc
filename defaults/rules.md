@@ -29,7 +29,9 @@ Instead: ask the human to approve in the prompt or in their own terminal (`sdlc 
 
 ## G-GATE-07
 Why: `approve`, `close`, `unlock`, `hook` and `legacy-approvals` decide gates, and a real `uninstall` removes the
-workflow's files; they are run by the human (or by Claude Code's hooks), never by the agent.
+workflow's files; they are run by the human (or by Claude Code's hooks), never by the agent. The plugin's
+`hooks/engine.sh` feeds `sdlc hook`, so running it is hook-only too. In a repo without `.aiops/` only the
+hook-feeding forms are refused (the prompt hook acts there on the typed setup command).
 Instead: ask the human: they type `Intent|Spec|Plan Approved NNNN`, or run the command in their own terminal.
 
 ## G-ENV-02

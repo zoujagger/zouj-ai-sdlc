@@ -1284,6 +1284,12 @@ class FirstRun(SetupCase):
         committed = git(d, "show", f"HEAD:{CONFIG}")
         self.assertEqual(json.loads(committed), {**template, **setup.PROFILE_CONFIG["strict"]})
         self.assertIn("changed on disk", msg)
+        # 0007 r8 MINOR: install-state records the hook's bytes too, so the racer's file reads as modified
+        import hashlib
+
+        st = json.loads((d / ".aiops" / "install-state.json").read_text())
+        wrote = (json.dumps({**template, **setup.PROFILE_CONFIG["strict"]}, indent=2) + "\n").encode()
+        self.assertEqual(st["files"][CONFIG]["sha256"], hashlib.sha256(wrote).hexdigest())
 
     def test_set_by_from_the_repos_own_git_config_is_flagged(self):
         # 0007 r4 security LOW: before .aiops/ exists the agent can set the repo-local identity that Set-By names
@@ -1489,6 +1495,17 @@ class FirstProfile(SetupCase):
         self.assertTrue(ok, msg)
         self.assertNotIn("\x1b", msg)
         self.assertIn("\\x1b", msg)
+
+    def test_trust_lists_are_capped(self):
+        # 0007 r8 security LOW: a huge planted list can't bury the warnings; the rest is counted and the file named
+        allowed = self.root / ".aiops" / "config" / "allowed-commands"
+        allowed.write_text("".join(f"G-ENV-03 echo planted-{i}\n" for i in range(500)))
+        ok, msg = self.S.set_first_profile(self.root, "team")
+        self.assertTrue(ok, msg)
+        self.assertIn("planted-0", msg)
+        self.assertNotIn("planted-499", msg)
+        self.assertIn("(+480 more, see .aiops/config/allowed-commands)", msg)
+        self.assertLess(msg.count("planted-"), 25)
 
     def test_reply_lists_the_trust_lists(self):
         # 0007 r4 security LOW: with no preview on this path, the reply shows what the human-owned trust lists hold

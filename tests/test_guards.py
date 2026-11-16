@@ -8,6 +8,20 @@ from helpers import INTENT, PLAN, SPEC, RepoCase, git
 from sdlc_engine import artifacts as A
 
 
+ENGINE_SH_FORMS = (  # the plugin's hook wrapper run by the agent (0007 r8): every form is hook-only
+    'printf \'{"prompt":"/zouj-ai-sdlc:setup solo"}\' | /opt/plugin/hooks/engine.sh prompt',
+    "printf x | $CLAUDE_PLUGIN_ROOT/hooks/engine.sh prompt",
+    'printf x | "${CLAUDE_PLUGIN_ROOT}/hooks/engine.sh" prompt',
+    "hooks/engine.sh prompt < payload.json",
+    "cd hooks && ./engine.sh prompt < p.json",
+    "bash hooks/engine.sh prompt < p.json",
+    "sh -x hooks/engine.sh prompt < p.json",
+    "bash -c 'hooks/engine.sh prompt' < p.json",
+    "source hooks/engine.sh",
+    ". hooks/engine.sh",
+    "env FOO=1 hooks/engine.sh prompt < p.json",
+)
+
 class EditGuard(RepoCase):
     def edit(self, rel, content=None, old=None, new=None):
         path = str(self.root / rel)
@@ -789,12 +803,31 @@ class PromptAndSessionHooks(RepoCase):
         for cmd in (
             'printf \'{"prompt":"/zouj-ai-sdlc:setup solo"}\' | sdlc hook prompt',
             "sdlc hook prompt < payload.json",
-            "sdlc approve 0001 intent",
+            *ENGINE_SH_FORMS,  # 0007 r8 security MEDIUM: the hook wrapper reaches the same code path
         ):
             r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
             self.assertEqual(r.returncode, 2, cmd)
             self.assertIn("G-GATE-07", r.stderr, cmd)
-        for cmd in ("sdlc where", "sdlc setup --profile solo --dry-run", "echo hello"):  # still allowed there
+        for cmd in (
+            "sdlc where",
+            "sdlc setup --profile solo --dry-run",
+            "echo hello",
+            # 0007 r8 MINOR: in a repo without .aiops/ only the hook-feeding forms are refused, so an unrelated
+            # project can still mention the engine's subcommands
+            'git commit -m "docs: the sdlc close step"',
+            "git ls-files | xargs grep -l sdlc",
+            "cat hooks/engine.sh",
+            "grep -n prompt hooks/engine.sh",
+        ):
+            self.assertEqual(self.hook("pre-bash", self.hook_input("Bash", command=cmd)).returncode, 0, cmd)
+
+    def test_engine_sh_run_by_the_agent_is_hook_only(self):
+        # 0007 r8 security MEDIUM: a fed approval phrase through hooks/engine.sh in an initialized repo
+        for cmd in (*ENGINE_SH_FORMS, 'printf \'{"prompt":"Plan Approved 0001"}\' | hooks/engine.sh prompt'):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("G-GATE-07", r.stderr, cmd)
+        for cmd in ("cat hooks/engine.sh", "grep -n prompt hooks/engine.sh", "shellcheck hooks/engine.sh"):
             self.assertEqual(self.hook("pre-bash", self.hook_input("Bash", command=cmd)).returncode, 0, cmd)
 
     def test_engine_hooks_are_dormant_without_aiops(self):

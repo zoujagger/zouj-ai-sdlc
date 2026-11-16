@@ -10,8 +10,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
 
 Two intents ship together:
-- **`.aiops/0007-first-run/`, the first run:** a repo's first profile is set by a typed phrase, so `solo` needs no
-  terminal; `sdlc where` prints the terminal command when one is needed; setup installs a core scaffold and the rest
+- **`.aiops/0007-first-run/`, the first run:** a repo's first profile is set by the typed `/zouj-ai-sdlc:setup <profile>`, so
+  `solo` needs no terminal; `sdlc where` prints the terminal command when one is needed; setup installs a core scaffold and the rest
   is opt-in.
 - **`.aiops/0005-guard-gaps/`, the guards:** the shell-write guard gaps from the 0.2.0-alpha.3 known issues. Almost
   every change adds blocks. Two exceptions loosen a check: `find . -type d -delete` (removes only empty directories)
@@ -48,6 +48,10 @@ The playbook workflow, the gates and what CI audits are unchanged.
   `.aiops/config.json` exactly the template and ask you to type `/zouj-ai-sdlc:setup solo`.
 
 ### Security
+- **The prompt hook can't be fed by the agent, in any repo (`G-GATE-07`).** `sdlc hook` and the plugin's
+  `hooks/engine.sh` (run directly, through `bash`/`sh`, or sourced) are hook-only. In a repo without `.aiops/` only
+  these hook-feeding forms are refused, so an unrelated project can still mention the other subcommands; in an
+  initialized repo every human-only engine command stays refused.
 - **Deleting a protected tree is blocked in every state (`G-FILE-05`).** This covers the repo itself, a directory
   above it or above home, and a directory holding a protected path or a git-tracked protected or secret file (`rm -rf ./`,
   `rm -rf "$PWD"`, `rm -rf ..`, `mv .github …`, `rm -rf .claude`). Untracked trees such as `node_modules` aren't
@@ -112,8 +116,8 @@ The playbook workflow, the gates and what CI audits are unchanged.
 ### Upgrading from 0.2.0-alpha.3
 Update the plugin with `/plugin`, then run `sdlc upgrade --dry-run` and `sdlc upgrade` in your own terminal
 (`sdlc where` prints the command), and commit the result through a PR. Nothing to migrate: your repo keeps every
-part and its profile, and install-state without `parts` reads as every part. The typed phrase applies only to repos
-that have no profile yet.
+part and its profile, and install-state without `parts` reads as every part. The typed `/zouj-ai-sdlc:setup <profile>`
+applies only to repos that have no profile yet.
 
 ## [0.2.0-alpha.3] - 2026-11-06
 

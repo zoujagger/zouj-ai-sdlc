@@ -13,8 +13,9 @@ This repo is the **zouj-ai-sdlc** Claude Code plugin, and it dogfoods itself: ch
    message states the reason **and** the procedure.
 3. Engine code is stdlib only (Python ≥ 3.9). SDLC gate hooks must stay dormant without `.aiops/` (`aiops_enabled`),
    with one exception: the prompt hook acts on the exact typed `/zouj-ai-sdlc:setup <profile>`, matched in
-   `engine.sh` before python starts. The safety guards (secrets, force-push, deploys, the installed plugin) are
-   always on. Hooks keep regexes in variables, never inline in `[[ =~ ]]`.
+   `engine.sh` before python starts. The safety guards (secrets, force-push, deploys, the installed plugin) and
+   G-GATE-07's hook-feeding forms (`sdlc hook`, `hooks/engine.sh`) are always on. Hooks keep regexes in variables,
+   never inline in `[[ =~ ]]`.
 4. Skills call `sdlc …` (it's on PATH while the plugin is enabled). Reference plugin files as `${CLAUDE_PLUGIN_ROOT}/…`.
 5. Consumer-facing files live in `templates/scaffold/`, and `sdlc init` must never overwrite an existing file.
 6. When code diverges from `plan.md`, log it in the Deviation log in the same commit.

@@ -133,6 +133,9 @@ class ListInstalled(RepoCase):
         self.assertIn("profile solo", out)
         self.assertNotIn("profile team", out)
         self.assertIn("profile: solo", self.run_sdlc("doctor").stdout)
+        # r8 MINOR: "current" here must never make the config replaceable: a human's upgrade keeps the profile
+        self.assertEqual(self.run_sdlc("upgrade", "--yes").returncode, 0)
+        self.assertEqual(json.loads((self.root / ".aiops" / "config.json").read_text())["profile"], "solo")
 
     def test_stale_and_dropped(self):
         st = json.loads((self.root / STATE).read_text())
