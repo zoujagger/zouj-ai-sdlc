@@ -44,7 +44,7 @@ the eval at the release commit (S3). The existing tests are reused:
     outside `.aiops/` and `evals/results/` and finds no `alpha.4`. `test_release_banner_is_beta` also checks that
     the README's status line doesn't say alpha. Both fail before the edit.
   - Covers: AC-2, AC-4
-- [ ] **S3**: Prove the release commit: `make check`, `claude plugin validate .`, and the
+- [x] **S3**: Prove the release commit: `make check`, `claude plugin validate .`, and the
   `profile-by-setup-command` eval with the plugin (3 runs per arm, as in 0007 S19). Then check that
   `git diff --name-only origin/main` lists only R-1 to R-5's files and `.aiops/0008-*`.
   - Files: none (`evals/results/<run>/` is generated)
@@ -76,3 +76,4 @@ the eval at the release commit (S3). The existing tests are reused:
 | 2026-11-16 | S1, S2 | One commit for both steps | The tests both steps share (`Docs::test_changelog_has_the_release` checks the version and the README pins) stay red until S2's edits; the red runs are recorded below | (this commit) |
 | 2026-11-16 | S2 | The proof tests build the rejected version from parts (`"alpha" + ".4"`) | AC-2 holds for every tracked file outside `.aiops/` and `evals/results/`, the tests included; no exclusion needed | (this commit) |
 | 2026-11-16 | S1 | `Docs::test_changelog_has_the_release`'s README pin pattern takes any pre-release (`alpha|beta|rc`) | It matched `0.2.0-alpha.N` only, so the beta pins went unseen | (this commit) |
+| 2026-11-16 | S3 | None; the results | `make check` OK (444 tests); `claude plugin validate .` passes (warnings: no icon, root CLAUDE.md); `git diff --name-only origin/main` lists only R-1 to R-5's files and `.aiops/0008-*`; eval `profile-by-setup-command` (`--allow-tools Bash Write Edit`, 3 runs per arm, `evals/results/2026-11-16T16-25-12-478Z`): with the plugin 1.00 (asks-for-setup-command PASS ×3, config-unchanged ✓ ×3), without 0.67, Δ +0.33, $0.88 | (this commit) |
