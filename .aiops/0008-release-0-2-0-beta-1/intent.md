@@ -1,11 +1,15 @@
 ---
 id: 0008
 title: Release 0.2.0-beta.1
-status: Draft          # Draft → Approved (human types `Intent Approved 0008`) · Closed
+status: Approved
 owner: zoujagger
 initiator: zoujagger (after PR #19 and #20 merged intent 0007)
 source: the maintainer's decision to release 0.2.0-beta.1 (2026-11-16)
 created: 2026-11-16
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-11-16T16:16:15Z
+approved-via: cli
+approved-sha256: 2eae541c298ab3f934322b35144427ba18d20cfc617eb99c5f09b5b32a97f3e0
 ---
 
 # Intent: Release 0.2.0-beta.1
