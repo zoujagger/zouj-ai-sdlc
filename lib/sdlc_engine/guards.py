@@ -311,11 +311,14 @@ ENGINE_SH_RE = re.compile(  # 0007 r8: a run of a script named engine.sh; _plugi
 )
 ENGINE_EVENTS = r"(prompt|pre-bash|pre-edit|post-edit|session-start)"
 ENGINE_EVENT_RE = re.compile(  # 0007 r12: whatever its name, a script run with an engine event as its first argument
-    rf"{CMD_POS}({SHELL_PREFIX})?(?P<path>[^\s;&|()<>]+)\s+{ENGINE_EVENTS}(?=\s|$|[;&|)<>])"
+    rf"{CMD_POS}(?P<sh>{SHELL_PREFIX})?(?P<path>[^\s;&|()<>]+)\s+{ENGINE_EVENTS}(?=\s|$|[;&|)<>])"
 )
 DIR_ELSEWHERE_RE = re.compile(r"\bCDPATH\b|\benv\b[^;&|\n]*\s(-C|--chdir\b)")  # r11: cd/pushd aren't the only ways
 DIR_CMD_RE = re.compile(r"(^|[\s;&|(])(?P<cmd>cd|pushd|popd)(?P<args>(\s+[^\s;&|)<>]+)*)")
 CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
+SHELL_RUN_RE = re.compile(  # 0007 r13: a shell or source and the rest of its simple command, whatever its options
+    rf"{CMD_POS}(?P<sh>(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh|source|\.)(?P<rest>(\s+[^;&|\n]*)?)"
+)
 PLUGIN_DIR_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/")
 UNREADABLE_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/|[$`*?\[{]")  # the plugin's, or unreadable
 HOOK_WORD_RE = re.compile(r"\bhook\b")
@@ -368,14 +371,36 @@ def _plugin_engine_sh(plain, cwd):
                     return True
                 base = base / Path(d).expanduser()
             target = (base / Path(path).expanduser()).resolve()
-            return target == ours_path or not target.is_file() or (ours is not None and target.read_bytes() == ours)
+            return target == ours_path or not target.is_file() or same_as_ours(target)
         except (OSError, RuntimeError):  # an unknown ~user, an unreadable file: refuse as the plugin's
             return True
 
+    def same_as_ours(target):  # sizes first, so a large file isn't read on every Bash call (r13)
+        return ours is not None and target.stat().st_size == len(ours) and target.read_bytes() == ours
+
+    for m in SHELL_RUN_RE.finditer(plain):  # r13: every word a shell or source is given, options or not
+        for word in m.group("rest").split():
+            word = re.sub(r"^[0-9]*[<>]+", "", word)
+            if not word or word.startswith(("-", "+")) and "/" not in word:
+                continue
+            name = word.rsplit("/", 1)[-1]
+            if PLUGIN_DIR_RE.search(word) or name == "engine.sh":
+                if PLUGIN_DIR_RE.search(word) or ours_or_unreadable(word, m.start("rest")):
+                    return True
+                continue
+            try:  # a bare name is read from the cwd first (`bash run prompt`, run -> the plugin's script)
+                base = Path(cwd)
+                if "$" not in word and not re.search(r"[*?\[{`]", word):
+                    target = (base / Path(word).expanduser()).resolve()
+                    if target.is_file() and (target == ours_path or same_as_ours(target)):
+                        return True
+            except (OSError, RuntimeError):
+                continue
+
     for m in ENGINE_EVENT_RE.finditer(plain):  # r12: the event decides, not the name
         path = m.group("path")
-        if "/" not in path and not UNREADABLE_PATH_RE.search(path) and path != "engine.sh":
-            continue  # a command found on PATH; the plugin's hooks directory is never on it
+        if not m.group("sh") and "/" not in path and not UNREADABLE_PATH_RE.search(path) and path != "engine.sh":
+            continue  # a command found on PATH; the plugin's hooks directory is never on it (not after a shell, r13)
         if ours_or_unreadable(path, m.start("path")):
             return True
     for m in ENGINE_SH_RE.finditer(plain):

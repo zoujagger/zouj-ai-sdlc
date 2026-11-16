@@ -950,16 +950,16 @@ def hook_profile(data, m):
     elif not session or project_root(session) != root:
         msg = (
             "profile NOT set: the setup command acts only on the session's repo "
-            f"({setup._shown(session or 'unknown')}), and the prompt's working directory resolves to "
-            f"{setup._shown(str(root))}. Nothing was written. Type it from the session's repo, or run in your own "
+            f"({setup.printable(session or 'unknown')}), and the prompt's working directory resolves to "
+            f"{setup.printable(str(root))}. Nothing was written. Type it from the session's repo, or run in your own "
             f"terminal there: `{lifecycle.human_command(f'setup --profile {name}')}`."
         )
     elif any(git(Path(d), "config", "core.worktree") for d in (session, data.get("cwd") or session)):
         msg = (  # r9: it points git at another work tree, so both sides of the check above would name that one
             f"profile NOT set: this repo's git config sets core.worktree, which points git at another directory: "
-            f"the session's repo {setup._shown(session)} resolves to {setup._shown(str(root))}. Nothing was written. "
-            "Remove it (`git config --unset core.worktree`) and type the command again, or run in your own terminal "
-            "there: "
+            f"the session's repo {setup.printable(session)} resolves to {setup.printable(str(root))}. Nothing was "
+            "written. Remove it (`git config --unset core.worktree`) and type the command again, or run in your own "
+            "terminal there: "
             f"`{lifecycle.human_command(f'setup --profile {name}')}`."
         )
     else:
@@ -968,7 +968,7 @@ def hook_profile(data, m):
     # agent that planted a signer or an identity can't keep them from the person they warn. The notice is built
     # apart (setup.Reply), never cut out of text that holds the repo's own strings (r9).
     notice = getattr(msg, "notice", msg).strip()
-    notice = "\n".join(setup._shown(line) for line in notice.split("\n"))  # refusals quote repo strings too (r10)
+    notice = "\n".join(setup.printable(line) for line in notice.split("\n"))  # refusals quote repo strings too (r10)
     out(
         json.dumps(
             {

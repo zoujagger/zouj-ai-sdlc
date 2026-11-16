@@ -752,6 +752,14 @@ def approval_in_history(root):
     return None
 
 
+def _differs(root, rel):
+    """True when the kept file isn't the plugin's template byte for byte (or can't be read)."""
+    try:
+        return (root / rel).read_bytes() != (cli.TEMPLATES / "scaffold" / rel).read_bytes()
+    except OSError:
+        return True
+
+
 class KeptList(list):
     """The files scaffold_first wrote, with `.kept`: the scaffold files that existed and were kept (0007 r12)."""
 
@@ -780,7 +788,7 @@ def scaffold_first(root, name):
         lifecycle.record(root, written, profile=name, parts=[])
     except OSError as exc:
         return written, cli.write_failure(exc, written)  # the caller says what was written
-    written.kept = [rel for act, rel in actions if act == "keep"]  # r12: named to the human (KeptList)
+    written.kept = [rel for act, rel in actions if act == "keep" and _differs(root, rel)]  # r12/r13: named to the human
     return written, None
 
 
@@ -811,11 +819,13 @@ def set_first_profile(root, name, cwd=None):
     if not initialized(root):  # a fresh repo: the core scaffold first (spec R-2a)
         if cwd and Path(cwd).resolve() != root.resolve():
             return False, (
-                f"profile NOT set: setup writes the scaffold only at the top of the work tree ({_shown(str(root))}), "
-                f"and the prompt's directory is {_shown(str(cwd))}. Nothing was written. Open Claude Code at the repo's "
-                f"top and type the command again, or run in your own terminal there: `{terminal}`."
+                "profile NOT set: setup writes the scaffold only at the top of the work tree "
+                f"({printable(str(root))}), and the prompt's directory is {printable(str(cwd))}. Nothing was "
+                "written. Open Claude Code at the repo's top and type the command again, or run in your own terminal "
+                f"there: `{terminal}`."
             )
         created, why = scaffold_first(root, name)
+        why = why and printable(why)  # r13: it quotes paths and OS errors
         if why and created:  # r12: typed again, the command would take the initialized path and not finish
             return False, (
                 f"profile NOT set: {why}. Fix the cause, ask Claude to run `sdlc setup --yes` (it creates only the "
@@ -874,7 +884,7 @@ def set_first_profile(root, name, cwd=None):
     steps = steps_for_human(root, name, pending, review, install=False)
     check = (
         "Review before committing (human-owned, in no commit, not what setup writes; left out of the commit "
-        "below): " + ", ".join(_shown(f) for f in review) + "\n"
+        "below): " + ", ".join(printable(f) for f in review) + "\n"
         if review
         else ""
     )
@@ -893,10 +903,10 @@ def set_first_profile(root, name, cwd=None):
     if kept:  # r12: the agent may have committed them while the gates were dormant (a CI audit that runs `true`)
         made += (
             "Kept existing, NOT the plugin's version: compare each with the plugin's templates/scaffold/ before you "
-            "push (the CI audit and CODEOWNERS especially):\n" + "\n".join(f"  = {_shown(f)}" for f in kept) + "\n"
+            "push (the CI audit and CODEOWNERS especially):\n" + "\n".join(f"  = {printable(f)}" for f in kept) + "\n"
         )
     notice = (
-        f"profile SET: {name} in {_shown(str(root))}. From now on an approval is proven by {PROOF[name]}. "
+        f"profile SET: {name} in {printable(str(root))}. From now on an approval is proven by {PROOF[name]}. "
         f"{note}\n{made}"
         + _identity_note(root)
         + _trust_lists(root)
@@ -925,7 +935,7 @@ def _identity_note(root):
     if not local:
         return ""
     return (
-        f"Set-By names {_shown(approvals.approver(root))}, taken from this repo's own git config "
+        f"Set-By names {printable(approvals.approver(root))}, taken from this repo's own git config "
         f"({', '.join(local)}), not your global identity: check it before you push.\n"
     )
 
@@ -949,13 +959,13 @@ def _trust_lists(root):
             ]
             if lines:
                 more = len(lines) - TRUST_LIST_CAP  # a huge planted list can't bury the warnings (0007 r8)
-                shown = "\n".join(f"    {_shown(ln)}" for ln in lines[:TRUST_LIST_CAP])
+                shown = "\n".join(f"    {printable(ln)}" for ln in lines[:TRUST_LIST_CAP])
                 if more > 0:
                     shown += f"\n    (+{more} more, see {rel})"
                 out.append(f"{rel} (check that you trust every line):\n" + shown)
     return "".join(f"{block}\n" for block in out)
 
 
-def _shown(line):
+def printable(line):
     """line with every non-printable character escaped (\\x1b…), so a planted line can't hide itself in a terminal."""
     return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in line)

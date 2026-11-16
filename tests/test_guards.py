@@ -60,6 +60,14 @@ ENGINE_SH_FORMS = (  # the plugin's hook wrapper run by the agent (0007 r8): eve
     "$f pre-bash < p.json",
     "bash ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/run prompt < p.json",
     "hooks/e* session-start < p.json",
+    # 0007 r13 MAJOR: a shell option with a separate argument, and a bare name a shell reads from the cwd
+    "bash -O extglob $CLAUDE_PLUGIN_ROOT/hooks/engine.sh prompt < p.json",
+    "bash +O extglob hooks/engine.sh prompt < p.json",
+    "bash --rcfile /dev/null hooks/engine.sh prompt < p.json",
+    "bash --init-file /dev/null ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/engine.sh prompt < p.json",
+    'bash -O extglob -c "$CLAUDE_PLUGIN_ROOT/hooks/engine.sh prompt" < p.json',
+    "cd hooks && bash engine.sh prompt < p.json",
+    "ln -s hooks/engine.sh run; bash run prompt < p.json",
 )
 SDLC_GLOB_FORMS = (  # 0007 r11: a glob in the sdlc command word, behind python's own options
     "python3 -I ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/bin/sdl? hook prompt < p.json",
@@ -77,6 +85,8 @@ PROJECT_ENGINE_SH = (  # 0007 r9 MAJOR: a project's own engine.sh is not the plu
     "make prompt",
     "npm run prompt",
     "bash scripts/engine.sh prompt",
+    "bash -O extglob scripts/engine.sh build",
+    "bash --rcfile /dev/null -i",
     'git commit -m "x; ./engine.sh"',
     "cat hooks/engine.sh",
     "grep -n prompt hooks/engine.sh",
