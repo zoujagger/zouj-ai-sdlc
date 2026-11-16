@@ -1,92 +1,52 @@
 <!-- PR description for intent 0007, generated in state 5. `gh pr create --body-file` it. -->
-## First run in five minutes (profile by phrase, terminal command, core scaffold)
+## 0007 follow-up: `/zouj-ai-sdlc:setup <profile>` replaces the profile phrase; review rounds 4-15
 
 **Intent:** `.aiops/0007-first-run/` ([intent](intent.md) · [spec](spec.md) · [plan](plan.md) · [review](review.md))
-**Review:** PASS, 92/100 at `7437154` (round 3). Rounds 1 (86) and 2 (88) also passed; their MEDIUM, M1 and L1
-were fixed before the merge
+**Review:** round 15 CHANGES_REQUESTED, 91/100 at `9b068a1`. Its one blocker, a false positive, is fixed in
+`2ef6811`. A round 16 was started on that commit and stopped by the human before it reported. The human decides
+the merge.
+
+PR #18 merged the first part of 0007 at round 3 (`2da5b05`). This PR carries everything after it.
 
 ### What and why
-A newcomer on 0.2.0-alpha.3 couldn't finish the guided setup inside Claude Code. The profile they picked became a
-terminal step, the terminal command was hard to find, and the scaffold added workflows for stages they hadn't
-reached. This PR adds:
-- **Profile by phrase.** The human types `Setup Profile solo|team|strict` as the whole prompt. The prompt hook sets
-  the repo's first profile in `.aiops/config.json` and commits that file alone, unsigned, with `AIOps-Profile:` and
-  `Set-By:` trailers. It works only while the config is the untouched template and nothing is approved, in the
-  files or the history. The agent still can't choose a profile, and a later change stays a terminal run
-  ([ADR 0003](../../docs/adr/0003-first-profile-by-typed-phrase.md)).
-- **`sdlc where`.** It prints the command for the human's own terminal, and the status card shows it when a human
-  step is pending.
-- **A core scaffold.** `setup` and `init` write the 16 core files by default. Five opt-in parts (`review`,
-  `maintain`, `deploy`, `governance`, `issues`) come with `--with`. Install-state records the choice, and the
-  lifecycle commands respect it.
-- **Auto mode docs** for state 4 in the scaffold's `.aiops/README.md`.
-
-It ships with intent 0005 as **0.2.0-alpha.4**.
-
-**Reading the diff:** commit `7d8d4d0` is a style-only `ruff format` of `lib/` and `tests/` (+5123/−2069). For the
-feature alone, read `git diff origin/main 87d3ac8` plus `git show ccef62e 7437154`.
+- **The typed `/zouj-ai-sdlc:setup solo|team|strict` sets the first profile.** It replaces the `Setup Profile <name>`
+  phrase that PR #18 shipped. In a repo without `.aiops/` it first writes the core scaffold, creating missing files
+  only. It then commits `.aiops/config.json` alone, as `chore(aiops): Setup Profile <name>` (the spec was amended
+  and re-approved for this: `3f73ade`, AC-18). The hook acts only on the session's repo, while the config is the
+  untouched template and nothing has been approved in the files or the history
+  ([ADR 0003](../../docs/adr/0003-first-profile-by-typed-setup-command.md)).
+- **What the human sees directly (`systemMessage`).** The result, the identity and trust-list warnings, and the
+  human-owned files to review. Kept scaffold files that differ from the plugin's are named. The message is built
+  apart from the steps and escaped, so a planted `user.name`, a trust-list line, a directory name or a commit subject
+  can't cut it short or forge a line.
+- **G-GATE-07 runs in every repo.** It refuses `sdlc hook` and the plugin's own `hooks/engine.sh`. Without `.aiops/`,
+  only the hook-feeding forms are refused, so unrelated projects keep working. The check fails closed on paths it
+  can't read. It allows a project's own `engine.sh`, other plugins' scripts and ordinary shell globs.
+- **Hardening from the reviews:**
+  - `core.worktree` is refused.
+  - The commit and install-state hold the bytes the hook wrote.
+  - The approver identity is kept to one printable line.
+  - Trust lists are capped.
+  - `python3 -I …/sdl? hook` is refused (a gap on main too).
 
 ### Acceptance criteria
-- [x] AC-1: the phrase sets the first profile and commits the config alone (`tests/test_setup.py::FirstProfile::test_sets_and_commits_config_alone`, `tests/test_cli.py::ProfilePhrase::test_whole_prompt_sets_the_profile`)
-- [x] AC-2: approvals then go through the hook with no terminal step (`tests/test_playbook.py::PhraseWalk::test_solo`)
-- [x] AC-3: refused when a profile is set, the config was edited, or something was approved, in the files or the history (`tests/test_setup.py::FirstProfile::test_refused_*`)
-- [x] AC-4: phrase inside other text is ignored; unknown names list the profiles (`tests/test_cli.py::ProfilePhrase`)
-- [x] AC-5: dormant without `.aiops/` (`tests/test_cli.py::ProfilePhrase::test_dormant_without_aiops`)
-- [x] AC-6: works with the session markers set (`tests/test_cli.py::ProfilePhrase::test_works_with_the_session_markers_set`)
-- [x] AC-7: the agent's setup, Write and shell writes still can't change the config (`tests/test_cli.py::ProfilePhrase::test_agent_setup_and_writes_still_cannot_change_config`)
-- [x] AC-8: team and strict replies carry the signing and CODEOWNERS steps (`tests/test_setup.py::FirstProfile`)
-- [x] AC-9: `sdlc where` prints the terminal command anywhere (`tests/test_cli.py::Where`)
-- [x] AC-10: the card shows the terminal line when a human step is pending (`tests/test_cli.py::Card`)
-- [x] AC-11: a fresh setup or init writes the 16 core files, with no schedule and no secret (`tests/test_cli.py::InitParts`, `tests/test_setup.py::Parts`)
-- [x] AC-12: `--with <part>` adds only that part (`tests/test_cli.py::InitParts`, `tests/test_setup.py::Parts`)
-- [x] AC-13: lifecycle commands on a core-only repo don't offer opt-in files (`tests/test_lifecycle.py::CoreOnly`)
-- [x] AC-14: alpha.3 install-state reads as every part (`tests/test_lifecycle.py::Compat`, `tests/test_cli.py::InitParts`)
-- [x] AC-15: every scaffold file belongs to exactly one part (`tests/test_lifecycle.py::Parts`)
-- [x] AC-16: the playbook walk holds on core in every profile, also by phrase (`tests/test_playbook.py::CoreWalk`, `PhraseWalk`)
-- [x] AC-17: the scaffold explains auto mode (`tests/test_cli.py::Docs::test_scaffold_explains_auto_mode`)
-- [x] AC-18: the docs and skills offer the phrase, `where` and `--with` (`tests/test_cli.py::Docs`, `tests/test_setup.py::NoSandbox`)
-- [x] AC-19: release 0.2.0-alpha.4 (`tests/test_cli.py::Docs::test_changelog_has_the_release`, `make validate`)
-- [x] AC-20: a rerun after a partial setup completes what the first run chose (`tests/test_cli.py::InitParts`, `tests/test_setup.py::Parts`)
-- [x] AC-21: eval case `profile-by-phrase` (`tests/test_cli.py::Docs::test_profile_eval_case_is_complete`). In `make evals` it scored 1.00 with the plugin; on its own, 1.00 with the plugin vs 0.83 without (quoted in review.md)
+All 23 met. The round 15 verifier (`9b068a1`) found every AC test passing: `make check` (442), `make build` and
+`sdlc validate`. The per-AC table with test paths is in [review.md](review.md). AC-21's eval run (1.00 with the
+plugin, 0.67 without) is from S19 and was not re-run.
 
 ### Deviations from plan
-The plan's Deviation log has 24 rows. The main ones:
-- **S2:** "on disk" means byte-equal to a released file. 22 existing init tests now pass `--with all`.
-- **S5 / S7:** the engine changed more than planned. `config_written` is used, and the "type `Setup Profile <p>`"
-  step is printed for every profile, `team` included.
-- **S8:** at a gate, the card's terminal line is the full approve command.
-- **S11:** `make evals` needed `socat`, which the human installed. The full run was stopped at 6 of 7 cases;
-  `intent-first` scored 0.89, an older issue.
-- **S12:** main was merged into the branch instead of rebasing it, to keep the signed approval commits.
-- **Review r1:**
-  - A style-only `ruff format` commit. It leaves `bin/sdlc` out of `make format`, because ruff broke its sh/python
-    header.
-  - The history check that closes the round 1 MEDIUM.
-- **Review r2:** the card names the terminal approve command at a passphrase-key gate (M1), and a terminal
-  `setup --profile team` on a new config writes what the phrase writes (L1).
+No new Steps. Each review round (r4-r15) has a Deviation log row in [plan.md](plan.md) naming its red tests.
 
 ### Risks and rollback
-- **No migration.** Install-state without `parts` reads as every part, and no existing repo's files change.
-- **Accepted residual.** An agent that starts its own session (`claude -p "Setup Profile solo"`) can set the
-  profile in a repo with the template config and nothing approved. It leaves a visible commit, and CI reads the
-  config from the base branch. Recorded in `docs/architecture.md` Known gaps.
-- **Open review findings (round 3), none blocking:**
-  - MEDIUM (accepted residual): no pre-bash deterrent yet against `claude -p "<phrase>"`; the reviewer recommends
-    adding one rather than waiting for 0006.
-  - LOWs:
-    - R-2 condition 1 (the session's repo) isn't enforced
-    - the scaffold commit message names `team` before a profile is chosen
-    - `record()` doesn't save `parts` when no file was written
-    - the history scan runs on every status call and ignores `AIOps-Profile:`
-  - NITs: repeated `--with` in `init`, `--with all,<part>`, the eval grader, the bare `python3` fallback, one long
-    CHANGELOG line.
-- **Before the merge:** run the phrase by hand once in a `make dev` session (S7), and check `gh pr checks`, because
-  shellcheck didn't run locally.
-- **After the merge:** tag `v0.2.0-alpha.4` on the merge commit. Until then the README's pin doesn't resolve.
-- **Rollback:** revert the PR.
-  - A profile set by phrase stays a valid `config.json`.
-  - An alpha.3 engine ignores `parts`, lists the left-out parts' files as `new`, and its `upgrade` would offer to
-    create them.
+- **Accepted residual (Known gaps, `docs/architecture.md`).** An agent-started session (`claude -p "/zouj-ai-sdlc:setup
+  solo"`) and the fed-payload forms static parsing can't see can set a first profile, or open a gate under `solo`.
+  Those forms are a non-literal event, a renamed copy, stdin, or a script the agent wrote. What bounds them: the
+  untouched template config, nothing approved, one visible commit, and CI reading the config from the base branch.
+  Under `team` and `strict`, signing still holds. The planned pre-bash rule against agent-started sessions is on the
+  backlog.
+- **Not verified here.** `shellcheck` isn't installed locally, so CI is the shell lint. No one has yet typed the
+  command by hand in a `make dev` session, so do that once before the release.
+- **Rollback:** revert the PR. A profile set by the command is an ordinary `config.json`.
 
 ### Human decision
 The agent does not merge. A CODEOWNER reviews and decides.
