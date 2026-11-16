@@ -754,8 +754,13 @@ def approval_in_history(root):
 
 def _differs(root, rel):
     """True when the kept file isn't the plugin's template byte for byte (or can't be read)."""
-    try:
-        return (root / rel).read_bytes() != (cli.TEMPLATES / "scaffold" / rel).read_bytes()
+    try:  # r14: the bytes init writes (the ref placeholder rendered), not the raw template
+        rendered = (
+            (cli.TEMPLATES / "scaffold" / rel)
+            .read_bytes()
+            .replace(cli.REF_PLACEHOLDER.encode(), f"v{cli.plugin_version()}".encode())
+        )
+        return (root / rel).read_bytes() != rendered
     except OSError:
         return True
 

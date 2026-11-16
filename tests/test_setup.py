@@ -1356,6 +1356,20 @@ class FirstRun(SetupCase):
         self.assertIn(".github/CODEOWNERS", kept)
         self.assertNotIn("REVIEW.md", kept)
 
+    def test_kept_file_equal_to_what_init_writes_is_not_flagged(self):
+        # 0007 r14 MINOR: compare with the rendered template (__ZOUJ_SDLC_REF__ -> v<version>), as init writes it
+        d = self.repo("keptref")
+        rel = ".github/workflows/aiops-gates.yml"
+        raw = (cli.TEMPLATES / "scaffold" / rel).read_bytes()
+        self.assertIn(cli.REF_PLACEHOLDER.encode(), raw)  # the case only means something with a placeholder
+        (d / rel).parent.mkdir(parents=True)
+        (d / rel).write_bytes(raw.replace(cli.REF_PLACEHOLDER.encode(), f"v{cli.plugin_version()}".encode()))
+        (d / "REVIEW.md").write_text("ours\n")
+        notice = self.typed("/zouj-ai-sdlc:setup solo", d, full=True).get("systemMessage", "")
+        kept = notice.split("Kept existing", 1)[1]
+        self.assertNotIn("aiops-gates.yml", kept)
+        self.assertIn("REVIEW.md", kept)
+
     def test_scaffold_refusal_paths_are_escaped(self):
         # 0007 r13 MINOR: a refusal's reason (scaffold_root_problem, write_failure) quotes paths too
         from sdlc_engine import setup

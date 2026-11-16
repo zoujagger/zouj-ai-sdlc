@@ -304,7 +304,8 @@ ENGINE_RES = (  # matched against the command with quotes and backslashes remove
     re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
-SHELL_PREFIX = r"(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+"
+SHELLS_RE = r"(ba|z|da|k|fi|a|mk|ya|c|tc)?sh"  # r14: ash, mksh, yash, csh, tcsh too
+SHELL_PREFIX = rf"(\S*/)?((busybox|su)\s+)?{SHELLS_RE}\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+"
 ENGINE_SH_RE = re.compile(  # 0007 r8: a run of a script named engine.sh; _plugin_engine_sh decides if it's ours
     rf"{CMD_POS}({SHELL_PREFIX})?"
     rf"(?P<path>[^\s;&|()<>]*(engine\.sh|[*?\[{{$])[^\s;&|()<>]*)"  # r11: a glob or variable in the name too
@@ -317,7 +318,7 @@ DIR_ELSEWHERE_RE = re.compile(r"\bCDPATH\b|\benv\b[^;&|\n]*\s(-C|--chdir\b)")  #
 DIR_CMD_RE = re.compile(r"(^|[\s;&|(])(?P<cmd>cd|pushd|popd)(?P<args>(\s+[^\s;&|)<>]+)*)")
 CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
 SHELL_RUN_RE = re.compile(  # 0007 r13: a shell or source and the rest of its simple command, whatever its options
-    rf"{CMD_POS}(?P<sh>(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh|source|\.)(?P<rest>(\s+[^;&|\n]*)?)"
+    rf"{CMD_POS}(?P<sh>(\S*/)?((busybox|su)\s+)?{SHELLS_RE}|source|\.)(?P<rest>(\s+[^;&|\n]*)?)"
 )
 PLUGIN_DIR_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/")
 UNREADABLE_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/|[$`*?\[{]")  # the plugin's, or unreadable
@@ -384,19 +385,24 @@ def _plugin_engine_sh(plain, cwd):
             if not word or word.startswith(("-", "+")) and "/" not in word:
                 continue
             name = word.rsplit("/", 1)[-1]
-            if PLUGIN_DIR_RE.search(word) or name == "engine.sh":
-                if PLUGIN_DIR_RE.search(word) or ours_or_unreadable(word, m.start("rest")):
+            if name == "engine.sh":  # resolved from the cwd and any cd before it; fails closed
+                if ours_or_unreadable(word, m.start("rest")):
                     return True
                 continue
-            try:  # a bare name is read from the cwd first (`bash run prompt`, run -> the plugin's script)
-                base = Path(cwd)
-                if "$" not in word and not re.search(r"[*?\[{`]", word):
-                    target = (base / Path(word).expanduser()).resolve()
-                    if target.is_file() and (target == ours_path or same_as_ours(target)):
-                        return True
+            if re.search(r"[$`*?\[{]", name):  # r14: a name that could expand to engine.sh
+                pattern = re.sub(r"\{[^}]*\}", "*", re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$\w*|`[^`]*`", "*", name))
+                literal = re.sub(r"[*?]|\[[^\]]*\]", "", pattern)
+                if fnmatch.fnmatchcase("engine.sh", pattern) and (
+                    len(literal) >= 4 or PLUGIN_DIR_RE.search(word) or "$" in word[: -len(name) or None]
+                ):
+                    return True
+                continue
+            try:  # a literal path, or a bare name read from the cwd first (`bash run prompt`, run -> ours)
+                target = (Path(cwd) / Path(word).expanduser()).resolve()
+                if target.is_file() and (target == ours_path or same_as_ours(target)):
+                    return True
             except (OSError, RuntimeError):
                 continue
-
     for m in ENGINE_EVENT_RE.finditer(plain):  # r12: the event decides, not the name
         path = m.group("path")
         if not m.group("sh") and "/" not in path and not UNREADABLE_PATH_RE.search(path) and path != "engine.sh":
