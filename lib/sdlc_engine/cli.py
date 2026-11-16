@@ -949,15 +949,17 @@ def hook_profile(data, m):
         _ok, msg = setup.set_first_profile(root, name)
     elif not session or project_root(session) != root:
         msg = (
-            f"profile NOT set: the setup command acts only on the session's repo ({session or 'unknown'}), and the "
-            f"prompt's working directory resolves to {root}. Nothing was written. Type it from the session's repo, "
-            f"or run in your own terminal there: `{lifecycle.human_command(f'setup --profile {name}')}`."
+            "profile NOT set: the setup command acts only on the session's repo "
+            f"({setup._shown(session or 'unknown')}), and the prompt's working directory resolves to "
+            f"{setup._shown(str(root))}. Nothing was written. Type it from the session's repo, or run in your own "
+            f"terminal there: `{lifecycle.human_command(f'setup --profile {name}')}`."
         )
     elif any(git(Path(d), "config", "core.worktree") for d in (session, data.get("cwd") or session)):
         msg = (  # r9: it points git at another work tree, so both sides of the check above would name that one
             f"profile NOT set: this repo's git config sets core.worktree, which points git at another directory: "
-            f"the session's repo {session} resolves to {root}. Nothing was written. Remove it "
-            "(`git config --unset core.worktree`) and type the command again, or run in your own terminal there: "
+            f"the session's repo {setup._shown(session)} resolves to {setup._shown(str(root))}. Nothing was written. "
+            "Remove it (`git config --unset core.worktree`) and type the command again, or run in your own terminal "
+            "there: "
             f"`{lifecycle.human_command(f'setup --profile {name}')}`."
         )
     else:

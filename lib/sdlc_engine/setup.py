@@ -752,6 +752,12 @@ def approval_in_history(root):
     return None
 
 
+class KeptList(list):
+    """The files scaffold_first wrote, with `.kept`: the scaffold files that existed and were kept (0007 r12)."""
+
+    kept = ()
+
+
 def scaffold_first(root, name):
     """(created, None) after writing the core scaffold into a repo with no .aiops/, as a human's terminal
     `sdlc setup --profile <name> --yes` would with no --with (spec R-2a), or ([], why) with nothing written. Only
@@ -768,12 +774,13 @@ def scaffold_first(root, name):
     links = cli.symlink_refusal(root, actions)
     if links:
         return [], links
-    written = []
+    written = KeptList()
     try:
         cli.apply_init(root, actions, written)
         lifecycle.record(root, written, profile=name, parts=[])
     except OSError as exc:
         return written, cli.write_failure(exc, written)  # the caller says what was written
+    written.kept = [rel for act, rel in actions if act == "keep"]  # r12: named to the human (KeptList)
     return written, None
 
 
@@ -804,14 +811,20 @@ def set_first_profile(root, name, cwd=None):
     if not initialized(root):  # a fresh repo: the core scaffold first (spec R-2a)
         if cwd and Path(cwd).resolve() != root.resolve():
             return False, (
-                f"profile NOT set: setup writes the scaffold only at the top of the work tree ({root}), and the "
-                f"prompt's directory is {cwd}. Nothing was written. Open Claude Code at the repo's top and type the "
-                f"command again, or run in your own terminal there: `{terminal}`."
+                f"profile NOT set: setup writes the scaffold only at the top of the work tree ({_shown(str(root))}), "
+                f"and the prompt's directory is {_shown(str(cwd))}. Nothing was written. Open Claude Code at the repo's "
+                f"top and type the command again, or run in your own terminal there: `{terminal}`."
             )
         created, why = scaffold_first(root, name)
+        if why and created:  # r12: typed again, the command would take the initialized path and not finish
+            return False, (
+                f"profile NOT set: {why}. Fix the cause, ask Claude to run `sdlc setup --yes` (it creates only the "
+                "missing files), then type the command again, or run in your own terminal: "
+                f"`{lifecycle.human_command(f'setup --profile {name}')}`."
+            )
         if why:
             return False, (
-                f"profile NOT set: {why}{'' if created else '. Nothing was written'}. Fix it and type the command "
+                f"profile NOT set: {why}. Nothing was written. Fix it and type the command "
                 f"again, or run in your own terminal: `{lifecycle.human_command(f'setup --profile {name}')}`."
             )
     ok, why = no_profile_yet(root)
@@ -866,8 +879,10 @@ def set_first_profile(root, name, cwd=None):
         else ""
     )
     files = [f for f in created if f != ".gitignore"]
+    kept = [f for f in getattr(created, "kept", ()) if f != ".gitignore"]
     made = (
-        f"Created the core scaffold ({len(files)} files; no existing file changed"
+        f"Created the core scaffold ({len(files)} files"
+        + (f"; {len(kept)} existing kept as they are, listed below" if kept else "")
         + (", and the engine-state lines were added to .gitignore" if ".gitignore" in created else "")
         + "):\n"
         + "\n".join(f"  + {f}" for f in files)
@@ -875,6 +890,11 @@ def set_first_profile(root, name, cwd=None):
         if created
         else ""
     )
+    if kept:  # r12: the agent may have committed them while the gates were dormant (a CI audit that runs `true`)
+        made += (
+            "Kept existing, NOT the plugin's version: compare each with the plugin's templates/scaffold/ before you "
+            "push (the CI audit and CODEOWNERS especially):\n" + "\n".join(f"  = {_shown(f)}" for f in kept) + "\n"
+        )
     notice = (
         f"profile SET: {name} in {_shown(str(root))}. From now on an approval is proven by {PROOF[name]}. "
         f"{note}\n{made}"

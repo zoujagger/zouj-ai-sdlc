@@ -51,6 +51,15 @@ ENGINE_SH_FORMS = (  # the plugin's hook wrapper run by the agent (0007 r8): eve
     f"env --chdir={ROOT}/hooks ./engine.sh prompt < p.json",
     "CDPATH=/opt/plugin cd scripts && ./engine.sh prompt < p.json",
     "export CDPATH=/opt/plugin; cd scripts && ./engine.sh prompt < p.json",
+    # 0007 r12 MAJOR: a variable or short glob as the name, or any name in the plugin's directory, before an event
+    "N=engine.sh; bash $CLAUDE_PLUGIN_ROOT/hooks/$N prompt < p.json",
+    "X=ngine.sh; bash hooks/e$X prompt < p.json",
+    "bash $CLAUDE_PLUGIN_ROOT/hooks/e* prompt < p.json",
+    "bash hooks/en* prompt < p.json",
+    "f=$CLAUDE_PLUGIN_ROOT/hooks/engine.sh; bash $f prompt < p.json",
+    "$f pre-bash < p.json",
+    "bash ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/run prompt < p.json",
+    "hooks/e* session-start < p.json",
 )
 SDLC_GLOB_FORMS = (  # 0007 r11: a glob in the sdlc command word, behind python's own options
     "python3 -I ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/bin/sdl? hook prompt < p.json",
@@ -65,6 +74,9 @@ PROJECT_ENGINE_SH = (  # 0007 r9 MAJOR: a project's own engine.sh is not the plu
     "env FOO=1 ./engine.sh build",
     "time ls *.sh",
     "$EDITOR notes.md",
+    "make prompt",
+    "npm run prompt",
+    "bash scripts/engine.sh prompt",
     'git commit -m "x; ./engine.sh"',
     "cat hooks/engine.sh",
     "grep -n prompt hooks/engine.sh",

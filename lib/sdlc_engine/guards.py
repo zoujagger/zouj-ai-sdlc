@@ -304,13 +304,19 @@ ENGINE_RES = (  # matched against the command with quotes and backslashes remove
     re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
+SHELL_PREFIX = r"(\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+"
 ENGINE_SH_RE = re.compile(  # 0007 r8: a run of a script named engine.sh; _plugin_engine_sh decides if it's ours
-    rf"{CMD_POS}((\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+)?"
+    rf"{CMD_POS}({SHELL_PREFIX})?"
     rf"(?P<path>[^\s;&|()<>]*(engine\.sh|[*?\[{{$])[^\s;&|()<>]*)"  # r11: a glob or variable in the name too
+)
+ENGINE_EVENTS = r"(prompt|pre-bash|pre-edit|post-edit|session-start)"
+ENGINE_EVENT_RE = re.compile(  # 0007 r12: whatever its name, a script run with an engine event as its first argument
+    rf"{CMD_POS}({SHELL_PREFIX})?(?P<path>[^\s;&|()<>]+)\s+{ENGINE_EVENTS}(?=\s|$|[;&|)<>])"
 )
 DIR_ELSEWHERE_RE = re.compile(r"\bCDPATH\b|\benv\b[^;&|\n]*\s(-C|--chdir\b)")  # r11: cd/pushd aren't the only ways
 DIR_CMD_RE = re.compile(r"(^|[\s;&|(])(?P<cmd>cd|pushd|popd)(?P<args>(\s+[^\s;&|)<>]+)*)")
 CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
+PLUGIN_DIR_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/")
 UNREADABLE_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/|[$`*?\[{]")  # the plugin's, or unreadable
 HOOK_WORD_RE = re.compile(r"\bhook\b")
 TRAILER_RE = re.compile(r"AIOps-Approval\s*:")
@@ -334,30 +340,25 @@ SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 
 
 def _plugin_engine_sh(plain, cwd):
-    """True when the command may run the plugin's hooks/engine.sh (0007 r8-r10). It fails closed: a script named
-    engine.sh is let through only when its path, from the cwd and every `cd`/`pushd` before it, resolves to an
-    existing file that is neither the plugin's nor byte-equal to it. A path under $CLAUDE_PLUGIN_ROOT or
-    ~/.claude/plugins/, a variable, a glob, `popd`, `cd -`, a bare `cd` or an unknown home counts as the plugin's."""
+    """True when the command may run the plugin's hooks/engine.sh (0007 r8-r12). It fails closed. A script run with
+    an engine event as its first argument (`prompt`, `pre-bash`, …), or named engine.sh, runs only when its path is
+    literal and, from the cwd and every `cd`/`pushd` before it, resolves to an existing file that is neither the
+    plugin's nor byte-equal to it. A bare name with no `/` before an event is a PATH command (`make prompt`). The
+    plugin's directory, a variable, a glob, `popd`, `cd -`, a bare `cd`, `CDPATH`, `env -C` or an unknown home counts
+    as the plugin's; so does any name that could expand to engine.sh (`engine.s?`)."""
     ours_path = (PLUGIN_ROOT / "hooks" / "engine.sh").resolve()
     try:
         ours = ours_path.read_bytes()
     except OSError:
         ours = None
     home = str(Path.home())
-    for m in ENGINE_SH_RE.finditer(plain):
-        path = m.group("path")
-        name = path.rsplit("/", 1)[-1]
-        if name != "engine.sh":  # r11: a name with a glob or variable that could expand to engine.sh is ours
-            pattern = re.sub(r"\{[^}]*\}", "*", re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$\w*", "*", name))
-            literal = re.sub(r"[*?]|\[[^\]]*\]", "", pattern)
-            if len(literal) >= 4 and fnmatch.fnmatchcase("engine.sh", pattern):
-                return True
-            continue
-        if DIR_ELSEWHERE_RE.search(plain):
+
+    def ours_or_unreadable(path, start):
+        if DIR_ELSEWHERE_RE.search(plain) or UNREADABLE_PATH_RE.search(path):
             return True
         base = Path(cwd)
         try:
-            for c in DIR_CMD_RE.finditer(plain[: m.start("path")]):
+            for c in DIR_CMD_RE.finditer(plain[:start]):
                 args = [w for w in c.group("args").split() if w != "--" and not CD_OPTION_RE.match(w)]
                 args = [w for w in args if not re.match(r"^[0-9]*[<>]", w) and w not in ("/dev/null",)]
                 if c.group("cmd") == "popd" or not args or args[0].startswith(("-", "+")):
@@ -366,12 +367,29 @@ def _plugin_engine_sh(plain, cwd):
                 if UNREADABLE_PATH_RE.search(d):
                     return True
                 base = base / Path(d).expanduser()
-            if UNREADABLE_PATH_RE.search(path):
-                return True
             target = (base / Path(path).expanduser()).resolve()
-            if target == ours_path or not target.is_file() or (ours is not None and target.read_bytes() == ours):
-                return True
+            return target == ours_path or not target.is_file() or (ours is not None and target.read_bytes() == ours)
         except (OSError, RuntimeError):  # an unknown ~user, an unreadable file: refuse as the plugin's
+            return True
+
+    for m in ENGINE_EVENT_RE.finditer(plain):  # r12: the event decides, not the name
+        path = m.group("path")
+        if "/" not in path and not UNREADABLE_PATH_RE.search(path) and path != "engine.sh":
+            continue  # a command found on PATH; the plugin's hooks directory is never on it
+        if ours_or_unreadable(path, m.start("path")):
+            return True
+    for m in ENGINE_SH_RE.finditer(plain):
+        path = m.group("path")
+        name = path.rsplit("/", 1)[-1]
+        if name != "engine.sh":  # r11: a name with a glob or variable that could expand to engine.sh is ours
+            if PLUGIN_DIR_RE.search(path):
+                return True
+            pattern = re.sub(r"\{[^}]*\}", "*", re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$\w*", "*", name))
+            literal = re.sub(r"[*?]|\[[^\]]*\]", "", pattern)
+            if len(literal) >= 4 and fnmatch.fnmatchcase("engine.sh", pattern):
+                return True
+            continue
+        if ours_or_unreadable(path, m.start("path")):
             return True
     return False
 
