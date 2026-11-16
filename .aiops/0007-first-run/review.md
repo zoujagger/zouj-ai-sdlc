@@ -1,8 +1,8 @@
 ---
 id: 0007
 verdict: CHANGES_REQUESTED   # PASS | CHANGES_REQUESTED (the human still decides the merge)
-commit: 6b25573bac1d1d1604cd1ebc03fcac2f18d2e113
-score: 92/100
+commit: dd4c768f5c12cfe21dc58650c72b7271dd2855d0
+score: 89/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-16
 ---
@@ -15,7 +15,8 @@ created: 2026-11-16
      in f38003b. Round 8 (f38003b): CHANGES_REQUESTED 92, fixed
      in 93e86fe. Round 9 (93e86fe): CHANGES_REQUESTED 88, fixed
      in 5dc89c5. Round 10 (5dc89c5): CHANGES_REQUESTED 86, fixed
-     in 6b25573. Round 11 at 6b25573 (this file). Diff against origin/main. -->
+     in 6b25573. Round 11 (6b25573): CHANGES_REQUESTED 92, fixed
+     in dd4c768. Round 12 at dd4c768 (this file). Diff against origin/main. -->
 
 ## Summary
 0007 adds three things:
@@ -26,15 +27,16 @@ created: 2026-11-16
 
 It ships as 0.2.0-alpha.4.
 
-Round 11 results:
-- **Verifier:** VERIFIED (AC-21's live run carried over). `make check` (435), `make build` and `sdlc validate 0007` pass.
-- **Code-reviewer:** PASS, 71/75 on its four areas, no BLOCKER or MAJOR, two MINOR.
+Round 12 results:
+- **Verifier:** VERIFIED (AC-21's live run carried over). `make check` (436), `make build` and `sdlc validate 0007` pass.
+- **Code-reviewer:** no BLOCKER, **one MAJOR**, two MINOR.
 - **Security-reviewer:** PASS, 21/25, no CRITICAL or HIGH, **one MEDIUM**, one LOW.
 
-**Verdict: CHANGES_REQUESTED.** The total is 92 and every AC is met, but the r10 fail-closed check doesn't see a
-glob or variable inside the script's name (`…/hooks/engine.s?`, `…/e*.sh`, `engine.sh$IFS…`), so the docs' claim
-that globs fail closed is false and under `solo` the agent can still feed the prompt hook. As in rounds 5-10, a
-MEDIUM blocks PASS.
+**Verdict: CHANGES_REQUESTED.**
+- The r11 name heuristic still lets a variable or a short glob through as the script's name
+  (`bash $CLAUDE_PLUGIN_ROOT/hooks/$N prompt`, `…/hooks/e* prompt`).
+- In a fresh repo, the setup command doesn't name the scaffold files it kept, so a neutered `aiops-gates.yml` or
+  `CODEOWNERS` the agent committed beforehand goes unmentioned.
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
@@ -68,61 +70,66 @@ MEDIUM blocks PASS.
 without, Δ +0.33, $0.87. Since that run (`ae31453`) `evals/` and `skills/setup` are unchanged; the verifier could not re-run it (tool scope).
 
 ## Security
-Closed since round 10: `cd`/`pushd` options, `popd`, `cd -`, an unknown home and a missing directory (all refused),
-the escaped refusal `systemMessage`, the session repo named in the `core.worktree` refusal.
+Closed since round 11: globs and variables in a name with four literal characters, `busybox sh`/`fish`,
+`CDPATH`/`env -C`, `python3 -I …/sdl? hook`, the one-line approver.
 
-Round 11 findings:
-- [MEDIUM] `lib/sdlc_engine/guards.py:306-309`, `:337-340`: `ENGINE_SH_RE` needs the literal name `engine.sh`, so
-  `UNREADABLE_PATH_RE` never sees a glob or variable inside the name. Allowed in both repo kinds:
-  `bash $CLAUDE_PLUGIN_ROOT/hooks/engine.s? prompt`, `…/engin?.sh`, `…/engine.s[h]`, `…/e*.sh`,
-  `bash …/engine.sh$IFS'prompt'`, and `busybox sh …`/`fish …` (not in the shell list). The `sdlc` form has the same
-  blind spot on main: `python3 -I …/bin/sdl? hook prompt`. → Walk the command words: a word whose name holds a glob
-  or `$` and could match `engine.sh` (or `sdlc`) counts as the plugin's; `$` as a terminator; `busybox sh`, `fish`.
-- [LOW] `lib/sdlc_engine/setup.py:839`: a multi-line `user.name` (allowed repo-local, set while the gates are
-  dormant) adds trailer lines (`AIOps-Profile: strict`, a fake `AIOps-Approval:`) to the profile commit; `Approved-By`
-  in approvals has the same pattern. Nothing trusts them; the record misleads. → Refuse an identity with a newline or
-  non-printable character, in `set_first_profile` and `approve`.
+Round 12 findings:
+- [MAJOR, code-reviewer; MEDIUM in effect] `lib/sdlc_engine/guards.py:350-355`: a name that isn't literally
+  `engine.sh` takes the `fnmatch` branch, which needs 4 literal characters and `continue`s before the path check.
+  Allowed in both repo kinds: `N=engine.sh; bash $CLAUDE_PLUGIN_ROOT/hooks/$N prompt`, `bash …/hooks/e$X prompt`,
+  `bash $CLAUDE_PLUGIN_ROOT/hooks/e* prompt`, `…/hooks/en* prompt`, `f=…/engine.sh; bash $f prompt`. →
+  A narrower invariant: a command word (or shell/`source` argument) followed by an engine event (`prompt`,
+  `pre-bash`, …) runs only when its path is fully literal and resolves to an existing file other than the plugin's;
+  the plugin's directory in a path is refused whatever the name.
+- [MEDIUM] `lib/sdlc_engine/setup.py` `scaffold_first`/`set_first_profile`: kept scaffold files aren't named. The
+  agent commits `aiops-gates.yml` running `true` and `CODEOWNERS` `* @nobody` while the gates are dormant; the human's
+  `/zouj-ai-sdlc:setup team` says "no existing file changed" and lists only created files. The terminal `init` and
+  setup list kept files. → Name every kept file that differs from the template, escaped; test with a committed
+  non-template `aiops-gates.yml`.
+- [LOW] `cli.py` `hook_profile` and the top-of-work-tree refusal interpolate `cwd`/`root`/`session` raw, and the r10
+  escaping runs per line, so a directory named `x\nprofile SET: strict…` (the agent's Bash cwd persists into the
+  prompt payload) forges a line in the refusal. → `_shown()` each value at interpolation; test a newline in the cwd.
 
 Spec flags (security-reviewer):
 
 | Flag | Mitigated? | Evidence |
 |---|---|---|
-| A hook writes a human-owned file | Yes | session repo and `core.worktree` checks, `no_profile_yet`, `_commit_alone(data=)`; trailer injection LOW |
-| The hook writes the core scaffold without a preview (R-2a) | Yes | `scaffold_first`: `scaffold_root_problem`, Preflight, create-only `write_file`, `cwd == root` |
-| The agent prompts a session of its own | Accepted residual | Known gaps; the glob forms are a further, unlisted path to the same `solo` outcome (MEDIUM) |
-| The agent asks the human to type the command | Yes | skill text; a bare command previews |
-| The profile commit is unsigned in team/strict | Accepted | opens no gate; CI reads the base config |
+| A hook writes a human-owned file | Yes | session repo and `core.worktree` checks, `local_config_keys`, `no_profile_yet`, `_commit_alone(data=)`, one-line `approver()` |
+| The hook writes the core scaffold without a preview (R-2a) | Partly | missing files only, top of the work tree, quick Preflight; kept files go unmentioned (MEDIUM) |
+| The agent prompts a session of its own | Accepted residual | bounded as documented; the guard fails closed on most fed forms (MAJOR aside) |
+| The agent asks the human to type the command | Yes | skill text; the notice states the proof; a bare command previews |
+| The profile commit is unsigned in team/strict | Accepted | opens no gate; CI reads the base config; `_identity_note` |
 | `sdlc where` prints a home path | Yes | local only |
-| A core-only repo lacks the AI review and scheduled scan | Yes | preview and `list-installed` name the parts left out |
-| `systemMessage` integrity (r9/r10) | Yes | `setup.Reply`, escaped line by line, `test_refusal_is_escaped_for_the_human` |
+| A core-only repo lacks the AI review and scheduled scan | Yes | `parts=[]`; `list-installed` names the parts left out |
+| No change to secrets, lock, approval path, audit, allowed-commands | Yes | only G-GATE-07 widened |
 
 ## Plan conformance
-- **Steps:** all 20 are done and match the diff; the r10 row matches `6b25573` item by item.
+- **Steps:** all 20 are done and match the diff; r4-r11 are logged with their red runs.
 - **Scope:** nothing ships outside it.
-- **Stale link:** `pr.md:16` names `docs/adr/0003-first-profile-by-typed-phrase.md` (renamed); regenerate pr.md.
-- **Open:** the manual `make dev` check of the typed command.
+- **Open:** the manual `make dev` check of the typed command; `pr.md`'s stale ADR link.
 
 ## Test-first evidence
-Every step and review fix records its red run: S1-S20, r1, r2, r4-r10 (`6b25573`: 4 tests). Tests and code share
-each fix commit, so the red runs are recorded in text.
+Every step and review fix records its red run (S14-S20, r4-r11 by commit). The r11 tests cover only the forms they
+list, not the variable-name and short-glob forms.
 
 ## Fixes requested
-1. **[MEDIUM] globs and variables in the script's name** (Security above).
-2. **[LOW] a multi-line approver identity** (Security above).
+1. **[MAJOR] the `engine.sh` name heuristic** (Security above).
+2. **[MEDIUM] kept scaffold files unnamed** (Security above).
+3. **[LOW] raw paths in refusals** (Security above).
 
 ## Other findings (non-blocking)
-- [MINOR] `guards.py:334-366`: `env -C <plugin root> ./hooks/engine.sh`, `env --chdir=…`, and `CDPATH=<plugin root>
-  cd hooks && ./engine.sh` (inline or exported) run the plugin's script behind a decoy at the same relative path.
-  No worse than the documented copy-under-another-name gap. → Refuse them, or name them in Known gaps.
-- [MINOR] `cli.py:959`: a 153-column line. → Wrap.
+- [MINOR] `setup.py:811-815`: after a fresh-repo scaffold fails part-way, "type the command again" takes the
+  initialized path, which never finishes the scaffold (or refuses with different advice). → Say "ask Claude to run
+  `sdlc setup --yes` (it creates only the missing files), then type the command again"; test an `OSError` mid-write.
+- [MINOR] `guards.py:337-376`: `_plugin_engine_sh` has grown into a set of heuristics. → The event invariant above.
 - **Human, before the merge:** type `/zouj-ai-sdlc:setup solo` once in a `make dev` session in a scratch repo.
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 39 | Every AC met; the TUI check is still manual |
-| Security | 25 | 21 | Globs and variables in the script's name; the approver trailer injection |
-| Test quality & test-first | 20 | 18 | Red runs recorded; `env -C`/`CDPATH` and the glob forms untested |
+| Spec conformance | 40 | 38 | Every AC met; the TUI check is still manual |
+| Security | 25 | 20 | Lower of the two (20 and 21): the name heuristic, kept files unnamed, raw paths |
+| Test quality & test-first | 20 | 17 | The r11 tests miss the variable-name and short-glob forms |
 | Plan conformance | 10 | 10 | All divergences logged |
-| Maintainability | 5 | 4 | A long line; `_plugin_engine_sh` is getting dense |
-| **Total** | 100 | **92** | PASS needs ≥ 80, no BLOCKER or HIGH, every AC met; the MEDIUM blocks, as in rounds 5-10 |
+| Maintainability | 5 | 4 | `_plugin_engine_sh` heuristics |
+| **Total** | 100 | **89** | PASS needs ≥ 80, no BLOCKER or HIGH, every AC met; the MAJOR and the MEDIUM block |
