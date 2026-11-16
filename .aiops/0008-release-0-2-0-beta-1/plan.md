@@ -1,9 +1,13 @@
 ---
 id: 0008
 title: Release 0.2.0-beta.1
-status: Draft          # Draft → Approved (human types `Plan Approved 0008`: unlocks code)
+status: Approved
 spec: ./spec.md
 created: 2026-11-16
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-11-16T16:19:07Z
+approved-via: cli
+approved-sha256: 084edcf92656854d96935863e7fd004147139c36392d2290acc4ae8a9d0992d0
 ---
 
 # Plan: Release 0.2.0-beta.1
