@@ -33,7 +33,8 @@ lib/sdlc_engine/
   user-wide is safe. The safety guards (secret reads, force-push, history, production, and Edit/Write and shell writes to secrets
   outside the repo, the toolchain and the installed plugin) are always on: in a repo without `.aiops/`,
   `engine.sh` still runs `pre-bash`, and `check_bash` runs only those safety checks (`gates=False`) plus G-GATE-07's
-  hook-feeding forms (`sdlc hook`, the plugin's own `hooks/engine.sh`; a project's script of that name is not
+  hook-feeding forms (`sdlc hook`, the plugin's own `hooks/engine.sh`; a project's script of that name runs when
+  its path, after every `cd`/`pushd`, resolves to an existing file other than the plugin's; an unreadable path is
   refused). One prompt is the exception: the human's typed `/zouj-ai-sdlc:setup <profile>`, matched on the raw
   payload in `engine.sh` before python starts, sets up the repo and its first profile (ADR 0003). Every other prompt
   there exits 0 at once.
@@ -110,10 +111,12 @@ setup command.
   history), and leaves a visible commit; an approval phrase still needs the human's signature under `team` and
   `strict`. Under `solo` nothing does. Deleting the refs that hold the only approval commits (`update-ref -d`, a
   plumbing gap above) would pass the history check. A crafted payload piped into `sdlc hook prompt` or the plugin's
-  `hooks/engine.sh` (a path under `$CLAUDE_PLUGIN_ROOT` or `~/.claude/plugins/`, or a file byte-equal to it) is
-  refused by G-GATE-07 in every repo, `.aiops/` or not (0007 reviews r7-r9), as far as static parsing sees it: the
+  `hooks/engine.sh` is refused by G-GATE-07 in every repo, `.aiops/` or not (0007 reviews r7-r10). The check fails
+  closed: a script named `engine.sh` runs only when its path, from the cwd and every `cd`/`pushd` before it,
+  resolves to an existing file that isn't the plugin's or byte-equal to it; a variable, a glob, `popd`, `cd -` or an
+  unknown home counts as the plugin's (so `cd $PROJ && ./engine.sh` is refused too). Static parsing still misses the
   dynamic command words above, a copy or link under another name (`cp …/engine.sh e && bash e prompt`), the script
-  fed on stdin (`bash < …/engine.sh`) and its text run by `bash -c "$(cat …)"` aren't. The hook's warnings
+  fed on stdin (`bash < …/engine.sh`) and its text run by `bash -c "$(cat …)"`. The hook's warnings
   (`systemMessage`) reach a human only in the human's own session; in a session the agent starts, the human sees
   only the commit. To add: a pre-bash rule against starting a Claude session that carries a gate phrase or the
   setup command (found in the 0007 spec, rated MEDIUM in the PR #18 security review).

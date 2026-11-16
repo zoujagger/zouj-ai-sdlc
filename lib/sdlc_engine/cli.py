@@ -955,8 +955,8 @@ def hook_profile(data, m):
         )
     elif any(git(Path(d), "config", "core.worktree") for d in (session, data.get("cwd") or session)):
         msg = (  # r9: it points git at another work tree, so both sides of the check above would name that one
-            f"profile NOT set: this repo's git config sets core.worktree, which points git at another directory "
-            f"({root}). Nothing was written. Remove it (`git config --unset core.worktree`) and type the command "
+            f"profile NOT set: this repo's git config sets core.worktree, which points git at another directory: "
+            f"the session's repo {session} resolves to {root}. Nothing was written. Remove it (`git config --unset core.worktree`) and type the command "
             "again, or run in your own terminal there: "
             f"`{lifecycle.human_command(f'setup --profile {name}')}`."
         )
@@ -966,6 +966,7 @@ def hook_profile(data, m):
     # agent that planted a signer or an identity can't keep them from the person they warn. The notice is built
     # apart (setup.Reply), never cut out of text that holds the repo's own strings (r9).
     notice = getattr(msg, "notice", msg).strip()
+    notice = "\n".join(setup._shown(line) for line in notice.split("\n"))  # refusals quote repo strings too (r10)
     out(
         json.dumps(
             {

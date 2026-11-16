@@ -304,10 +304,12 @@ ENGINE_RES = (  # matched against the command with quotes and backslashes remove
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
 ENGINE_SH_RE = re.compile(  # 0007 r8: a run of a script named engine.sh; _plugin_engine_sh decides if it's ours
-    rf"{CMD_POS}((\S*/)?(ba|z|da|k)?sh\s+(-\S+\s+)*|(source|\.)\s+)?(?P<path>(\S*/)?engine\.sh)(\s|$|[;&|)])"
+    rf"{CMD_POS}((\S*/)?(ba|z|da|k)?sh\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+)?"
+    rf"(?P<path>(\S*/)?engine\.sh)(\s|$|[;&|)<>])"
 )
-CD_RE = re.compile(r"(^|[\s;&|(])cd\s+(?P<dir>[^\s;&|)]+)")
-PLUGIN_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/|[$`]")  # the plugin's own, or unreadable
+DIR_CMD_RE = re.compile(r"(^|[\s;&|(])(?P<cmd>cd|pushd|popd)(?P<args>(\s+[^\s;&|)<>]+)*)")
+CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
+UNREADABLE_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/|[$`*?\[{]")  # the plugin's, or unreadable
 HOOK_WORD_RE = re.compile(r"\bhook\b")
 TRAILER_RE = re.compile(r"AIOps-Approval\s*:")
 FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:|\w+=\S*AIOps-")  # printf 'AIOps-%s:', AIOps-$x:, m=AIOps-…
@@ -330,29 +332,36 @@ SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 
 
 def _plugin_engine_sh(plain, cwd):
-    """True when the command runs the plugin's hooks/engine.sh (0007 r8/r9): a path under $CLAUDE_PLUGIN_ROOT or
-    ~/.claude/plugins/, one the parser can't read, or one that resolves (from the cwd or a `cd` before it) to a file
-    byte-equal to the plugin's. A project's own engine.sh stays allowed."""
+    """True when the command may run the plugin's hooks/engine.sh (0007 r8-r10). It fails closed: a script named
+    engine.sh is let through only when its path, from the cwd and every `cd`/`pushd` before it, resolves to an
+    existing file that is neither the plugin's nor byte-equal to it. A path under $CLAUDE_PLUGIN_ROOT or
+    ~/.claude/plugins/, a variable, a glob, `popd`, `cd -`, a bare `cd` or an unknown home counts as the plugin's."""
+    ours_path = (PLUGIN_ROOT / "hooks" / "engine.sh").resolve()
     try:
-        ours = (PLUGIN_ROOT / "hooks" / "engine.sh").read_bytes()
+        ours = ours_path.read_bytes()
     except OSError:
         ours = None
+    home = str(Path.home())
     for m in ENGINE_SH_RE.finditer(plain):
         path = m.group("path")
-        cds = [c.group("dir") for c in CD_RE.finditer(plain[: m.start("path")])]
-        if PLUGIN_PATH_RE.search(path) or any(PLUGIN_PATH_RE.search(d) for d in cds):
-            return True
         base = Path(cwd)
-        for d in cds:
-            base = base / Path(d).expanduser()
-        target = (base / Path(path).expanduser()).resolve()
         try:
-            if target == (PLUGIN_ROOT / "hooks" / "engine.sh").resolve() or (
-                ours is not None and target.is_file() and target.read_bytes() == ours
-            ):
+            for c in DIR_CMD_RE.finditer(plain[: m.start("path")]):
+                args = [w for w in c.group("args").split() if w != "--" and not CD_OPTION_RE.match(w)]
+                args = [w for w in args if not re.match(r"^[0-9]*[<>]", w) and w not in ("/dev/null",)]
+                if c.group("cmd") == "popd" or not args or args[0].startswith(("-", "+")):
+                    return True  # back to a directory the parser didn't see
+                d = re.sub(r"^\$(HOME\b|\{HOME\})", lambda _: home, args[0])
+                if UNREADABLE_PATH_RE.search(d):
+                    return True
+                base = base / Path(d).expanduser()
+            if UNREADABLE_PATH_RE.search(path):
                 return True
-        except OSError:
-            continue
+            target = (base / Path(path).expanduser()).resolve()
+            if target == ours_path or not target.is_file() or (ours is not None and target.read_bytes() == ours):
+                return True
+        except (OSError, RuntimeError):  # an unknown ~user, an unreadable file: refuse as the plugin's
+            return True
     return False
 
 

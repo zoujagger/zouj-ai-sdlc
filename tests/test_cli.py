@@ -601,6 +601,7 @@ class SetupCommand(RepoCase):
         # 0007 r9 security LOW: core.worktree (allowed in repo-local config) makes git resolve the session's repo to
         # another one, so both sides of the session check would name that other repo
         other = Path(tempfile.mkdtemp(dir=self.root.parent))
+        self.addCleanup(shutil.rmtree, other, True)
         git(other, "init", "-q", "-b", "main")
         for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com")):
             git(other, "config", key, value)
@@ -610,6 +611,7 @@ class SetupCommand(RepoCase):
         ctx = self.context("/zouj-ai-sdlc:setup solo")
         self.assertIn("profile NOT set", ctx)
         self.assertIn("core.worktree", ctx)
+        self.assertIn(f"session's repo {self.root}", ctx)  # r10 NIT: named, not only the redirected directory
         self.assertEqual((other / CONFIG).read_bytes(), other_before)
         self.assertEqual((self.root / CONFIG).read_bytes(), self.before)
         git(self.root, "config", "--unset", "core.worktree")

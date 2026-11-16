@@ -49,7 +49,8 @@ The playbook workflow, the gates and what CI audits are unchanged.
 
 ### Security
 - **The prompt hook can't be fed by the agent, in any repo (`G-GATE-07`).** `sdlc hook` and the plugin's
-  `hooks/engine.sh` (run directly, through `bash`/`sh`, or sourced) are hook-only. In a repo without `.aiops/` only
+  `hooks/engine.sh` (run directly, through `bash`/`sh`, or sourced) are hook-only. A project's own `engine.sh` runs
+  when its path resolves to an existing file other than the plugin's; a path the guard can't read is refused. In a repo without `.aiops/` only
   these hook-feeding forms are refused, so an unrelated project can still mention the other subcommands; in an
   initialized repo every human-only engine command stays refused.
 - **Deleting a protected tree is blocked in every state (`G-FILE-05`).** This covers the repo itself, a directory
