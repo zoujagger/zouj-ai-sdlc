@@ -1,8 +1,8 @@
 ---
 id: 0007
 verdict: CHANGES_REQUESTED   # PASS | CHANGES_REQUESTED (the human still decides the merge)
-commit: 4b72255e9d1fc2230307c9e2f8060638455f23c1
-score: 86/100
+commit: 70dfd3dc79e74724f5d4c6c8bb1c344d08d3426d
+score: 88/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-16
 ---
@@ -17,7 +17,8 @@ created: 2026-11-16
      in 5dc89c5. Round 10 (5dc89c5): CHANGES_REQUESTED 86, fixed
      in 6b25573. Round 11 (6b25573): CHANGES_REQUESTED 92, fixed
      in dd4c768. Round 12 (dd4c768): CHANGES_REQUESTED 89, fixed
-     in 4b72255. Round 13 at 4b72255 (this file). Diff against origin/main. -->
+     in 4b72255. Round 13 (4b72255): CHANGES_REQUESTED 86, fixed
+     in 70dfd3d. Round 14 at 70dfd3d (this file). Diff against origin/main. -->
 
 ## Summary
 0007 adds three things:
@@ -28,14 +29,15 @@ created: 2026-11-16
 
 It ships as 0.2.0-alpha.4.
 
-Round 13 results:
-- **Verifier:** VERIFIED (AC-21's live run carried over). `make check` (439), `make build` and `sdlc validate 0007` pass.
-- **Code-reviewer:** CHANGES_REQUESTED, **one MAJOR** (HIGH-class for security), three MINOR.
-- **Security-reviewer:** PASS, 22/25, no CRITICAL, HIGH or MEDIUM, two LOW.
+Round 14 results:
+- **Verifier:** VERIFIED (AC-21's live run carried over). `make check` (441), `make build` and `sdlc validate 0007` pass.
+- **Code-reviewer:** CHANGES_REQUESTED 88, **one MAJOR** (a false positive), two MINOR.
+- **Security-reviewer:** PASS, 22/25, no CRITICAL, HIGH or MEDIUM, two LOW. The r13 MAJOR (shell options) is closed.
 
-**Verdict: CHANGES_REQUESTED.** A shell option that takes a separate argument (`bash -O extglob`, `+O`, `--rcfile f`,
-`--init-file f`) hides even the plugin's literal `hooks/engine.sh` from both guard regexes, so under `solo` a fed
-`Plan Approved NNNN` opens a gate. It is a literal form, not one of the documented dynamic gaps.
+**Verdict: CHANGES_REQUESTED.** The r13 shell-word check refuses any word under `~/.claude/plugins/` or naming
+`CLAUDE_PLUGIN_ROOT`, in every repo, so another plugin's `bash ~/.claude/plugins/cache/other/tool/scripts/build.sh`
+or `bash -c "ls ~/.claude/plugins/cache"` is blocked as G-GATE-07 with the wrong reason. Installing this plugin
+user-wide must not break other plugins.
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
@@ -69,60 +71,57 @@ Round 13 results:
 without, Δ +0.33, $0.87. Since that run (`ae31453`) `evals/` and `skills/setup` are unchanged; the verifier could not re-run it (tool scope).
 
 ## Security
-Closed since round 12: variables and short globs as the script's name (the engine-event invariant), kept scaffold
-files named, escaped paths in the session and top-of-tree refusals, the part-way failure advice.
+Closed since round 13: shell options with a separate argument (`-O`, `+O`, `--rcfile`, `--init-file`, `-c`), a bare
+name a shell reads from the cwd, the size check, escaped scaffold refusals.
 
-Round 13 findings:
-- [MAJOR, code-reviewer; HIGH-class] `lib/sdlc_engine/guards.py:307` `SHELL_PREFIX` skips only `-o <arg>` and
-  one-word options, so `bash -O extglob $CLAUDE_PLUGIN_ROOT/hooks/engine.sh prompt`, `bash +O extglob …`,
-  `bash --rcfile /dev/null …`, `bash --init-file /dev/null …` and `bash -O extglob -c "…/engine.sh prompt"` are
-  allowed in both repo kinds. → When the command word is a shell or `source`/`.`, check every later word of that
-  command: the plugin's directory, an `engine.sh`-like name, or a file resolving to the plugin's script is ours.
-- [LOW] The remaining fed-payload forms (a non-literal event, a copied `engine.sh`, a script file the agent wrote)
-  are the accepted `claude -p` residual in effect. → Say so as a class in Known gaps; stop adding name heuristics.
-- [LOW] `guards.py:375` reads any named file in full before comparing. → Compare sizes first.
+Round 14 findings:
+- [LOW] An inline `PATH=$PWD:$PATH run prompt`, with `run` a copy or link of the plugin's script, passes. Same class
+  as "a copy under another name" in Known gaps. → Name it as an example.
+- [LOW] `hook_profile` reads `CLAUDE_PROJECT_DIR` from its own environment, which a fed-payload form controls. →
+  Known gaps: the session-repo condition holds for a hook Claude Code started.
 
 Spec flags (security-reviewer):
 
 | Flag | Mitigated? | Evidence |
 |---|---|---|
-| A hook writes a human-owned file | Yes | session repo and `core.worktree` checks, `local_config_keys`, `no_profile_yet`, `_commit_alone(data=)`, one-line `approver()` |
-| The hook writes the core scaffold without a preview (R-2a) | Yes | missing files only, top of the work tree, quick Preflight; created and kept files listed |
-| The agent prompts a session of its own | Accepted residual | the common fed forms are blocked; the rest is the same class (LOW); the MAJOR is a literal form |
-| The agent asks the human to type the command | Yes | skill text; the notice states the proof; a bare command previews |
+| A hook writes a human-owned file | Yes | session repo and `core.worktree` checks, `no_profile_yet`, `_commit_alone(data=)`, one-line `approver()` |
+| The hook writes the core scaffold without a preview (R-2a) | Yes | missing files only, top of the work tree, quick Preflight; created and differing kept files listed |
+| The agent prompts a session of its own | Accepted residual | literal fed forms refused (probed); the rest documented as a class |
+| The agent asks the human to type the command | Yes | `PROOF` per profile; a bare command previews |
 | The profile commit is unsigned in team/strict | Accepted | opens no gate; CI reads the base config |
 | `sdlc where` prints a home path | Yes | local only |
 | A core-only repo lacks the AI review and scheduled scan | Yes | `parts=[]`; `list-installed` names the parts left out |
-| No change to secrets, lock, approval path, audit, allowed-commands | Yes | only G-GATE-07 widened |
 
 ## Plan conformance
-- **Steps:** all 20 are done and match the diff; r12's row matches `4b72255`.
-- **Scope:** nothing ships outside it.
-- **Open:** the manual `make dev` check of the typed command; `pr.md`'s stale ADR link.
+- **Steps:** all 20 are done; r13 is logged (`plan.md:334`).
+- **Unintended:** the block on any `.claude/plugins/` word is a side effect, not a logged behaviour (MAJOR).
+- **Open:** the manual `make dev` check; `pr.md`'s stale ADR link.
 
 ## Test-first evidence
-Every step and review fix records its red run (S14-S20, r4-r12). Code and tests share each fix commit.
+Every step and review fix records its red run (S14-S20, r4-r13). Gap: no must-allow test for another plugin's
+directory.
 
 ## Fixes requested
-1. **[MAJOR] shell options with a separate argument** (Security above).
+1. **[MAJOR] `lib/sdlc_engine/guards.py:381-390`**: a word in another plugin's directory is refused. → Count a
+   shell argument as ours only when its name is `engine.sh` (resolved, failing closed), a glob or variable name
+   that could expand to it, or a literal path resolving to the plugin's script or a byte-equal copy; must-allow
+   tests for another plugin's script and `bash -c "ls ~/.claude/plugins/cache"`, red first.
 
 ## Other findings (non-blocking)
-- [MINOR] `guards.py:377`: a bare name after a shell or `source` (`bash run prompt`) is read from the cwd first, so a
-  link `run` → the plugin's script passes. → Skip bare names only as the command word itself.
-- [MINOR] `setup.py:895`: kept files byte-equal to the template are labelled "NOT the plugin's version". → List only
-  those that differ.
-- [MINOR] `set_first_profile`'s `{why}` refusals (`scaffold_root_problem`'s `{root}`, `write_failure`'s OSError text)
-  aren't escaped. → `_shown()` them.
-- [MINOR] `cli.py` uses the private `setup._shown`. → A public name.
-- [LOW] Known gaps class statement and the file-size check (Security above).
+- [MINOR] `setup.py` `_differs` compares with the raw template, not what init writes (`__ZOUJ_SDLC_REF__` →
+  `v<version>`): an `aiops-gates.yml` equal to init's output is flagged, a raw-placeholder copy isn't. → Compare
+  with the rendered bytes.
+- [MINOR] `ash`, `mksh` (and `csh`/`tcsh`/`yash`) aren't shells to the guard; a modified copy or a written script
+  still passes (the documented class). → Add the shells.
+- [LOW] the two Known gaps examples (Security above).
 - **Human, before the merge:** type `/zouj-ai-sdlc:setup solo` once in a `make dev` session in a scratch repo.
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 36 | Every AC met; the hook-only invariant behind a spec flag has a literal bypass |
-| Security | 25 | 19 | The security reviewer's 22, less the HIGH-class literal bypass it missed |
-| Test quality & test-first | 20 | 17 | No option-with-argument forms in the guard tests |
-| Plan conformance | 10 | 10 | All divergences logged |
-| Maintainability | 5 | 4 | A private helper used across modules; two overlapping loops |
-| **Total** | 100 | **86** | PASS needs ≥ 80, no BLOCKER or HIGH, every AC met; the HIGH-class MAJOR blocks |
+| Spec conformance | 40 | 37 | Every AC met; the kept-files check compares the raw template |
+| Security | 25 | 22 | No opening; LOW examples of the documented class |
+| Test quality & test-first | 20 | 17 | No must-allow test for another plugin |
+| Plan conformance | 10 | 9 | An unlogged side effect |
+| Maintainability | 5 | 3 | Overlapping guard regexes |
+| **Total** | 100 | **88** | PASS needs ≥ 80, no BLOCKER or HIGH, every AC met; the MAJOR (user-wide false positive) blocks |
