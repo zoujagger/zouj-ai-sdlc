@@ -1,10 +1,14 @@
 ---
 id: 0008
 title: Release 0.2.0-beta.1
-status: Draft          # Draft → Approved (human types `Spec Approved 0008`)
+status: Approved
 risk: low              # low | medium | high (high: involve the tech lead before approving)
 intent: ./intent.md
 created: 2026-11-16
+approved-by: zoujagger <ulrichjagger@gmail.com>
+approved-at: 2026-11-16T16:17:20Z
+approved-via: cli
+approved-sha256: 19809af2c97184debec30d1136de2a2f025244878f20780536960bb58976de99
 ---
 
 # Spec: Release 0.2.0-beta.1
