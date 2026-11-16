@@ -1,8 +1,8 @@
 ---
 id: 0007
-verdict: CHANGES_REQUESTED   # PASS | CHANGES_REQUESTED (the human still decides the merge)
-commit: 9b068a11fe119587e538e97a448f42ca07337c10
-score: 91/100
+verdict: PASS   # PASS | CHANGES_REQUESTED (the human still decides the merge)
+commit: c6da1ebf64777fdd36c32ad9f271d552b5d8c5d5
+score: 90/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-16
 ---
@@ -19,7 +19,8 @@ created: 2026-11-16
      in dd4c768. Round 12 (dd4c768): CHANGES_REQUESTED 89, fixed
      in 4b72255. Round 13 (4b72255): CHANGES_REQUESTED 86, fixed
      in 70dfd3d. Round 14 (70dfd3d): CHANGES_REQUESTED 88, fixed
-     in 9b068a1. Round 15 at 9b068a1 (this file). Diff against origin/main. -->
+     in 9b068a1. Round 15 (9b068a1): CHANGES_REQUESTED 91, fixed in 2ef6811; round 16 stopped by the human, who
+     merged PR #19. Final round on main at c6da1eb (this file), diff against 6fe9808 (main before 0007). Diff against origin/main. -->
 
 ## Summary
 0007 adds three things:
@@ -28,16 +29,15 @@ created: 2026-11-16
 - **`sdlc where`.** It prints the terminal command, and the state card shows it.
 - **A core-only scaffold.** The default installs only `core`; the other parts are opt in with `--with`.
 
-It ships as 0.2.0-alpha.4.
+It merged in PR #18 (rounds 1-3) and PR #19 (rounds 4-15), and ships as the next release (0.2.0-beta.1, a separate
+change).
 
-Round 15 results:
-- **Verifier:** VERIFIED (AC-21's live run carried over). `make check` (442), `make build` and `sdlc validate 0007` pass.
-- **Code-reviewer:** CHANGES_REQUESTED, **one MAJOR** (a false positive), three MINOR, one NIT.
-- **Security-reviewer:** PASS, 23/25, no CRITICAL, HIGH or MEDIUM, one LOW.
+Final round, on main at `c6da1eb` against `6fe9808`:
+- **Verifier:** VERIFIED. All 23 ACs proven. `make check` (442), `make build` and `sdlc validate 0007` pass.
+- **Code-reviewer:** PASS leaning, ~90/100, no BLOCKER, five MINOR (one with security impact LOW).
+- **Security-reviewer:** PASS, 23/25, no CRITICAL or HIGH; the accepted MEDIUM and one new LOW.
 
-**Verdict: CHANGES_REQUESTED.** The r14 rule "a glob name under a variable directory, any length" applies to every
-word a shell is given, so `bash ./lint.sh $SRC/*`, `bash -c "ls $TMPDIR/*"`, `zsh -c "rm -rf $BUILD/*"` and
-`bash -c "du -sh ~/.claude/plugins/cache/*"` are refused as G-GATE-07 in every repo, with the wrong reason.
+**Verdict: PASS.** Total 90, no BLOCKER or CRITICAL/HIGH, every AC met. The items below go to the backlog.
 
 ## Spec conformance
 | AC | Verdict | Evidence (test, path:line) |
@@ -71,54 +71,54 @@ word a shell is given, so `bash ./lint.sh $SRC/*`, `bash -c "ls $TMPDIR/*"`, `zs
 without, Δ +0.33, $0.87. Since that run (`ae31453`) `evals/` and `skills/setup` are unchanged; the verifier could not re-run it (tool scope).
 
 ## Security
-Closed since round 14: other plugins' literal scripts and directories are allowed again; kept files compared with
-what init writes; `ash`/`mksh`/`yash`/`csh`/`tcsh` recognised by the `engine.sh` check.
-
-Round 15 findings:
-- [LOW] `guards.py:392-398`: `set -- prompt; . <plugin>/hooks/e* < p.json` (and `cd <plugin>/hooks; …; . ~-/e*`)
-  runs the plugin's script with an inherited `$1`; confirmed end to end in a scratch repo. Bounded exactly like the
-  accepted `claude -p` residual; not a regression. → Name it in the Known gaps class.
+- [MEDIUM, accepted residual] An agent-started session (`claude -p "/zouj-ai-sdlc:setup solo"`) can type the command.
+  Bounded to the session's repo with the untouched template config and nothing approved in its files or history;
+  one visible commit; CI reads the base config. Recorded in Known gaps with the planned pre-bash rule.
+- [LOW] `setup.py:755-760` `_differs` (and `_as_setup_writes`) reads a planted FIFO at a scaffold path
+  (`mkfifo Makefile` while the gates are dormant), so the typed command hangs until the hook times out.
+  Availability only; typing it again succeeds. → Backlog.
+- [LOW, code-reviewer] `sdlc setup|init --with <part>` run by the agent creates the part's missing files in any state,
+  including code under the lock (`scripts/check-bands.py`) and protected workflows, unlike `upgrade`/`repair`
+  (`agent_may_write`). Plugin templates only; CODEOWNERS reviews `/.github/`. → Backlog.
 
 Spec flags (security-reviewer):
 
 | Flag | Mitigated? | Evidence |
 |---|---|---|
-| A hook writes a human-owned file | Yes | `no_profile_yet`, `approval_in_history`, session-repo check, `_commit_alone(data=)` |
-| The hook writes the core scaffold without a preview (R-2a) | Yes | `scaffold_first` create-only; created and differing kept files listed |
-| The agent prompts a session of its own | Accepted residual | Known gaps; the LOW is a second route to the same bounded effect |
-| The agent asks the human to type the command | Yes | `PROOF` per profile; a bare command previews |
-| The profile commit is unsigned in team/strict | Accepted | nothing trusts `AIOps-Profile`/`Set-By`; CI reads the base config |
-| `sdlc where` prints a home path | Yes | local only; `feedback` swaps it for `~` |
-| A core-only repo lacks the AI review and scheduled scan | Yes | the CI audit is in core |
+| A hook writes a human-owned file | Yes | `no_profile_yet`, `approval_in_history`, template + `PROFILE_CONFIG`, `_commit_alone(data=)` |
+| The hook writes the core scaffold without a preview (R-2a) | Yes | `scaffold_first` create-only, `write_file` O_NOFOLLOW/O_EXCL, top of the work tree; created and differing kept files listed |
+| The agent prompts a session of its own | Partly (accepted) | MEDIUM above |
+| The agent asks the human to type the command | Yes | a bare command previews; `systemMessage` built apart and escaped |
+| The profile commit is unsigned in team/strict | Yes (by design) | opens no gate; CI reads the base config; one-line `approver()` |
+| `sdlc where` prints a home path | Yes | local only |
+| A core-only repo lacks the AI review and scheduled scan | Yes | preview and `list-installed` name the parts left out |
+| No change to secrets, lock, approval path, audit, allowed-commands | Yes | `approve()` unchanged apart from sharing `_commit_alone` |
 
 ## Plan conformance
-- **Steps:** all 20 are done; r14 is logged, though "another plugin's scripts and directories are not refused" holds
-  only partly (globs under the plugins directory).
-- **Open:** the manual `make dev` check; `pr.md` is stale (the removed phrase, the renamed ADR, round 3's score).
+- **Steps:** S1-S20 are done and match the diff; every divergence, S1-S20 and rounds r1-r15, is in the Deviation log.
+- **Gap:** the agent's `--with` under the lock (Security above) is outside the spec's threat analysis.
+- **Open:** a manual `make dev` session typing the command (the r4 `claude -p` probe covers the hook path).
 
 ## Test-first evidence
-Every step and review fix records its red run (S14-S20, r4-r14). The r14 must-allow list has no glob or
-variable-directory argument, which is how the MAJOR slipped through.
+Every step S1-S20 and fix round r1-r15 has a `Red:` line naming its failing tests; S17 says its red came from S14
+and S16. Tests and code share commits, as REVIEW.md accepts.
 
-## Fixes requested
-1. **[MAJOR] `lib/sdlc_engine/guards.py:392-399`**: apply "variable or plugin directory, any length" only at the
-   script position (the first non-option word a shell or `source` is given, option arguments skipped); later words
-   by the four-literal rule. Must-allow tests for `bash ./lint.sh $SRC/*`, `bash -c "ls $TMPDIR/*"` and
-   `bash -c "du -sh ~/.claude/plugins/cache/*"`, red first.
-
-## Other findings (non-blocking)
-- [MINOR] `setup.py` `_differs` re-implements `cli.apply_init`'s placeholder rendering. → One helper.
-- [MINOR] `docs/architecture.md:123`: a 169-column line. → Rewrap.
-- [NIT] `SHELL_C`, `SHELL_FED_RE` and `SHELLS` still list the older shells only. → One shell list.
-- [LOW] the sourced-glob example (Security above).
-- **Human, before the merge:** type `/zouj-ai-sdlc:setup solo` once in a `make dev` session in a scratch repo.
+## Backlog (not blocking)
+- The FIFO hang (LOW) and the agent's `--with` under the lock (LOW): `agent_may_write` for `setup|init --with`.
+- `sdlc init` reads only the first `--with`; `setup` merges them. → One parser.
+- Freeze `_plugin_engine_sh`; further G-GATE-07 hardening goes to intent 0006 with a must-block/must-allow matrix.
+- `KeptList`/`Reply` carry data on built-in subclasses. → Named tuples.
+- TROUBLESHOOTING: a repo-local `core.hooksPath` (husky, lefthook) makes the typed command refuse.
+- `tests/test_guards.py:2079-2191` `"\;"` SyntaxWarnings (from 0005).
+- Re-run `evals/profile-by-setup-command` at the release commit (the quoted run predates small edits to
+  `skills/configure` and `hooks/engine.sh`).
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 38 | Every AC met; the TUI check is still manual |
-| Security | 25 | 23 | One LOW of the documented class |
-| Test quality & test-first | 20 | 17 | No glob or variable-directory must-allow case |
-| Plan conformance | 10 | 9 | The r14 row claims more than the code does |
-| Maintainability | 5 | 4 | A duplicated rendering; shell lists out of step |
-| **Total** | 100 | **91** | PASS needs ≥ 80, no BLOCKER or HIGH, every AC met; the MAJOR (false positive in every repo) blocks |
+| Spec conformance | 40 | 38 | Every AC met; the agent's `--with` under the lock is outside the threat analysis |
+| Security | 25 | 22 | The accepted MEDIUM; two LOWs |
+| Test quality & test-first | 20 | 18 | Real-outcome tests; red runs recorded in text |
+| Plan conformance | 10 | 9 | One unanalysed behaviour |
+| Maintainability | 5 | 3 | The guard's heuristics; side data on built-in subclasses |
+| **Total** | 100 | **90** | PASS: ≥ 80, no BLOCKER or HIGH, every AC met |

@@ -2,9 +2,8 @@
 ## 0007 follow-up: `/zouj-ai-sdlc:setup <profile>` replaces the profile phrase; review rounds 4-15
 
 **Intent:** `.aiops/0007-first-run/` ([intent](intent.md) · [spec](spec.md) · [plan](plan.md) · [review](review.md))
-**Review:** round 15 CHANGES_REQUESTED, 91/100 at `9b068a1`. Its one blocker, a false positive, is fixed in
-`2ef6811`. A round 16 was started on that commit and stopped by the human before it reported. The human decides
-the merge.
+**Review:** PASS, 90/100 at `c6da1eb` (final round on main after this PR merged; rounds 4-15 were
+CHANGES_REQUESTED, each fixed). The human decides the merge.
 
 PR #18 merged the first part of 0007 at round 3 (`2da5b05`). This PR carries everything after it.
 
