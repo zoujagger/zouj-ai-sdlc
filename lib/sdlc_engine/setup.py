@@ -861,7 +861,7 @@ def set_first_profile(root, name, cwd=None):
     steps = steps_for_human(root, name, pending, review, install=False)
     check = (
         "Review before committing (human-owned, in no commit, not what setup writes; left out of the commit "
-        "below): " + ", ".join(review) + "\n"
+        "below): " + ", ".join(_shown(f) for f in review) + "\n"
         if review
         else ""
     )
@@ -875,14 +875,27 @@ def set_first_profile(root, name, cwd=None):
         if created
         else ""
     )
-    return True, (
-        f"profile SET: {name}. From now on an approval is proven by {PROOF[name]}. {note}\n{made}"
+    notice = (
+        f"profile SET: {name} in {_shown(str(root))}. From now on an approval is proven by {PROOF[name]}. "
+        f"{note}\n{made}"
         + _identity_note(root)
         + _trust_lists(root)
         + check
-        + "Relay the remaining human steps:\n"
-        + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1))
     )
+    return True, Reply(
+        notice + "Relay the remaining human steps:\n" + "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1)),
+        notice,
+    )
+
+
+class Reply(str):
+    """The setup command's reply, with the part the human sees directly (`notice`) kept apart, so text from the
+    repo (a planted user.name or trust-list line) can't decide where it ends (0007 r9)."""
+
+    def __new__(cls, text, notice):
+        obj = super().__new__(cls, text)
+        obj.notice = notice
+        return obj
 
 
 def _identity_note(root):
@@ -892,8 +905,8 @@ def _identity_note(root):
     if not local:
         return ""
     return (
-        f"Set-By names {approvals.approver(root)}, taken from this repo's own git config ({', '.join(local)}), not "
-        "your global identity: check it before you push.\n"
+        f"Set-By names {_shown(approvals.approver(root))}, taken from this repo's own git config "
+        f"({', '.join(local)}), not your global identity: check it before you push.\n"
     )
 
 
@@ -902,8 +915,9 @@ TRUST_LISTS = (".aiops/config/allowed-signers", ".aiops/config/legacy-approvals"
 
 
 def _trust_lists(root):
-    """The non-comment lines (at most TRUST_LIST_CAP each, then a count) of the human-owned trust lists, so a line committed before the command (which this path
-    never previews) is seen. Empty when every list holds comments only."""
+    """The non-comment lines (at most TRUST_LIST_CAP each, then a count) of the human-owned trust lists, so a line
+    committed before the command (which this path never previews) is seen. Empty when every list holds comments
+    only."""
     out = []
     for rel in TRUST_LISTS:
         f = root / rel

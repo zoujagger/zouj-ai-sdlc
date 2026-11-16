@@ -953,11 +953,19 @@ def hook_profile(data, m):
             f"prompt's working directory resolves to {root}. Nothing was written. Type it from the session's repo, "
             f"or run in your own terminal there: `{lifecycle.human_command(f'setup --profile {name}')}`."
         )
+    elif any(git(Path(d), "config", "core.worktree") for d in (session, data.get("cwd") or session)):
+        msg = (  # r9: it points git at another work tree, so both sides of the check above would name that one
+            f"profile NOT set: this repo's git config sets core.worktree, which points git at another directory "
+            f"({root}). Nothing was written. Remove it (`git config --unset core.worktree`) and type the command "
+            "again, or run in your own terminal there: "
+            f"`{lifecycle.human_command(f'setup --profile {name}')}`."
+        )
     else:
         _ok, msg = setup.set_first_profile(root, name, cwd=data.get("cwd"))
     # The agent relays the steps; the result and its warnings also go straight to the human (systemMessage), so an
-    # agent that planted a signer or an identity can't keep them from the person they warn.
-    notice = msg.split("Relay the remaining human steps", 1)[0].strip()
+    # agent that planted a signer or an identity can't keep them from the person they warn. The notice is built
+    # apart (setup.Reply), never cut out of text that holds the repo's own strings (r9).
+    notice = getattr(msg, "notice", msg).strip()
     out(
         json.dumps(
             {

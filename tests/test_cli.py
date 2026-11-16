@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -595,6 +596,24 @@ class SetupCommand(RepoCase):
         sub = self.root / "src"  # a subdirectory of the session's repo is the same repo
         sub.mkdir(exist_ok=True)
         self.assertIn("profile SET: solo", self.context("/zouj-ai-sdlc:setup solo", cwd=sub))
+
+    def test_worktree_redirect_is_refused(self):
+        # 0007 r9 security LOW: core.worktree (allowed in repo-local config) makes git resolve the session's repo to
+        # another one, so both sides of the session check would name that other repo
+        other = Path(tempfile.mkdtemp(dir=self.root.parent))
+        git(other, "init", "-q", "-b", "main")
+        for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com")):
+            git(other, "config", key, value)
+        shutil.copytree(self.root / ".aiops", other / ".aiops")
+        other_before = (other / CONFIG).read_bytes()
+        git(self.root, "config", "core.worktree", str(other))
+        ctx = self.context("/zouj-ai-sdlc:setup solo")
+        self.assertIn("profile NOT set", ctx)
+        self.assertIn("core.worktree", ctx)
+        self.assertEqual((other / CONFIG).read_bytes(), other_before)
+        self.assertEqual((self.root / CONFIG).read_bytes(), self.before)
+        git(self.root, "config", "--unset", "core.worktree")
+        self.assertIn(f"profile SET: solo in {self.root.resolve()}", self.context("/zouj-ai-sdlc:setup solo"))
 
     def test_works_with_the_session_markers_set(self):
         """Claude Code sets both markers for the hooks of every session, a human's included (0007 spec R-2)."""

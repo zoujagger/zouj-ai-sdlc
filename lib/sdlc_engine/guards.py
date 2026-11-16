@@ -303,9 +303,11 @@ ENGINE_RES = (  # matched against the command with quotes and backslashes remove
     re.compile(r"\b(cat|tee)\b[^;&|\n]*(\bbin/sdlc\b|\bsdlc_engine\b)[^;&|\n]*>"),
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
-ENGINE_SH_RE = re.compile(  # 0007 r8: the plugin's hook wrapper feeds `sdlc hook`; the agent never runs it
-    rf"{CMD_POS}((\S*/)?(ba|z|da|k)?sh\s+(-\S+\s+)*|(source|\.)\s+)?(\S*/)?engine\.sh(\s|$|[;&|)])"
+ENGINE_SH_RE = re.compile(  # 0007 r8: a run of a script named engine.sh; _plugin_engine_sh decides if it's ours
+    rf"{CMD_POS}((\S*/)?(ba|z|da|k)?sh\s+(-\S+\s+)*|(source|\.)\s+)?(?P<path>(\S*/)?engine\.sh)(\s|$|[;&|)])"
 )
+CD_RE = re.compile(r"(^|[\s;&|(])cd\s+(?P<dir>[^\s;&|)]+)")
+PLUGIN_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/|[$`]")  # the plugin's own, or unreadable
 HOOK_WORD_RE = re.compile(r"\bhook\b")
 TRAILER_RE = re.compile(r"AIOps-Approval\s*:")
 FORMAT_TRAILER_RE = re.compile(r"AIOps-\S*[%$]\S*:|\w+=\S*AIOps-")  # printf 'AIOps-%s:', AIOps-$x:, m=AIOps-…
@@ -325,6 +327,33 @@ ENV_RES = (
 
 
 SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
+
+
+def _plugin_engine_sh(plain, cwd):
+    """True when the command runs the plugin's hooks/engine.sh (0007 r8/r9): a path under $CLAUDE_PLUGIN_ROOT or
+    ~/.claude/plugins/, one the parser can't read, or one that resolves (from the cwd or a `cd` before it) to a file
+    byte-equal to the plugin's. A project's own engine.sh stays allowed."""
+    try:
+        ours = (PLUGIN_ROOT / "hooks" / "engine.sh").read_bytes()
+    except OSError:
+        ours = None
+    for m in ENGINE_SH_RE.finditer(plain):
+        path = m.group("path")
+        cds = [c.group("dir") for c in CD_RE.finditer(plain[: m.start("path")])]
+        if PLUGIN_PATH_RE.search(path) or any(PLUGIN_PATH_RE.search(d) for d in cds):
+            return True
+        base = Path(cwd)
+        for d in cds:
+            base = base / Path(d).expanduser()
+        target = (base / Path(path).expanduser()).resolve()
+        try:
+            if target == (PLUGIN_ROOT / "hooks" / "engine.sh").resolve() or (
+                ours is not None and target.is_file() and target.read_bytes() == ours
+            ):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def _dynamic_engine_call(cmd, plain):
@@ -883,7 +912,7 @@ def check_bash(data):
     root = project_root(cwd)
     if not cmd.strip():
         return None
-    hook_sh = bool(ENGINE_SH_RE.search(plain))
+    hook_sh = _plugin_engine_sh(plain, cwd)
     human_only = hook_sh or any(r.search(plain) for r in ENGINE_RES) or _dynamic_engine_call(cmd, plain)
     if not initialized(root):  # SDLC gates dormant; the safety checks run in every repo (0005, gap 2)
         # 0007 r7/r8: the prompt hook acts here on the setup command, so a fed payload must not reach it. Only the

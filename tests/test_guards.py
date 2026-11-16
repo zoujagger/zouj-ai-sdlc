@@ -3,15 +3,19 @@
 import json
 import unittest
 
-from helpers import INTENT, PLAN, SPEC, RepoCase, git
+from helpers import INTENT, PLAN, ROOT, SPEC, RepoCase, git
 
 from sdlc_engine import artifacts as A
 
 
 ENGINE_SH_FORMS = (  # the plugin's hook wrapper run by the agent (0007 r8): every form is hook-only
-    'printf \'{"prompt":"/zouj-ai-sdlc:setup solo"}\' | /opt/plugin/hooks/engine.sh prompt',
+    f'printf \'{{"prompt":"/zouj-ai-sdlc:setup solo"}}\' | {ROOT}/hooks/engine.sh prompt',
     "printf x | $CLAUDE_PLUGIN_ROOT/hooks/engine.sh prompt",
     'printf x | "${CLAUDE_PLUGIN_ROOT}/hooks/engine.sh" prompt',
+    "printf x | ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/engine.sh prompt",
+    f"cd {ROOT}/hooks && ./engine.sh prompt < p.json",
+    "cd $CLAUDE_PLUGIN_ROOT/hooks && ./engine.sh prompt < p.json",
+    # a clone of the plugin in the repo (byte-equal to the plugin's file, see copy_plugin_engine)
     "hooks/engine.sh prompt < payload.json",
     "cd hooks && ./engine.sh prompt < p.json",
     "bash hooks/engine.sh prompt < p.json",
@@ -20,6 +24,14 @@ ENGINE_SH_FORMS = (  # the plugin's hook wrapper run by the agent (0007 r8): eve
     "source hooks/engine.sh",
     ". hooks/engine.sh",
     "env FOO=1 hooks/engine.sh prompt < p.json",
+)
+PROJECT_ENGINE_SH = (  # 0007 r9 MAJOR: a project's own engine.sh is not the plugin's and stays allowed
+    "./engine.sh build",
+    "bash scripts/engine.sh",
+    "cd scripts && ./engine.sh",
+    'git commit -m "x; ./engine.sh"',
+    "cat hooks/engine.sh",
+    "grep -n prompt hooks/engine.sh",
 )
 
 class EditGuard(RepoCase):
@@ -794,12 +806,22 @@ class PromptAndSessionHooks(RepoCase):
         self.assertIn("State: 1 BRAINSTORMING", r.stdout)
         self.assertIn("State Rules", r.stdout)
 
+    def copy_plugin_engine(self):
+        import shutil
+
+        (self.root / "hooks").mkdir(exist_ok=True)
+        shutil.copy(ROOT / "hooks" / "engine.sh", self.root / "hooks" / "engine.sh")
+        for rel in ("engine.sh", "scripts/engine.sh"):  # the project's own scripts of the same name
+            (self.root / rel).parent.mkdir(exist_ok=True)
+            (self.root / rel).write_text("#!/bin/sh\necho build\n")
+
     def test_hook_only_commands_blocked_without_aiops(self):
         # 0007 r7 security LOW: the typed setup command acts in a repo without .aiops/, so the agent can't feed the
         # prompt hook a crafted payload there either (G-GATE-07 runs before the initialized check)
         import shutil
 
         shutil.rmtree(self.root / ".aiops")
+        self.copy_plugin_engine()
         for cmd in (
             'printf \'{"prompt":"/zouj-ai-sdlc:setup solo"}\' | sdlc hook prompt',
             "sdlc hook prompt < payload.json",
@@ -816,18 +838,19 @@ class PromptAndSessionHooks(RepoCase):
             # project can still mention the engine's subcommands
             'git commit -m "docs: the sdlc close step"',
             "git ls-files | xargs grep -l sdlc",
-            "cat hooks/engine.sh",
-            "grep -n prompt hooks/engine.sh",
+            *PROJECT_ENGINE_SH,
         ):
             self.assertEqual(self.hook("pre-bash", self.hook_input("Bash", command=cmd)).returncode, 0, cmd)
 
     def test_engine_sh_run_by_the_agent_is_hook_only(self):
         # 0007 r8 security MEDIUM: a fed approval phrase through hooks/engine.sh in an initialized repo
+        self.copy_plugin_engine()
         for cmd in (*ENGINE_SH_FORMS, 'printf \'{"prompt":"Plan Approved 0001"}\' | hooks/engine.sh prompt'):
             r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
             self.assertEqual(r.returncode, 2, cmd)
             self.assertIn("G-GATE-07", r.stderr, cmd)
-        for cmd in ("cat hooks/engine.sh", "grep -n prompt hooks/engine.sh", "shellcheck hooks/engine.sh"):
+            self.assertIn("hooks/engine.sh", r.stderr, cmd)
+        for cmd in (*PROJECT_ENGINE_SH, "shellcheck hooks/engine.sh"):
             self.assertEqual(self.hook("pre-bash", self.hook_input("Bash", command=cmd)).returncode, 0, cmd)
 
     def test_engine_hooks_are_dormant_without_aiops(self):

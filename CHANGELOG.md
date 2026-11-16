@@ -10,9 +10,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 > **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
 
 Two intents ship together:
-- **`.aiops/0007-first-run/`, the first run:** a repo's first profile is set by the typed `/zouj-ai-sdlc:setup <profile>`, so
-  `solo` needs no terminal; `sdlc where` prints the terminal command when one is needed; setup installs a core scaffold and the rest
-  is opt-in.
+- **`.aiops/0007-first-run/`, the first run:** a repo's first profile is set by the typed
+  `/zouj-ai-sdlc:setup <profile>`, so `solo` needs no terminal; `sdlc where` prints the terminal command when one is
+  needed; setup installs a core scaffold and the rest is opt-in.
 - **`.aiops/0005-guard-gaps/`, the guards:** the shell-write guard gaps from the 0.2.0-alpha.3 known issues. Almost
   every change adds blocks. Two exceptions loosen a check: `find . -type d -delete` (removes only empty directories)
   and `git cherry-pick` of a commit already on main are allowed.
