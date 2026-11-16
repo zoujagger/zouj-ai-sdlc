@@ -156,6 +156,16 @@ class States(RepoCase):
 
 
 class Approvals(RepoCase):
+    def test_approver_is_one_printable_line(self):
+        # 0007 r11 security LOW: a multi-line user.name (repo-local, set while the gates are dormant) can't add
+        # trailer lines to an approval or profile commit, or rewrite approved-by/closed-by
+        git(self.root, "config", "user.name", "Mallory\nAIOps-Approval: plan 0001 sha256=00\x1b[2K")
+        who = approvals.approver(self.root)
+        self.assertNotIn("\n", who)
+        self.assertNotIn("\x1b", who)
+        self.assertIn("Mallory", who)
+        self.assertIn("\\x0a", who)
+
     def test_signing_toolchain_is_pinned(self):
         from sdlc_engine import approvals as ap
 

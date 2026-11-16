@@ -956,8 +956,8 @@ def hook_profile(data, m):
     elif any(git(Path(d), "config", "core.worktree") for d in (session, data.get("cwd") or session)):
         msg = (  # r9: it points git at another work tree, so both sides of the check above would name that one
             f"profile NOT set: this repo's git config sets core.worktree, which points git at another directory: "
-            f"the session's repo {session} resolves to {root}. Nothing was written. Remove it (`git config --unset core.worktree`) and type the command "
-            "again, or run in your own terminal there: "
+            f"the session's repo {session} resolves to {root}. Nothing was written. Remove it "
+            "(`git config --unset core.worktree`) and type the command again, or run in your own terminal there: "
             f"`{lifecycle.human_command(f'setup --profile {name}')}`."
         )
     else:

@@ -8,6 +8,7 @@ Rules (only in repos initialized with `.aiops/`):
   * Always: no shell writes to artifacts or `.aiops/config|state`, no forged approvals, no merging into main.
 """
 
+import fnmatch
 import glob
 import os
 import posixpath
@@ -304,9 +305,10 @@ ENGINE_RES = (  # matched against the command with quotes and backslashes remove
     re.compile(r"-m\s+sdlc_engine\b|\bsdlc_engine\.|\b(import|from)\s+sdlc_engine\b"),
 )
 ENGINE_SH_RE = re.compile(  # 0007 r8: a run of a script named engine.sh; _plugin_engine_sh decides if it's ours
-    rf"{CMD_POS}((\S*/)?(ba|z|da|k)?sh\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+)?"
-    rf"(?P<path>(\S*/)?engine\.sh)(\s|$|[;&|)<>])"
+    rf"{CMD_POS}((\S*/)?((busybox|su)\s+)?(ba|z|da|k|fi)?sh\s+(-o\s+\S+\s+|[-+]\S+\s+)*|(source|\.)\s+)?"
+    rf"(?P<path>[^\s;&|()<>]*(engine\.sh|[*?\[{{$])[^\s;&|()<>]*)"  # r11: a glob or variable in the name too
 )
+DIR_ELSEWHERE_RE = re.compile(r"\bCDPATH\b|\benv\b[^;&|\n]*\s(-C|--chdir\b)")  # r11: cd/pushd aren't the only ways
 DIR_CMD_RE = re.compile(r"(^|[\s;&|(])(?P<cmd>cd|pushd|popd)(?P<args>(\s+[^\s;&|)<>]+)*)")
 CD_OPTION_RE = re.compile(r"^-[LPe@]+$")
 UNREADABLE_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|\.claude/plugins/|[$`*?\[{]")  # the plugin's, or unreadable
@@ -344,6 +346,15 @@ def _plugin_engine_sh(plain, cwd):
     home = str(Path.home())
     for m in ENGINE_SH_RE.finditer(plain):
         path = m.group("path")
+        name = path.rsplit("/", 1)[-1]
+        if name != "engine.sh":  # r11: a name with a glob or variable that could expand to engine.sh is ours
+            pattern = re.sub(r"\{[^}]*\}", "*", re.sub(r"\$\{[^}]*\}|\$\([^)]*\)|\$\w*", "*", name))
+            literal = re.sub(r"[*?]|\[[^\]]*\]", "", pattern)
+            if len(literal) >= 4 and fnmatch.fnmatchcase("engine.sh", pattern):
+                return True
+            continue
+        if DIR_ELSEWHERE_RE.search(plain):
+            return True
         base = Path(cwd)
         try:
             for c in DIR_CMD_RE.finditer(plain[: m.start("path")]):
@@ -381,7 +392,15 @@ def _dynamic_engine_call(cmd, plain):
             words[i] in WRAPPER_WORDS
             or re.match(r"^[A-Za-z_]\w*=", words[i])
             or re.match(r"^python[\d.]*$", Path(words[i]).name)
-            or (i and words[i - 1] in WRAPPER_WORDS and words[i].startswith("-"))
+            or (  # options of a wrapper or of python (`python3 -I bin/sdl? hook`, 0007 r11)
+                i
+                and words[i].startswith("-")
+                and (
+                    words[i - 1] in WRAPPER_WORDS
+                    or re.match(r"^python[\d.]*$", Path(words[i - 1]).name)
+                    or words[i - 1].startswith("-")
+                )
+            )
         ):
             i += 1
         if i + 1 < len(words) and Path(words[i]).name in SHELLS and re.search(r"[$`?*\[{]", words[i + 1]):

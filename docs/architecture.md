@@ -113,10 +113,12 @@ setup command.
   plumbing gap above) would pass the history check. A crafted payload piped into `sdlc hook prompt` or the plugin's
   `hooks/engine.sh` is refused by G-GATE-07 in every repo, `.aiops/` or not (0007 reviews r7-r10). The check fails
   closed: a script named `engine.sh` runs only when its path, from the cwd and every `cd`/`pushd` before it,
-  resolves to an existing file that isn't the plugin's or byte-equal to it; a variable, a glob, `popd`, `cd -` or an
-  unknown home counts as the plugin's (so `cd $PROJ && ./engine.sh` is refused too). Static parsing still misses the
-  dynamic command words above, a copy or link under another name (`cp …/engine.sh e && bash e prompt`), the script
-  fed on stdin (`bash < …/engine.sh`) and its text run by `bash -c "$(cat …)"`. The hook's warnings
+  resolves to an existing file that isn't the plugin's or byte-equal to it; a variable or glob in the path or in a
+  name that could expand to `engine.sh` (`engine.s?`, `e*.sh`, `engine.sh$IFS…`), `popd`, `cd -`, an unknown home,
+  `CDPATH` or `env -C`/`--chdir` counts as the plugin's (so `cd $PROJ && ./engine.sh` is refused too). Static
+  parsing still misses the dynamic command words above, a copy or link under another name
+  (`cp …/engine.sh e && bash e prompt`), the script fed on stdin (`bash < …/engine.sh`) and its text run by
+  `bash -c "$(cat …)"`. The hook's warnings
   (`systemMessage`) reach a human only in the human's own session; in a session the agent starts, the human sees
   only the commit. To add: a pre-bash rule against starting a Claude session that carries a gate phrase or the
   setup command (found in the 0007 spec, rated MEDIUM in the PR #18 security review).

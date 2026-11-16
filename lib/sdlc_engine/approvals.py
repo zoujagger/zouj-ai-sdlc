@@ -26,9 +26,13 @@ def running_under_agent():
 
 
 def approver(root):
+    """`Name <email>` from git config, on one printable line: a multi-line or control-character user.name (settable
+    repo-local while the gates are dormant) can't add trailer lines to a commit or rewrite a front-matter field
+    (0007 r11). Non-printable characters are escaped (`\\x0a`)."""
     name = git(root, "config", "user.name") or os.environ.get("USER") or "unknown"
     email = git(root, "config", "user.email")
-    return f"{name} <{email}>" if email else name
+    who = f"{name} <{email}>" if email else name
+    return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in who)
 
 
 PYTHON = "/usr/bin/python3" if Path("/usr/bin/python3").is_file() else "python3"

@@ -38,6 +38,23 @@ ENGINE_SH_FORMS = (  # the plugin's hook wrapper run by the agent (0007 r8): eve
     "cd /no/such/dir && ./engine.sh prompt < p.json",
     "bash -o posix hooks/engine.sh prompt < p.json",
     "hooks/engine.sh<p.json",
+    # 0007 r11 MEDIUM: a glob or variable inside the name, other shells, and directory changes outside cd/pushd
+    "bash $CLAUDE_PLUGIN_ROOT/hooks/engine.s? prompt < p.json",
+    "bash ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/hooks/engin?.sh prompt < p.json",
+    "hooks/engine.s[h] prompt < p.json",
+    "hooks/e*.sh prompt < p.json",
+    "hooks/engine.{sh,x} prompt < p.json",
+    "bash hooks/engine.sh$IFS'prompt' < p.json",
+    "busybox sh hooks/engine.sh prompt < p.json",
+    "fish hooks/engine.sh prompt < p.json",
+    f"env -C {ROOT} ./engine.sh prompt < p.json",
+    f"env --chdir={ROOT}/hooks ./engine.sh prompt < p.json",
+    "CDPATH=/opt/plugin cd scripts && ./engine.sh prompt < p.json",
+    "export CDPATH=/opt/plugin; cd scripts && ./engine.sh prompt < p.json",
+)
+SDLC_GLOB_FORMS = (  # 0007 r11: a glob in the sdlc command word, behind python's own options
+    "python3 -I ~/.claude/plugins/cache/m/zouj-ai-sdlc/0.2.0/bin/sdl? hook prompt < p.json",
+    "python3 -I -u bin/sdl? hook prompt < p.json",
 )
 PROJECT_ENGINE_SH = (  # 0007 r9 MAJOR: a project's own engine.sh is not the plugin's and stays allowed
     "./engine.sh build",
@@ -45,6 +62,9 @@ PROJECT_ENGINE_SH = (  # 0007 r9 MAJOR: a project's own engine.sh is not the plu
     "cd scripts && ./engine.sh",
     "cd -P scripts && ./engine.sh",
     "pushd scripts && ./engine.sh build",
+    "env FOO=1 ./engine.sh build",
+    "time ls *.sh",
+    "$EDITOR notes.md",
     'git commit -m "x; ./engine.sh"',
     "cat hooks/engine.sh",
     "grep -n prompt hooks/engine.sh",
@@ -841,7 +861,8 @@ class PromptAndSessionHooks(RepoCase):
         for cmd in (
             'printf \'{"prompt":"/zouj-ai-sdlc:setup solo"}\' | sdlc hook prompt',
             "sdlc hook prompt < payload.json",
-            *ENGINE_SH_FORMS,  # 0007 r8 security MEDIUM: the hook wrapper reaches the same code path
+            *ENGINE_SH_FORMS,
+            *SDLC_GLOB_FORMS,  # 0007 r8 security MEDIUM: the hook wrapper reaches the same code path
         ):
             r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
             self.assertEqual(r.returncode, 2, cmd)
@@ -862,10 +883,16 @@ class PromptAndSessionHooks(RepoCase):
         # 0007 r8 security MEDIUM: a fed approval phrase through hooks/engine.sh in an initialized repo
         self.copy_plugin_engine()
         for cmd in (*ENGINE_SH_FORMS, 'printf \'{"prompt":"Plan Approved 0001"}\' | hooks/engine.sh prompt'):
+            if "sdl?" in cmd:
+                continue
             r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
             self.assertEqual(r.returncode, 2, cmd)
             self.assertIn("G-GATE-07", r.stderr, cmd)
             self.assertIn("hooks/engine.sh", r.stderr, cmd)
+        for cmd in (*SDLC_GLOB_FORMS, "python3 -I bin/sdl? approve 0001 intent"):
+            r = self.hook("pre-bash", self.hook_input("Bash", command=cmd))
+            self.assertEqual(r.returncode, 2, cmd)
+            self.assertIn("G-GATE-07", r.stderr, cmd)
         for cmd in (*PROJECT_ENGINE_SH, "shellcheck hooks/engine.sh"):
             self.assertEqual(self.hook("pre-bash", self.hook_input("Bash", command=cmd)).returncode, 0, cmd)
 
