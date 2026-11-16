@@ -27,7 +27,7 @@ the eval at the release commit (S3). The existing tests are reused:
 - `tests/test_rules.py` `History::test_current_scaffold_in_history`
 
 ## Steps
-- [ ] **S1**: Rename the release to 0.2.0-beta.1 in the version source, the CHANGELOG and the scaffold history.
+- [x] **S1**: Rename the release to 0.2.0-beta.1 in the version source, the CHANGELOG and the scaffold history.
   - Files: `.claude-plugin/plugin.json`, `CHANGELOG.md` (the heading with the merge date, the beta banner, both
     link references), `defaults/scaffold-history.json` (the key renamed, same hashes) (modify)
   - Test first: `tests/test_shell_hooks.py::test_version_matches_changelog` and
@@ -36,7 +36,7 @@ the eval at the release commit (S3). The existing tests are reused:
     `0.2.0-alpha.4` key. A new `tests/test_cli.py::Docs::test_release_banner_is_beta` checks that the newest
     CHANGELOG section's banner doesn't say "Alpha". These fail on alpha.4.
   - Covers: AC-1, AC-3, AC-4
-- [ ] **S2**: Rename every remaining alpha.4 mention in the shipped docs and the README's alpha status line.
+- [x] **S2**: Rename every remaining alpha.4 mention in the shipped docs and the README's alpha status line.
   - Files: `README.md` (status line, current release, the three pins, the install-state note),
     `TROUBLESHOOTING.md`, `docs/adoption.md`, `docs/roadmap.md`, the `lib/sdlc_engine/lifecycle.py` docstring
     (modify)
@@ -73,3 +73,6 @@ the eval at the release commit (S3). The existing tests are reused:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-16 | S1, S2 | One commit for both steps | The tests both steps share (`Docs::test_changelog_has_the_release` checks the version and the README pins) stay red until S2's edits; the red runs are recorded below | (this commit) |
+| 2026-11-16 | S2 | The proof tests build the rejected version from parts (`"alpha" + ".4"`) | AC-2 holds for every tracked file outside `.aiops/` and `evals/results/`, the tests included; no exclusion needed | (this commit) |
+| 2026-11-16 | S1 | `Docs::test_changelog_has_the_release`'s README pin pattern takes any pre-release (`alpha|beta|rc`) | It matched `0.2.0-alpha.N` only, so the beta pins went unseen | (this commit) |

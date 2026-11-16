@@ -195,7 +195,7 @@ def parts_on_disk(root):
 
 def installed_parts(root, st, requested=()):
     """The opt-in parts installed here, sorted, plus the `requested` ones (`--with` only adds):
-    - install-state names them (`parts`); state written before 0.2.0-alpha.4 has no such key and means every part
+    - install-state names them (`parts`); state written before 0.2.0-beta.1 has no such key and means every part
     - with no install-state: a repo whose config.json is what setup writes (the template, with or without a
       profile's keys, or no file yet) has the parts found on disk, so a new repo gets core only and a rerun after a
       setup that stopped part-way installs what the first run chose; a repo with an edited config was initialized

@@ -110,7 +110,7 @@ Setup stops before writing anything when:
 `!` rows (claude, gh, credential helper, signing) are warnings: setup continues and lists the fix.
 
 ## A workflow, `ops/bands.yaml` or another scaffold file isn't there
-Since 0.2.0-alpha.4, setup and `init` install the core scaffold only: what the gates, the read-only lock and the CI
+Since 0.2.0-beta.1, setup and `init` install the core scaffold only: what the gates, the read-only lock and the CI
 audit need. The rest is opt-in, by part:
 - `review`: Claude's PR review and `@claude` workflows
 - `maintain`: `ops/bands.yaml`, the Maintain and scheduled-scan workflows, runbooks, postmortems, retros
@@ -120,7 +120,7 @@ audit need. The rest is opt-in, by part:
 
 Add one with `sdlc setup --with <part>` (comma-separated, or `--with all`). `sdlc list-installed` ends with the parts
 that aren't installed, and `sdlc setup --dry-run` names them too. `--with` only adds, and no command removes a part. A repo set up
-before alpha.4 keeps every part.
+before beta.1 keeps every part.
 
 ## Setup shows `!` rows in its plan and "Review before committing"
 A human-owned file (such as `.aiops/config/allowed-signers` or `.claude/settings.json`) exists, no commit has it,

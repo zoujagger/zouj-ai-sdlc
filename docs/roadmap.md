@@ -58,13 +58,13 @@ Built as intent `.aiops/0004-safe-lifecycle/` (#11 rule ids, #12 the lifecycle):
 `sdlc list-installed | repair | upgrade | uninstall`; rule ids, `sdlc why` and exact-command allowances that can't touch
 a gate (only `G-ENV-03` and `G-BASH-07` are allowable); `/zouj-ai-sdlc:configure`. Not shipped from this phase:
 install-state rows in `doctor`. The guard gaps found on the way were closed by intent `.aiops/0005-guard-gaps/`
-(0.2.0-alpha.4); the rest is intent 0006.
+(0.2.0-beta.1); the rest is intent 0006.
 
 ### Next: adoption (approved by zoujagger on 2026-11-10)
 From a check against the playbook and a first-run review. Each engine or hook change is its own intent; 0006 stays the
 guard-gap backlog.
 - **Release hygiene.** Every version the README pins has a pushed tag, and CI checks it.
-- **0007, first run in five minutes** (built as intent `.aiops/0007-first-run/`, 0.2.0-alpha.4).
+- **0007, first run in five minutes** (built as intent `.aiops/0007-first-run/`, 0.2.0-beta.1).
   - A repo's first profile is set by the typed `/zouj-ai-sdlc:setup solo|team|strict`, like an approval; in a fresh
     repo it writes the core scaffold too, so `solo` needs no terminal
     ([ADR 0003](adr/0003-first-profile-by-typed-setup-command.md)).

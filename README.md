@@ -1,7 +1,7 @@
 # zouj-ai-sdlc
 
-> **Status: alpha (0.2.0-alpha.4), experimental.** Gates and guards may change between alphas; don't rely on it
-> for production governance yet. Feedback welcome.
+> **Status: beta (0.2.0-beta.1).** The workflow, gates and guards are settling but may still change between betas;
+> don't rely on it for production governance yet. Feedback welcome.
 
 A [Claude Code](https://code.claude.com) plugin that runs your software lifecycle as a **state machine over Markdown
 artifacts versioned in Git**. It's inspired by [Superpowers](https://github.com/obra/superpowers) (a bootstrap skill,
@@ -41,7 +41,7 @@ All commands: [COMMANDS-QUICK-REF.md](COMMANDS-QUICK-REF.md). Stuck? [TROUBLESHO
 
 ## Install
 Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only), Claude Code ≥ 2.1. `gh` and `jq` are optional. The
-current release is **0.2.0-alpha.4**: check yours with `/plugin list`.
+current release is **0.2.0-beta.1**: check yours with `/plugin list`.
 
 > **Official sources only:** this repository (`github.com/zoujagger/zouj-ai-sdlc`) and the marketplace/plugin id
 > `zouj-ai-sdlc@zouj`. Copies elsewhere aren't reviewed.
@@ -55,7 +55,7 @@ Pick **one** path:
 
 **A. Guided (recommended).** Install the plugin, pinned to the release, then let setup do the rest:
 ```text
-/plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-alpha.4
+/plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.1
 /plugin install zouj-ai-sdlc@zouj
 /zouj-ai-sdlc:setup solo
 ```
@@ -70,7 +70,7 @@ profile later is a run in your own terminal: `sdlc setup --profile solo|team|str
 
 The same install from a terminal, with no session open:
 ```bash
-claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-alpha.4
+claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.1
 claude plugin install zouj-ai-sdlc@zouj
 ```
 
@@ -104,7 +104,7 @@ for you); Claude Code then offers the plugin to everyone who opens the repo:
 ```json
 {
   "extraKnownMarketplaces": {
-    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0-alpha.4" } }
+    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0-beta.1" } }
   },
   "enabledPlugins": { "zouj-ai-sdlc@zouj": true }
 }
@@ -148,7 +148,7 @@ Repos set up by 0.2.0-alpha.1 or alpha.2 have no install-state. The first `upgra
 equal to a released scaffold become managed, the rest count as modified and are never touched. Run by Claude, these
 commands never write a human-owned file (workflows, `.claude/settings.json`, `.aiops/config*`, CODEOWNERS) or code
 under the read-only lock: they print your terminal command instead. A file of a part you didn't install is never
-`new` or `missing`, and `upgrade` and `repair` never create it. Install-state written before 0.2.0-alpha.4 names no
+`new` or `missing`, and `upgrade` and `repair` never create it. Install-state written before 0.2.0-beta.1 names no
 parts and reads as every part, as before.
 
 **Blocked by mistake?** Every block names its rule (`BLOCKED [G-ENV-03] by guard-bash: …`); `sdlc why <id>` explains
