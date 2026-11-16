@@ -40,7 +40,7 @@ Setup installs the core scaffold, and the rest arrives by part when you ask for 
 | `maintain` | `claude-maintain.yml` (every 30 minutes), `claude-scheduled-scan.yml` (weekly) | the secret, and real metric queries in `ops/bands.yaml` | step 3 |
 
 `--with` only adds, and `sdlc list-installed` ends with the parts you don't have. A repo set up before
-0.2.0-alpha.4 has every part. To hold a workflow back there without deleting it, disable it on GitHub:
+0.2.0-beta.1 has every part. To hold a workflow back there without deleting it, disable it on GitHub:
 `gh workflow disable claude-maintain.yml`. A deleted file of an installed part shows as `missing` in
 `sdlc list-installed`, and `sdlc repair` would restore it.
 

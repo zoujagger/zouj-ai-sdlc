@@ -332,6 +332,8 @@ class History(unittest.TestCase):
             self.assertIn(v, hist)
         key = lifecycle.history_key()
         self.assertIn(key, hist, "regenerate: python3 scripts/scaffold-history.py")
+        self.assertIn("0.2.0-beta.1", hist)  # 0008 AC-3: the unreleased alpha's entry was renamed
+        self.assertNotIn("0.2.0-alpha" + ".4", hist)
         current = {
             rel: lifecycle.sha256_bytes(lifecycle.normalize((ROOT / "templates" / "scaffold" / rel).read_bytes()))
             for rel in lifecycle.scaffold_paths()

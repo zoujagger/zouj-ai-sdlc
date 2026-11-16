@@ -5,9 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-## [0.2.0-alpha.4] - 2026-11-13
+## [0.2.0-beta.1] - 2026-11-16
 
-> **Alpha, experimental.** Gates, guards and file formats may change without notice between alphas.
+> **Beta.** The workflow, the gates and the file formats are settling, but may still change between betas; the
+> CHANGELOG names every change.
 
 Two intents ship together:
 - **`.aiops/0007-first-run/`, the first run:** a repo's first profile is set by the typed
@@ -503,8 +504,8 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.4...HEAD
-[0.2.0-alpha.4]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.3...v0.2.0-alpha.4
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.1...HEAD
+[0.2.0-beta.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.3...v0.2.0-beta.1
 [0.2.0-alpha.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.2...v0.2.0-alpha.3
 [0.2.0-alpha.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...v0.2.0-alpha.2
 [0.2.0-alpha.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.1.0...v0.2.0-alpha.1

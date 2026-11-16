@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -924,12 +925,35 @@ class Docs(unittest.TestCase):
             self.assertIn("/zouj-ai-sdlc:setup", self.text(rel), rel)
         self.assertNotIn("<plugin>/bin/sdlc setup --profile solo", self.text("docs/adoption.md"))
 
+    def test_release_banner_is_beta(self):
+        """0008 AC-4: neither the README's status line nor the newest CHANGELOG section's banner says alpha."""
+        log = self.text("CHANGELOG.md")
+        section = log.split("\n## [", 2)[2].split("\n## [", 1)[0]  # the newest release, after [Unreleased]
+        banner = next(ln for ln in section.splitlines() if ln.startswith(">"))
+        self.assertNotIn("alpha", banner.lower())
+        status = next(ln for ln in self.text("README.md").splitlines() if ln.startswith("> **Status"))
+        self.assertNotIn("alpha", status.lower())
+
+    def test_no_shipped_file_names_alpha_4(self):
+        """0008 AC-2: the unreleased alpha (built before beta.1) is named by no tracked file outside .aiops/ and
+        evals/results/. The needle is built from parts so this test doesn't name it either."""
+        needle = "alpha" + ".4"
+        files = subprocess.run(["git", "ls-files"], cwd=self.root, capture_output=True, text=True).stdout.split()
+        found = [
+            rel
+            for rel in files
+            if not rel.startswith((".aiops/", "evals/results/"))
+            and (self.root / rel).is_file()
+            and needle in (self.root / rel).read_text(errors="replace")
+        ]
+        self.assertEqual(found, [], found)
+
     def test_changelog_has_the_release(self):
         """0007 AC-19: the release section names both intents, and every pin in the shipped docs matches plugin.json."""
         import re
 
         version = json.loads(self.text(".claude-plugin/plugin.json"))["version"]
-        self.assertEqual(version, "0.2.0-alpha.4")
+        self.assertEqual(version, "0.2.0-beta.1")  # 0008: the unreleased alpha was renamed
         log = self.text("CHANGELOG.md")
         section = log.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
         for piece in (
@@ -947,7 +971,7 @@ class Docs(unittest.TestCase):
         self.assertNotIn("Planned as", unreleased)  # nothing is left waiting there
         self.assertIn(f"[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{version}...HEAD", log)
         readme = self.text("README.md")
-        self.assertEqual(set(re.findall(r"0\.2\.0-alpha\.\d+", readme.split("\n## Lifecycle", 1)[0])), {version})
+        self.assertEqual(set(re.findall(r"0\.2\.0-(?:alpha|beta|rc)\.\d+", readme.split("\n## Lifecycle", 1)[0])), {version})
         self.assertEqual(readme.count(f"@v{version}"), 2)  # both marketplace commands
         self.assertIn(f'"ref": "v{version}"', readme)
         history = json.loads(self.text("defaults/scaffold-history.json"))
