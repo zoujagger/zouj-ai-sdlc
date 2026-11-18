@@ -1,76 +1,43 @@
 ---
 id: 0009
-verdict: CHANGES_REQUESTED   # PASS | CHANGES_REQUESTED (the human still decides the merge)
-commit: ad0ab2b4dd44fe786abf4b80fa6e8e4898cdf7c6
-score: 88/100
+verdict: PASS   # PASS | CHANGES_REQUESTED (the human still decides the merge)
+commit: 5e671b46d34d2b1098024b97cba01298ced52e3a
+score: 98/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-18
 ---
 
 # Review: Stack auto-detection for the Makefile contract
 
-<!-- State 5 PRE-REVIEW. Written by fresh-context reviewer personas that did not write the code. Round 1, at
-     af7704c. Each persona got only the intent folder and the base branch `main`. -->
+<!-- State 5 PRE-REVIEW. Written by fresh-context reviewer personas that did not write the code. Four rounds; each
+     persona got only the intent folder and the base branch `main`. -->
 
 ## Summary
-**Round 3, at ad0ab2b: CHANGES_REQUESTED (88).** All three personas reported.
-- **Verifier:** every AC is met, as amended by the logged deviations. `make check` 504 OK, `make validate` passed.
-- **Code review, one MAJOR (a regression from the round-2 LOW fix):** setup with no `--profile` applies no
-  human-owned change, so a profile the human picks *interactively* in a terminal is silently not written.
-- **Minors:**
-  - the printed wiring command ignores a forced `--stack`;
-  - a Makefile rewritten unwired (`init --force --stack none`) keeps stale `recipes`, and `upgrade` re-wires it;
-  - `test_agent_never_wires`'s doctor assertion is vacuous.
-- **Nits:**
-  - the scaffold Makefile header doesn't say who wires;
-  - a forced `--stack java` doesn't name a broken `pom.xml`;
-  - `KNOWN_PRESETS` is mutable.
-- **Security, two LOWs:**
-  - quadratic Gradle regexes (about 25 min on a 1 MiB file), reachable from the typed command's hook;
-  - in a repo without `.aiops/`, env-stripped `sdlc init` wires as the human. The agent can already write a wired
-    Makefile there, so this needs a documented residual.
-- **Scores:** spec 35/40, security 23/25, tests 17/20, plan 9/10, maintainability 4/5.
+**Final, round 4 at 5e671b4: PASS, 98/100.**
+- **What changed.** Setup and init detect the stack at the repo top:
+  - Java/Spring Boot (Maven, Gradle);
+  - Node, React, Angular (package.json scripts through the lockfile's package manager);
+  - Python and Go (the presets).
 
-**Round 2, at 211506d: CHANGES_REQUESTED (88).** The code reviewer and the security reviewer reported; the
-verifier was stopped before it reported, because round 3 re-verifies.
-- **Fixed from round 1:** the blocker, the typed path, every LOW, and the test debt.
-- **Still open:**
-  - **[MAJOR] A broken `pom.xml` next to a valid `build.gradle` still blocks detection.** `_java` takes the
-    `pom.xml` branch.
-  - **[MEDIUM, security] The agent's own `sdlc init` / `sdlc setup --yes` still wire a new Makefile**, so the Stop
-    hook runs repo scripts before review (reproduced). The human chose (2026-11-18) that only a human-run
-    setup/init wires, which amends AC-12.
-  - **[LOW, security]** The wiring command, run with no `--profile`, re-applies the profile's keys to a hand-tuned
-    config.
-  - **Minors:**
-    - the Gradle comment stripper eats string contents (`"**/*.gen.java"`);
-    - `emittable` isn't keyed by target, allows `CI=true` anywhere, and accepts only the running plugin's presets;
-    - the profile-from-config rule applies with a tty too, unlike its log entry;
-    - stale docs ("never changes an existing Makefile", init "wires the stub");
-    - the architecture residual overstates the guarantee;
-    - doctor's hint under the agent;
-    - `_stub_wirable` evaluated mid-apply.
-- **Scores:** spec 36/40, security 21/25, tests 18/20, plan 9/10, maintainability 4/5.
-
-Round 1, at af7704c.
-
-**The verdict is CHANGES_REQUESTED**, for two findings:
-- **A blocker in the lifecycle.** An empty recorded recipe set makes `upgrade` write the node preset into a Makefile
-  that setup had left unwired.
-- **A MEDIUM in security.** On the typed `/zouj-ai-sdlc:setup` path, the auto-wired Makefile runs the repo's own
-  commands in the Stop hook at the end of that same turn, before the human has reviewed it. The spec's residual
-  claims the human reviews first.
-
-**What holds:**
-- Every AC has a passing test, three of them weaker than the AC's wording.
-- `make check` passes: 485 tests, 3 skipped.
-- `make validate` passes; its only warning is ICON_MISSING.
-- No injection or gate bypass was found.
-
-**The human chose** (2026-11-18) to make the typed path suggest-only. The typed command lists the detected recipes,
-and `sdlc setup --stack auto` wires the untouched stub Makefile.
+  A setup or init the human runs wires a Makefile it creates, or the untouched stub. Run by the agent, or as the
+  typed `/zouj-ai-sdlc:setup`, they only list the commands and the human's terminal command, so no repo script runs
+  in a hook before the human has read it.
+- **The rounds.**
+  - **Round 1 (74):** a lifecycle blocker and a security MEDIUM (the typed command auto-wired).
+  - **Round 2 (88):** a MAJOR in Java marker choice and a security MEDIUM (the agent's init/setup auto-wired).
+  - **Round 3 (88):** a MAJOR regression (an interactive profile was dropped) and a ReDoS LOW.
+  - **Round 4:** a leftover quadratic pattern, fixed in 5e671b4 and confirmed.
+- **The human decided twice** (2026-11-18) to tighten the design: the typed path is suggest-only, and only humans
+  wire. AC-12 and AC-15 are amended in the Deviation log.
+- **Results:**
+  - `make check`: 513 tests OK, 3 skipped.
+  - `make validate`: passed (ICON_MISSING only).
+  - Eval `profile-by-setup-command` at 72ad55e: with the plugin 1.00, without 1.00, $0.86.
 
 ## Spec conformance
+Verified in round 3 (all 23 ACs at ad0ab2b). The round-3 and round-4 fixes added tests and changed no AC's
+behaviour.
+
 | AC | Verdict | Evidence (test, path:line) |
 |---|---|---|
 | AC-1 | ✅ met | `tests/test_stacks.py::Java::test_spring_boot_maven_wrapper` |
@@ -80,93 +47,63 @@ and `sdlc setup --stack auto` wires the untouched stub Makefile.
 | AC-5 | ✅ met | `tests/test_stacks.py::Node::test_react_cra_and_vite` |
 | AC-6 | ✅ met | `tests/test_stacks.py::Node::test_angular_karma_and_not` |
 | AC-7 | ✅ met | `tests/test_stacks.py::Node::test_tsc_fallback_and_npm_placeholder` |
-| AC-8 | ✅ met | `tests/test_stacks.py::Node::test_unsafe_script_names` (names come from constants; `SCRIPT_NAME` is dead) |
+| AC-8 | ✅ met | `tests/test_stacks.py::Node::test_unsafe_script_names` (names come only from `NODE_SCRIPTS`) |
 | AC-9 | ✅ met | `tests/test_stacks.py::Presets::test_python_and_go` |
 | AC-10 | ✅ met | `tests/test_stacks.py::Family::test_ambiguous_root` |
-| AC-11 | ⚠️ partial | `Family::test_unreadable_and_linked_files`, `::test_reads_only_markers`. Deeply nested JSON raises `RecursionError` (`stacks.py:73`) |
-| AC-12 | ⚠️ partial | `tests/test_setup.py::Stack::test_auto_wires_created_makefile` runs as the human, not the agent |
+| AC-11 | ✅ met | `Family::test_unreadable_and_linked_files`, `::test_reads_only_markers`, `Robustness::*`, `Round2::test_broken_pom_next_to_a_valid_gradle_file`, `Round3::test_hostile_gradle_files_finish_fast` |
+| AC-12 (amended) | ✅ met | human: `tests/test_setup.py::Stack::test_auto_wires_created_makefile`; agent: `Stack::test_agent_never_wires` (Deviation log r2) |
 | AC-13 | ✅ met | `tests/test_setup.py::Stack::test_dry_run_shows_block` |
-| AC-14 | ⚠️ partial | `Stack::test_existing_makefile_untouched` doesn't check R-11's "copy what you want" wording |
-| AC-15 | ⚠️ partial | `SetupCommand::test_typed_setup_wires_detected_stack` drives `sdlc hook prompt`, not `hooks/engine.sh` |
-| AC-16 | ✅ met | `SetupCommand::test_typed_setup_escapes_detected_text` (no surviving value exercises `printable`) |
+| AC-14 | ✅ met | `tests/test_setup.py::Stack::test_existing_makefile_untouched` (wording in setup and doctor) |
+| AC-15 (amended) | ✅ met | `tests/test_cli.py::SetupCommand::test_typed_setup_suggests_detected_stack`, through `hooks/engine.sh` (Deviation log r1) |
+| AC-16 | ✅ met | `SetupCommand::test_typed_setup_escapes_detected_text`, `::test_makefile_block_escapes` |
 | AC-17 | ✅ met | `tests/test_setup.py::Stack::test_none_forced_and_unknown` |
-| AC-18 | ❌ not met | `Detected::test_current_and_repair` passes, but recorded `recipes: {}` makes `expected()` wire the preset (`lifecycle.py:218`) |
-| AC-19 | ✅ met | `Detected::test_tampered_recipes_not_written`, `Init::test_wire_refuses_unsafe_recipes` |
-| AC-20 | ✅ met | `Detected::test_beta1_state_unchanged`, `Init::test_preset_wiring_bytes_unchanged` |
+| AC-18 | ✅ met | `tests/test_lifecycle.py::Detected::test_current_and_repair`, `::test_empty_recipes_stay_stubs`; `Stack::test_unwired_rewrite_drops_stale_recipes` |
+| AC-19 | ✅ met | `Detected::test_tampered_recipes_not_written`, `tests/test_cli.py::Init::test_wire_refuses_unsafe_recipes`, `Robustness::test_emittable_grammar` |
+| AC-20 | ✅ met | `Detected::test_beta1_state_unchanged`, `Init::test_preset_wiring_bytes_unchanged`, `Round2::test_every_shipped_preset_stays_emittable` |
 | AC-21 | ✅ met | `tests/test_shell_hooks.py::ShellHooks::test_test_lock_covers_java` |
 | AC-22 | ✅ met | `tests/test_playbook.py::Playbook::test_detection_changes_only_the_makefile` |
-| AC-23 | ✅ met | `Docs::test_docs_name_stack_detection`; `make check` 485 OK; `make validate` passed |
+| AC-23 | ✅ met | `tests/test_cli.py::Docs::test_docs_name_stack_detection`; `make check` 513 OK; `make validate` passed |
 
 ## Security
-- **[MEDIUM] `lib/sdlc_engine/setup.py:800-806`: the typed command auto-wires, so the Stop hook runs repo code
-  before review.**
-  - Exploit path: in an untrusted clone, `/zouj-ai-sdlc:setup solo` writes `npm run lint` / `./gradlew` /
-    `./mvnw`. The Stop hook runs `make check` at the end of the turn, and so runs the repo's script bodies and
-    build scripts. This happens outside Claude Code's permission prompts and before the "uncommitted for review"
-    Makefile is read.
-  - Fix (the human's choice): suggest-only on the typed path.
-- **[LOW] `stacks.py:73-76`: `RecursionError` from deeply nested JSON escapes detection.**
-  - Effect: `sdlc init` has already written the scaffold when it crashes, so it skips `lifecycle.record`. Setup
-    and doctor crash.
-  - Fix: catch `RecursionError` in `_json`/`_xml`, and detect before `apply_init` in `cmd_init`.
-- **[LOW] `stacks.py:56-63`: check-then-open.** A FIFO or symlink swapped in after `_regular()` can hang or redirect
-  the read.
-  - Fix: `os.open(O_NOFOLLOW|O_NONBLOCK)`, then `fstat` and require `S_ISREG`.
-- **[LOW] `cli.py` `safe_recipe` / `lifecycle.recipes_ok`: the install-state path accepts `$(shell …)`, `;` and
-  backticks.**
-  - Exposure: only a tampered, protected install-state can carry them.
-  - Fix: `recipes_ok` accepts only the recipe grammar the engine emits.
-- **Hardening:** reject `<!DOCTYPE`/`<!ENTITY` before `xml.etree` (old expat doesn't limit entity expansion).
+None open.
+- **Fixed across the rounds:**
+  - typed-path auto-wiring (r1 MEDIUM);
+  - the agent's init/setup auto-wiring (r2 MEDIUM);
+  - RecursionError, check-then-open, and the loose recipe check (r1 LOWs);
+  - DTD/ENTITY (hardening);
+  - the hand-tuned config being rewritten (r2 LOW);
+  - quadratic Gradle parsing (r3 LOW, completed in r4: about 0.1 s on 1 MiB hostile inputs).
+- **Accepted residual, documented in `docs/architecture.md` and the Deviation log r3:** in a repo without
+  `.aiops/`, the agent's env-stripped `sdlc init` wires as the human. The agent can already write a wired Makefile
+  there. Extending G-ENV-02 to uninitialized repos belongs to intent 0006.
 
 ## Plan conformance
-- S1–S10 are done, and main was merged before S9 as the Risks table planned.
-- Four deviations are logged (S5, S6, S9, S10).
-- These are **unlogged**:
-  - `stacks.py` doesn't use `cli.symlink_on_path`/`cli.TEMPLATES` and has its own `preset()` parser;
-  - `_safe_recipe(cmd)` became `safe_recipe(target, cmd)`;
-  - `expected_for` and `recipes_ok` are new helpers;
-  - the spec's `_wire_detected` became `_wire`.
+- S1–S10 are done.
+- The Deviation log has 17 rows:
+  - the S5, S6, S9 and S10 rows from execution;
+  - rows r1–r4 from the review fixes, including the late-logged S1–S7 module-boundary changes and the r4
+    correction of the r3 "linear" claim.
+- Nothing out of scope shipped. The `setup` "profile from config" behaviour was added as a logged fix.
 
 ## Test-first evidence
-- Red is recorded in the commit bodies of S1 10ba2bb, S2 0c41d3b, S3 80e9932, S4 37fb3e3, S5 4d51367, S6 d7916c9,
-  S7 ed3218b, S8 bef5f9d and S9 4ce48f7.
-- S10 af7704c has no red: it is a conformance guard, green on its first run, and logged.
-- Each step's test and code share one commit, which REVIEW.md accepts.
+- Red lines are in the commit bodies:
+  - steps S1–S9 (S10 is a conformance guard, logged);
+  - the fix commits 211506d (r1), ad0ab2b (r2), 72ad55e (r3) and 5e671b4 (r4).
+- Tests and code share a commit, which REVIEW.md accepts.
+- The r3 timing test missed the `id`+spaces vector; r4 added it.
 
-## Fixes requested
-1. **BLOCKER:** `lifecycle.expected` uses `recipes is not None`. Add a test: a script-less `package.json`, then
-   `upgrade --yes`, leaves the stubs.
-2. **MEDIUM (the human's choice):** the typed command writes the stub Makefile and lists the detected recipes as a
-   suggestion. `sdlc setup [--stack auto]` wires a Makefile that is still the plugin's untouched stub template.
-   Correct the docs, and log the deviation from R-12/AC-15.
-3. **Detection robustness:**
-   - catch `RecursionError` in `_json`/`_xml`;
-   - detect before `apply_init` in `cmd_init`;
-   - read with `O_NOFOLLOW|O_NONBLOCK` and `S_ISREG`;
-   - decode with `utf-8-sig` (BOM);
-   - reject DTD/ENTITY in XML;
-   - treat a marker that fails its parser as absent in the family choice, and name it in the note;
-   - name an unreadable `angular.json` in the note.
-4. **Recipe checks:** `recipes_ok` accepts only the grammar the engine emits.
-5. **Code cleanup:**
-   - one recipe parser;
-   - drop the dead `SCRIPT_NAME`, and fix the architecture row's wording;
-   - Gradle matching ignores comments and takes a one-line `plugins { … checkstyle }`;
-   - Maven Checkstyle/Spotless only under `build/plugins`.
-6. **Tests:**
-   - `Detected` built on `RepoCase`, without the inherited-test hack and the output scraping;
-   - an AC-12 run as the agent;
-   - AC-14's suggestion wording;
-   - AC-15 through `hooks/engine.sh`;
-   - a `printable` unit test with a value that survives.
-7. Log the unlogged deviations.
+## Backlog (not blocking)
+- [NIT] `lib/sdlc_engine/stacks.py:328`: if `_java` ever runs with no regular Java marker (a file removed between
+  `detect()`'s check and `_java`'s), its note reads "no Java build file can't be read". Branch on `present`.
+- [NIT] An `id` split over lines (`id\n "checkstyle"`) in a Gradle file no longer marks Checkstyle as configured.
+  Logged; rare.
 
 ## Score
 | Dimension | Weight | Score | Notes |
 |---|---|---|---|
-| Spec conformance | 40 | 33 | AC-18 broken for empty recipes; AC-11 RecursionError; R-2 "absent/noted" partial |
-| Security | 25 | 21 | MEDIUM pre-review execution; three LOWs |
-| Test quality & test-first | 20 | 17 | 9/10 steps red; empty-recipes and deep-JSON cases missing; fragile `Detected` |
-| Plan conformance | 10 | 8 | four deviations unlogged |
-| Maintainability | 5 | 4 | duplicated parser, dead regex |
-| **Total** | 100 | 74 | CHANGES_REQUESTED: below 80, a BLOCKER, AC-18 not met |
+| Spec conformance | 40 | 39 | every AC met as amended; the multi-line `id` narrowing is logged |
+| Security | 25 | 25 | no open finding; one documented residual outside this intent's guards |
+| Test quality & test-first | 20 | 19 | Red recorded throughout; the r3 timing test had missed a vector (fixed in r4) |
+| Plan conformance | 10 | 10 | all deviations logged, incl. corrections |
+| Maintainability | 5 | 5 | small module, one parser, linear scanner |
+| **Total** | 100 | 98 | PASS: ≥ 80, no BLOCKER, no CRITICAL/HIGH, every AC met |

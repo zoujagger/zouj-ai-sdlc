@@ -53,7 +53,7 @@ They print a Stack block with each target's command.
 - [x] AC-23: docs, `make check` (513 OK), `make validate`
 
 ### Deviations from plan
-The plan's Deviation log has 20 rows. The main ones:
+The plan's Deviation log has 17 rows. The main ones:
 - **Only humans wire.**
   - The typed setup command lists the commands instead of wiring (r1, the human's choice).
   - The agent's `setup`/`init` never wire, which amends AC-12 (r2, the human's choice).
