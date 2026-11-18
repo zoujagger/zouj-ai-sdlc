@@ -163,7 +163,7 @@ Existing code to reuse:
     `tests/test_rules.py::History::test_current_scaffold_in_history` fails once the Makefile template changes, until
     the history is regenerated.
   - Covers: AC-23
-- [ ] **S10**: Prove the playbook is unchanged and run the full gate: `make check`, `make validate`, and the
+- [x] **S10**: Prove the playbook is unchanged and run the full gate: `make check`, `make validate`, and the
   `profile-by-setup-command` eval.
   - Files: `tests/test_playbook.py` (modify): the walk also runs with `--stack auto` on a Node fixture and asserts
     the same gates, approvals, profile keys and CI files as with `--stack none`.
@@ -215,3 +215,4 @@ Existing code to reuse:
 | 2026-11-18 | S5 | A forced `--stack python` or `--stack go` wires its preset with no marker file at the top (R-9 reads as "the forced kind's recipes still need the repo's own files") | Those presets read no repo file, and `--stack python\|go` always worked on any repo; existing tests and beta.1 users rely on it | S5 commit |
 | 2026-11-18 | S6 | With no stack detected, the typed reply says to wire the stubs by hand (`sdlc doctor` lists them), not to run `sdlc setup --stack <name>` (R-12) | The Makefile already exists by then, and setup never changes an existing Makefile (R-11), so that advice would do nothing | S6 commit |
 | 2026-11-18 | S9 | `Docs::test_changelog_has_the_release` (0008) allows an `unreleased` scaffold-history entry while the CHANGELOG's `[Unreleased]` section has entries; at a release it still requires none | The Makefile template's header changed after 0.2.0-beta.1 was tagged, so `scripts/scaffold-history.py` records the tree as `unreleased` (its documented behaviour); `test_current_scaffold_in_history` and `--check` still pin the file | S9 commit |
+| 2026-11-18 | S10 | None; the results | `make check` OK (485 tests, 3 skipped: the conformance test runs once, on the full scaffold); `claude plugin validate .` passes (the same warnings as 0.2.0-beta.1); eval `profile-by-setup-command` (`--allow-tools Bash Write Edit`, 3 runs per arm, `evals/results/2026-11-18T10-30-23-373Z`): with the plugin 1.00, without 0.83, Δ +0.17, $0.90. `test_detection_changes_only_the_makefile` passed on its first run: it guards behaviour S5–S7 already built, so there was no red | S10 commit |
