@@ -563,6 +563,50 @@ class SetupCommand(RepoCase):
     def profile(self):
         return json.loads((self.root / CONFIG).read_text()).get("profile")
 
+    def fresh(self, package):
+        """The repo back to its first commit (no .aiops/, no scaffold), with a package.json at the top."""
+        git(self.root, "clean", "-fdxq")
+        (self.root / "package.json").write_text(json.dumps(package))
+
+    def test_typed_setup_wires_detected_stack(self):
+        """0009 S6 (AC-15): in a fresh repo the typed command wires the Makefile it creates from the detected stack
+        and lists it; the profile commit is unchanged and the Makefile stays uncommitted."""
+        self.fresh({"dependencies": {"react": "^18.3.1"}, "scripts": {"test": "react-scripts test", "build": "vite build"}})
+        (self.root / "yarn.lock").write_text("")
+        out = json.loads(self.prompt("/zouj-ai-sdlc:setup solo"))
+        context = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("profile SET: solo", context)
+        mk = (self.root / "Makefile").read_text()
+        self.assertIn("\tCI=true yarn run test\n", mk)
+        self.assertIn("\tyarn run build\n", mk)
+        for text in (context, out["systemMessage"]):
+            self.assertIn("Makefile: detected React (from package.json, yarn.lock)", text)
+            self.assertIn("test: CI=true yarn run test", text)
+            self.assertIn("lint: not configured", text)
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
+        self.assertEqual(git(self.root, "ls-files", "Makefile"), "")  # left for the human's review
+        st = json.loads((self.root / ".aiops" / "install-state.json").read_text())
+        self.assertEqual(st["stack"], "react")
+        self.assertEqual(st["recipes"], {"test": "CI=true yarn run test", "build": "yarn run build"})
+
+    def test_typed_setup_without_a_stack_says_so(self):
+        git(self.root, "clean", "-fdxq")
+        context = self.context("/zouj-ai-sdlc:setup solo")
+        self.assertIn("Makefile: no stack detected", context)
+        self.assertIn("sdlc doctor", context)
+
+    def test_typed_setup_escapes_detected_text(self):
+        """0009 S6 (AC-16): repo text with control characters never reaches the reply raw."""
+        self.fresh({"scripts": {"lint\u001b[2J": "x", "test\u0007": "y", "build": "\u001b]0;pwn\u0007 tsc"}})
+        (self.root / "angular.json").write_text(json.dumps({"projects": {"\u001b[31m": {}}}))
+        out = json.loads(self.prompt("/zouj-ai-sdlc:setup solo"))
+        for text in (out["hookSpecificOutput"]["additionalContext"], out["systemMessage"]):
+            self.assertIn("Makefile: detected Angular", text)
+            self.assertIn("build: npm run build", text)
+            self.assertNotIn("\x1b", text)
+            self.assertNotIn("\x07", text)
+            self.assertNotIn("pwn", text)  # a script body never appears
+
     def test_whole_prompt_sets_the_profile(self):
         head = git(self.root, "rev-parse", "HEAD")
         ctx = self.context("/zouj-ai-sdlc:setup solo")

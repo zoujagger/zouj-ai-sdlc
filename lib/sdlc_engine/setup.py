@@ -776,6 +776,8 @@ class KeptList(list):
     """The files scaffold_first wrote, with `.kept`: the scaffold files that existed and were kept (0007 r12)."""
 
     kept = ()
+    detection = None
+    kept_makefile = False
 
 
 def scaffold_first(root, name):
@@ -795,13 +797,36 @@ def scaffold_first(root, name):
     if links:
         return [], links
     written = KeptList()
+    det = cli.detect_stack(root)  # 0009 R-12: reads only; the Makefile created below is wired with it
+    created_makefile = ("create", "Makefile") in actions
+    recipes = None
     try:
         cli.apply_init(root, actions, written)
-        lifecycle.record(root, written, profile=name, parts=[])
+        if created_makefile and det.kind:
+            recipes = {t: det.recipes[t] for t in cli._wire(root, det.recipes)}
+        lifecycle.record(
+            root, written, profile=name, parts=[], stack=det.kind if recipes is not None else None, recipes=recipes
+        )
     except OSError as exc:
         return written, cli.write_failure(exc, written)  # the caller says what was written
     written.kept = [rel for act, rel in actions if act == "keep" and _differs(root, rel)]  # r12/r13: named to the human
+    written.detection = det
+    written.kept_makefile = not created_makefile
     return written, None
+
+
+def makefile_block(det, kept_makefile=False):
+    """The typed command's `Makefile:` lines (0009 R-12), every one escaped: the stack text comes from repo files."""
+    if det is None:
+        return ""
+    if det.kind is None:
+        lines = [f"Makefile: {det.note}; wire its stubs by hand (`sdlc doctor` lists them)"]
+    else:
+        head = f"Makefile: detected {det.label} (from {', '.join(det.evidence) or 'the preset'})"
+        if kept_makefile:
+            head += ": your Makefile is kept as it is; copy what you want into it"
+        lines = [head] + [f"  {t}: {det.recipes.get(t, 'not configured')}" for t in cli.CONTRACT_TARGETS]
+    return "".join(printable(line) + "\n" for line in lines)
 
 
 def set_first_profile(root, name, cwd=None):
@@ -917,6 +942,7 @@ def set_first_profile(root, name, cwd=None):
             "Kept existing, NOT the plugin's version: compare each with the plugin's templates/scaffold/ before you "
             "push (the CI audit and CODEOWNERS especially):\n" + "\n".join(f"  = {printable(f)}" for f in kept) + "\n"
         )
+    made += makefile_block(getattr(created, "detection", None), getattr(created, "kept_makefile", False))
     notice = (
         f"profile SET: {name} in {printable(str(root))}. From now on an approval is proven by {PROOF[name]}. "
         f"{note}\n{made}"

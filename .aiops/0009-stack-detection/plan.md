@@ -113,7 +113,7 @@ Existing code to reuse:
     - `--stack none`, `--stack react` with no package.json, and `--stack rust` refused by both setup and init
       (AC-17).
   - Covers: AC-12, AC-13, AC-14, AC-17
-- [ ] **S6**: Wire detection into the typed `/zouj-ai-sdlc:setup <profile>` in a fresh repo and add the escaped
+- [x] **S6**: Wire detection into the typed `/zouj-ai-sdlc:setup <profile>` in a fresh repo and add the escaped
   `Makefile:` block to its reply.
   - Files: `lib/sdlc_engine/setup.py` (modify):
     - `scaffold_first` detects after its existing checks, wires the created Makefile, records `stack`/`recipes`,
@@ -213,3 +213,4 @@ Existing code to reuse:
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-18 | S5 | A forced `--stack python` or `--stack go` wires its preset with no marker file at the top (R-9 reads as "the forced kind's recipes still need the repo's own files") | Those presets read no repo file, and `--stack python\|go` always worked on any repo; existing tests and beta.1 users rely on it | S5 commit |
+| 2026-11-18 | S6 | With no stack detected, the typed reply says to wire the stubs by hand (`sdlc doctor` lists them), not to run `sdlc setup --stack <name>` (R-12) | The Makefile already exists by then, and setup never changes an existing Makefile (R-11), so that advice would do nothing | S6 commit |
