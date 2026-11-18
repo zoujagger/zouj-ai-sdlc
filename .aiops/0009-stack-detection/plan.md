@@ -141,7 +141,7 @@ Existing code to reuse:
       as it is, reported as modified (AC-19);
     - a beta.1-style state with `stack: python` and no `recipes` → today's result (AC-20).
   - Covers: AC-18, AC-19, AC-20
-- [ ] **S8**: Add Java's test layout to the `/fix` test lock.
+- [x] **S8**: Add Java's test layout to the `/fix` test lock.
   - Files: `defaults/test-paths` (modify: `src/test/*`)
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_test_lock_covers_java`: with the test lock on, Edit of
     `src/test/java/AppTest.java` → exit 2. Fails today.
