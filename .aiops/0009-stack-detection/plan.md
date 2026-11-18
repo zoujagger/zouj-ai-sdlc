@@ -41,7 +41,7 @@ Existing code to reuse:
 `stacks.CHOICES`.
 
 ## Steps
-- [ ] **S1**: Create the detection module with its result type, the family choice and the reading rules.
+- [x] **S1**: Create the detection module with its result type, the family choice and the reading rules.
   - Files: `lib/sdlc_engine/stacks.py` (create): `Detection` namedtuple, `KINDS`, `CHOICES`, `detect(root, force)`,
     `_read(root, name)` (top-level regular file, not via a link, ≤ 1 MiB, UTF-8 replace), `_json`/`_xml` helpers that
     return None on a parse error, and `_family(root)`. Plus `MARKERS`, the explicit list of the only files detection
