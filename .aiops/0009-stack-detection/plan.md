@@ -128,7 +128,7 @@ Existing code to reuse:
     - `test_typed_setup_escapes_detected_text`: a script name and an `angular.json` value carrying `\x1b` → no raw
       control character in the reply or `systemMessage` (AC-16).
   - Covers: AC-15, AC-16
-- [ ] **S7**: Make the lifecycle honour recorded recipes.
+- [x] **S7**: Make the lifecycle honour recorded recipes.
   - Files: `lib/sdlc_engine/lifecycle.py` (modify):
     - `record(..., recipes=None)` stores `"recipes"`;
     - `expected(rel, ref, stack=None, recipes=None)` wires the recorded recipes when present; an invalid one

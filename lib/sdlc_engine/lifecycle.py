@@ -211,12 +211,36 @@ def installed_parts(root, st, requested=()):
     return sorted(set(base) | set(requested))
 
 
-def expected(rel, ref, stack=None):
-    """The bytes the running plugin would write for rel today (ref pinned, the stack's recipes wired in)."""
+def expected(rel, ref, stack=None, recipes=None):
+    """The bytes the running plugin would write for rel today (ref pinned, the recorded recipes wired in, else the
+    stack's preset). Recipes that fail cli.safe_recipe raise ValueError: callers treat the Makefile as modified."""
     data = render(rel, ref)
-    if rel == "Makefile" and stack in cli.STACKS:
+    if rel == "Makefile" and recipes:
+        data = cli.wire(data.decode(), recipes)[0].encode()
+    elif rel == "Makefile" and stack in cli.STACKS:
         data = cli.wire(data.decode(), cli.preset_recipes(stack))[0].encode()
     return data
+
+
+def expected_for(rel, ref, st):
+    """expected() with what install-state recorded (0009 R-15)."""
+    return expected(rel, ref, st.get("stack"), st.get("recipes"))
+
+
+def recipes_ok(st):
+    """False when install-state's recorded recipes fail the recipe check (a tampered or hand-edited state): the
+    Makefile is then never rewritten or restored from them (0009 AC-19)."""
+    recipes = st.get("recipes")
+    if recipes is None:
+        return True
+    if not isinstance(recipes, dict):
+        return False
+    try:
+        for target, cmd in recipes.items():
+            cli.safe_recipe(target, cmd)
+    except ValueError:
+        return False
+    return True
 
 
 def classify(root, st):
@@ -248,11 +272,9 @@ def classify(root, st):
             # exactly the template plus one profile: what setup or the typed command writes (r7). "current" here
             # only reports; config.json is MERGED_JSON, so upgrade pins it and never replaces it (r8, tested)
             out[rel] = "current"
-        elif sha256_file(f) != entry.get("sha256"):
+        elif sha256_file(f) != entry.get("sha256") or (rel == "Makefile" and not recipes_ok(st)):
             out[rel] = "modified"
-        elif entry.get("version") == version or sha256_bytes(
-            expected(rel, f"v{version}", st.get("stack"))
-        ) == entry.get("sha256"):
+        elif entry.get("version") == version or sha256_bytes(expected_for(rel, f"v{version}", st)) == entry.get("sha256"):
             out[rel] = "current"
         else:
             out[rel] = "stale"
@@ -522,6 +544,9 @@ def cmd_repair(root, args):
     for rel, status in classify(root, st).items():
         if status != "missing":
             continue
+        if rel == "Makefile" and not recipes_ok(st):  # 0009 AC-19: never restored from recipes that fail the check
+            out(f"  ! Makefile not restored: {STATE} records recipes that fail the recipe check; wire it by hand")
+            continue
         (human if agent and not agent_may_write(root, rel) else restore).append(rel)
     if adopted:
         out(
@@ -544,7 +569,7 @@ def cmd_repair(root, args):
     written = []
     try:
         for rel in restore:
-            write_scaffold(root, st, rel, expected(rel, ref, st.get("stack")))
+            write_scaffold(root, st, rel, expected_for(rel, ref, st))
             written.append(rel)
         stamp(st)
         save(root, st)
@@ -654,20 +679,22 @@ def plan_upgrade(root, st, ref, agent):
     current, from the running template) or pin (modified, unmanaged or a merged JSON file: only the ref value).
     human lists what the agent may not write; advice lists modified files that differ from the new template."""
     actions, human, advice = [], [], []
-    stack = st.get("stack")
     for rel, status in classify(root, st).items():
         f = root / rel
         if status in ("dropped", "declined"):
             continue
+        if rel == "Makefile" and not recipes_ok(st):  # never written from recipes that fail the check (AC-19)
+            advice.append(rel)
+            continue
         if status in ("missing", "new"):
-            act = ("create", rel, expected(rel, ref, stack))
+            act = ("create", rel, expected_for(rel, ref, st))
         else:
             disk = f.read_bytes()
             if status in ("current", "stale") and rel not in MERGED_JSON:
-                act = ("replace", rel, expected(rel, ref, stack))
+                act = ("replace", rel, expected_for(rel, ref, st))
             else:
                 act = ("pin", rel, pin(disk, ref))
-                if status in ("modified", "unmanaged") and normalize(disk) != normalize(expected(rel, ref, stack)):
+                if status in ("modified", "unmanaged") and normalize(disk) != normalize(expected_for(rel, ref, st)):
                     advice.append(rel)
                 if unpinnable(disk):
                     advice.append(rel)
@@ -722,9 +749,10 @@ def cmd_upgrade(root, args):
             out(
                 f"  ! {rel}: ZOUJ_SDLC_REF is not a literal (an expression?), so upgrade left it; set it to {ref} by hand"
             )
-        if normalize(disk) != normalize(expected(rel, ref, st.get("stack"))):
+        want = expected_for(rel, ref, st) if rel != "Makefile" or recipes_ok(st) else render(rel, ref)
+        if normalize(disk) != normalize(want):
             out(f"  = kept {rel} (modified): it differs from the new template; compare and merge by hand:")
-            show_diff(rel, disk, expected(rel, ref, st.get("stack")))
+            show_diff(rel, disk, want)
     for rel, status in classify(root, st).items():
         if status == "declined":
             out(f"  ! {rel} is declined (removed before adoption); upgrade never re-creates it")
