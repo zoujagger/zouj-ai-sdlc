@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Changed
+- **README restructured as a funnel:** the problem, a demo, a 2-command install, the workflow and a new
+  "How it differs from prompt-only workflows" section. The details moved to `docs/install.md`,
+  `docs/approver-setup.md`, `docs/enforcement.md` and `docs/lifecycle.md`. The README now credits only Anthropic's
+  *AI-Native SDLC Playbook*.
+- **Demo recording script:** `docs/demo/demo.tape` (vhs) records the README demo: a blocked early edit, the human's
+  approvals, TDD to a green `make check`.
+
 ## [0.2.0-beta.1] - 2026-11-16
 
 > **Beta.** The workflow, the gates and the file formats are settling, but may still change between betas; the
