@@ -71,6 +71,14 @@ class ShellHooks(RepoCase):
         self.assertEqual(self.bash("echo x > tests/test_a.py"), 2)
         self.assertEqual(self.bash("rm .aiops/state/test-lock"), 2)
 
+    def test_test_lock_covers_java(self):
+        """0009 S8 (AC-21): Maven/Gradle tests live under src/test/; the /fix test lock covers them."""
+        tests = lambda p: self.run_hook("guard-tests.sh", {"tool_input": {"file_path": p}})  # noqa: E731
+        (self.root / ".aiops" / "state" / "test-lock").write_text("x")
+        self.assertEqual(tests("src/test/java/com/example/AppTest.java"), 2)
+        self.assertEqual(tests("src/test/resources/application.yml"), 2)
+        self.assertEqual(tests("src/main/java/com/example/App.java"), 0)
+
     def test_guard_deploy(self):
         dep = lambda tool, ti: self.run_hook("guard-deploy.sh", {"tool_name": tool, "tool_input": ti})  # noqa: E731
         self.assertEqual(dep("Bash", {"command": "make deploy ENV=prod"}), 2)

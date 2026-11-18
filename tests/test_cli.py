@@ -15,6 +15,39 @@ class Init(RepoCase):
         super().setUp()
         shutil.rmtree(self.root / ".aiops")
 
+    def test_wire_refuses_unsafe_recipes(self):
+        """0009 S4 (AC-19): wire takes a {target: command} dict and refuses any value that could break out of
+        its recipe line, whatever its source."""
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+        from sdlc_engine import cli
+
+        stub = '\t@echo "[test] not configured - edit Makefile"\n'
+        src, wired = cli.wire(stub, {"test": "npm run test"})
+        self.assertEqual((src, wired), ("\tnpm run test\n", ["test"]))
+        for bad in ("npm test\n\trm -rf ~", "\tnpm test", "@npm test", "-npm test", "npm\x1btest", "", "a\rb"):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                cli.wire(stub, {"test": bad})
+        with self.assertRaises(ValueError):
+            cli.wire(stub, {"deploy": "make it so"})  # only the five contract targets
+
+    def test_preset_wiring_bytes_unchanged(self):
+        """0009 S4 (AC-20): a preset wired through the new API hashes as the released Makefile+<stack> entries, so
+        repos wired by beta.1 stay `current`."""
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+        from sdlc_engine import cli, lifecycle
+
+        entry = lifecycle.history()[lifecycle.history_key()]
+        template = (cli.TEMPLATES / "scaffold" / "Makefile").read_text()
+        for stack in cli.STACKS:
+            wired = cli.wire(template, cli.preset_recipes(stack))[0].encode()
+            self.assertEqual(lifecycle.sha256_bytes(lifecycle.normalize(wired)), entry[f"Makefile+{stack}"], stack)
+            text = (cli.TEMPLATES / "stacks" / f"{stack}.recipes").read_text()
+            self.assertEqual(cli.parse_recipes(text), cli.preset_recipes(stack))
+
     def test_scaffolds_without_overwriting(self):
         (self.root / "Makefile").write_text("mine:\n\techo keep\n")
         r = self.run_sdlc("init", "--with", "all")
@@ -530,6 +563,89 @@ class SetupCommand(RepoCase):
     def profile(self):
         return json.loads((self.root / CONFIG).read_text()).get("profile")
 
+    def fresh(self, package):
+        """The repo back to its first commit (no .aiops/, no scaffold), with a package.json at the top."""
+        git(self.root, "clean", "-fdxq")
+        (self.root / "package.json").write_text(json.dumps(package))
+
+    def engine_prompt(self, text):
+        """The prompt through hooks/engine.sh, as Claude Code runs it (the pre-python match included)."""
+        from helpers import ROOT
+
+        payload = json.dumps({"prompt": text, "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"})
+        env = {**self.env, "CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        r = subprocess.run(
+            [str(ROOT / "hooks" / "engine.sh"), "prompt"], input=payload, capture_output=True, text=True, env=env,
+            cwd=self.root,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_typed_setup_suggests_detected_stack(self):
+        """0009 S6, revised in review round 1 (the human's choice): through hooks/engine.sh the typed command writes
+        the stub Makefile and lists the detected recipes as a suggestion, so no repo command runs before the human
+        has seen them (AC-15). The agent's `sdlc setup --stack auto --yes` then wires the untouched stub (AC-12)."""
+        from sdlc_engine import cli as engine
+
+        self.fresh({"dependencies": {"react": "^18.3.1"}, "scripts": {"test": "react-scripts test", "build": "vite build"}})
+        (self.root / "yarn.lock").write_text("")
+        out = self.engine_prompt("/zouj-ai-sdlc:setup solo")
+        context = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("profile SET: solo", context)
+        self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"))  # stubs only
+        for text in (context, out["systemMessage"]):
+            self.assertIn("Makefile: detected React (from package.json, yarn.lock), not wired yet", text)
+            self.assertIn("test: CI=true yarn run test", text)
+            self.assertIn("lint: not configured", text)
+            self.assertIn("setup --stack auto --yes`", text)
+            self.assertIn("in your own terminal", text)
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
+        self.assertEqual(git(self.root, "log", "-1", "--format=%s"), "chore(aiops): Setup Profile solo")
+        self.assertEqual(git(self.root, "ls-files", "Makefile"), "")  # left for the human's review
+        self.assertNotIn("recipes", json.loads((self.root / ".aiops" / "install-state.json").read_text()))
+        agent = {"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root)}
+        r = self.run_sdlc("setup", "--stack", "auto", "--yes", env=agent)
+        self.assertIn("in your own terminal", r.stdout)  # run by the agent, setup never wires
+        self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"))
+        r = self.run_sdlc("setup", "--stack", "auto", "--yes")  # the human, in their own terminal
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        mk = (self.root / "Makefile").read_text()
+        self.assertIn("\tCI=true yarn run test\n", mk)
+        self.assertIn("\tyarn run build\n", mk)
+        st = json.loads((self.root / ".aiops" / "install-state.json").read_text())
+        self.assertEqual((st["stack"], st["recipes"]), ("react", {"test": "CI=true yarn run test", "build": "yarn run build"}))
+        self.assertEqual(self.profile(), "solo")  # rerunning setup keeps the profile the config names
+
+    def test_makefile_block_escapes(self):
+        """Review round 1: `printable` is exercised with values that survive into the block."""
+        from sdlc_engine import setup as engine_setup
+        from sdlc_engine.stacks import Detection
+
+        det = Detection("node", "Bad\x1b[2J", {"test": "npm run test\x07"}, ["package.json\x1b]0;x\x07"], "")
+        block = engine_setup.makefile_block(det)
+        self.assertNotIn("\x1b", block)
+        self.assertNotIn("\x07", block)
+        self.assertIn("\\x1b", block)
+
+    def test_typed_setup_without_a_stack_says_so(self):
+        git(self.root, "clean", "-fdxq")
+        context = self.context("/zouj-ai-sdlc:setup solo")
+        self.assertIn("Makefile: no stack detected", context)
+        self.assertNotIn("not wired yet", context)
+        self.assertIn("sdlc doctor", context)
+
+    def test_typed_setup_escapes_detected_text(self):
+        """0009 S6 (AC-16): repo text with control characters never reaches the reply raw."""
+        self.fresh({"scripts": {"lint\u001b[2J": "x", "test\u0007": "y", "build": "\u001b]0;pwn\u0007 tsc"}})
+        (self.root / "angular.json").write_text(json.dumps({"projects": {"\u001b[31m": {}}}))
+        out = json.loads(self.prompt("/zouj-ai-sdlc:setup solo"))
+        for text in (out["hookSpecificOutput"]["additionalContext"], out["systemMessage"]):
+            self.assertIn("Makefile: detected Angular", text)
+            self.assertIn("build: npm run build", text)
+            self.assertNotIn("\x1b", text)
+            self.assertNotIn("\x07", text)
+            self.assertNotIn("pwn", text)  # a script body never appears
+
     def test_whole_prompt_sets_the_profile(self):
         head = git(self.root, "rev-parse", "HEAD")
         ctx = self.context("/zouj-ai-sdlc:setup solo")
@@ -925,6 +1041,34 @@ class Docs(unittest.TestCase):
             self.assertIn("/zouj-ai-sdlc:setup", self.text(rel), rel)
         self.assertNotIn("<plugin>/bin/sdlc setup --profile solo", self.text("docs/adoption.md"))
 
+    def test_docs_name_stack_detection(self):
+        """0009 S9 (AC-23): the docs and skills describe stack detection and every --stack choice."""
+        choices = "auto|none|python|node|go|java|react|angular"
+        for rel in (
+            "README.md",
+            "COMMANDS-QUICK-REF.md",
+            "TROUBLESHOOTING.md",
+            "docs/install.md",
+            "skills/setup/SKILL.md",
+            "skills/init/SKILL.md",
+            "skills/onboard/SKILL.md",
+            "templates/scaffold/Makefile",
+        ):
+            self.assertIn("--stack", self.text(rel), rel)
+            self.assertNotIn("--stack python|node|go", self.text(rel).replace("\\|", "|"), rel)  # the old choices
+        self.assertIn(f'argument-hint: "[--stack {choices}]', self.text("skills/init/SKILL.md"))
+        self.assertIn(choices, self.text("COMMANDS-QUICK-REF.md").replace("\\|", "|"))
+        trouble = self.text("TROUBLESHOOTING.md")
+        self.assertIn("## The wrong stack was detected, or `make check` hangs", trouble)
+        self.assertIn("--stack none", trouble)
+        self.assertIn("stacks.py", self.text("docs/architecture.md"))
+        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        for piece in (".aiops/0009-stack-detection/", "--stack auto", "src/test/"):
+            self.assertIn(piece, unreleased, piece)
+        roadmap = self.text("docs/roadmap.md")
+        self.assertNotIn("**0009, one-pass", roadmap)
+        self.assertNotIn("**0010, evals", roadmap)
+
     def test_release_banner_is_beta(self):
         """0008 AC-4: neither the README's status line nor the newest CHANGELOG section's banner says alpha."""
         log = self.text("CHANGELOG.md")
@@ -976,7 +1120,10 @@ class Docs(unittest.TestCase):
         self.assertIn(f'"ref": "v{version}"', readme)
         history = json.loads(self.text("defaults/scaffold-history.json"))
         self.assertIn(version, history)
-        self.assertNotIn("unreleased", history)  # the tree is the release now
+        # a release's tree is that release (0008); between releases a changed template is `unreleased` (0009), and
+        # `scripts/scaffold-history.py --check` keeps the file in step with the tree either way
+        if "## [Unreleased]\n\n### " not in log:
+            self.assertNotIn("unreleased", history)
 
     def test_profile_eval_case_is_complete(self):
         """0007 AC-21: the behavioural case exists, is listed, and its fixture is a scaffolded repo with no profile."""

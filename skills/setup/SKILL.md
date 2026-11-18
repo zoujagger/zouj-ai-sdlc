@@ -23,7 +23,9 @@ only, nothing existing changed). Then it sets the first profile and commits `.ai
 qualified form counts: a bare `/setup <profile>`, or the command with other text, sets nothing.
 
 1. **Read the hook's reminder first.**
-   - It says `profile SET`: relay the files it created and the human steps exactly as numbered. Introduce
+   - It says `profile SET`: relay the files it created, its `Makefile:` block (the detected stack's commands, not
+     wired yet: the human reviews them and wires them from their own terminal with the command it gives), and the
+     human steps exactly as numbered. Introduce
      terminal commands with "Run these in your own terminal:", and keep steps that happen in Claude Code (such as
      a `git` commit you may run for them only if asked) apart. Write nothing yourself. Go to step 6.
    - It says `profile NOT set`: relay the reason and the terminal command it gives, then stop.
@@ -39,6 +41,11 @@ qualified form counts: a bare `/setup <profile>`, or the command with other text
    - the Plan (`+` creates, `~` changes an existing human-owned file, `!` a human-owned file that no commit has and
      that holds something setup doesn't write), and the line naming the opt-in parts it leaves out
    - the "Review before committing" section, verbatim: it shows what those `!` files contain
+   - the **Stack** block: the detected stack and each Makefile target's command (`--stack auto`, the default). If
+     the human disagrees, preview again with `--stack <name>` (java, node, react, angular, python, go) or
+     `--stack none`. Run by you, setup **never wires**: relay the block and the terminal command it names, and say
+     that the commands run the repo's own scripts, so the human reviews them before wiring them. A Makefile the
+     human has edited is never changed: the block is then only a suggestion
    - the Gates summary, verbatim
 
    If any row is `✗`, stop: the command would refuse too until it's fixed.

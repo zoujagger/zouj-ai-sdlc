@@ -93,7 +93,19 @@ from another repo, is refused on purpose; run it as two commands.
 ## The Stop hook keeps saying "definition of done not met" (`G-STOP-01`)
 `make check` must pass before a turn can end, whenever the working tree changed. Run `make check` and fix what fails.
 If a Makefile target still prints `not configured`, wire it: edit the
-Makefile's recipes (the plugin ships presets in `templates/stacks/`).
+Makefile's recipes. `sdlc doctor` names the detected stack's command for each unwired target.
+
+## The wrong stack was detected, or `make check` hangs
+Setup and init detect the stack from the files at the repo top (`--stack auto`, the default). Run in your own
+terminal, they wire a Makefile they create, or one that is still the untouched stub. The Stack block in their output
+shows what was wired. Run by Claude, or as the typed `/zouj-ai-sdlc:setup`, they only list what they detected:
+review it, then run the `setup --stack auto --yes` command they give, in your own terminal.
+- **Wrong guess:** edit the Makefile's recipes. On a fresh scaffold, rerun with `--stack <name>` (`java`, `node`,
+  `react`, `angular`, `python`, `go`), or `--stack none` to keep the stubs.
+- **Several stacks at the top** (e.g. `pom.xml` and `package.json`): nothing is guessed; pick one with `--stack`.
+- **`make check` hangs:** a test command is in watch mode. React (Create React App) runs with `CI=true`, and Angular's
+  `ng test` with `--watch=false` (headless Chrome with Karma). If your own `test` script watches, point the Makefile's
+  `test` recipe at a single-run script, such as `test:ci`.
 
 ## Setup says `✗` and "nothing was written"
 Setup stops before writing anything when:

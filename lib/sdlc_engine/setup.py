@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import approvals, cli
+from . import approvals, cli, stacks
 from . import artifacts as A
 from .machine import config, git, initialized, intent_dirs
 
@@ -404,7 +404,7 @@ def _with_marketplace(settings):
     return merged
 
 
-OPTIONS = {"--profile": PROFILES, "--stack": cli.STACKS, "--dry-run": None, "--yes": None}  # option: its values
+OPTIONS = {"--profile": PROFILES, "--stack": stacks.CHOICES, "--dry-run": None, "--yes": None}  # option: its values
 WITH = "--with"  # its value is a list of opt-in parts (lifecycle.parse_parts)
 
 
@@ -424,7 +424,7 @@ def parse(args):
             continue
         if name not in OPTIONS:
             return None, (
-                f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack python|node|go, "
+                f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack {'|'.join(stacks.CHOICES)}, "
                 f"--with {','.join(lifecycle.PARTS)} (or all), --dry-run and --yes"
             )
         allowed = OPTIONS[name]
@@ -450,6 +450,11 @@ def main(root, args):
         print(f"setup stops: {problem}. Nothing was written.", file=sys.stderr)
         return 1
     tty = _is_tty()
+    from_config = False
+    if profile is None:  # a repo whose config already names one: rerunning setup (--stack, --with) keeps it
+        named = (_json(root / ".aiops" / "config.json") or {}).get("profile")
+        profile = named if named in PROFILES else None
+        from_config = profile is not None
     if profile is None and not dry_run and not tty:
         print(
             "setup needs choices and there's no terminal to ask them; nothing was written. Run again with:\n"
@@ -487,7 +492,14 @@ def main(root, args):
     if owned:  # shown before any confirmation (and in --dry-run)
         print(
             "Changes to human-owned files"
-            + (": the agent can't apply these, they become your human steps" if approvals.running_under_agent() else "")
+            + (
+                ": the agent can't apply these, they become your human steps"
+                if approvals.running_under_agent()
+                else ": not applied without --profile (the profile came from .aiops/config.json); they become your "
+                "human steps"
+                if from_config
+                else ""
+            )
         )
         for rel, (old, new, _keys) in owned.items():
             print(
@@ -512,6 +524,11 @@ def main(root, args):
                 )
                 or f"  (same as the template: {rel})"
             )
+    det = cli.detect_stack(root, opts.get("--stack"))
+    makefile_created = any(mark == "+" and rel == "Makefile" for mark, rel, _ in actions)
+    stub = not makefile_created and cli.stub_makefile(root)  # decided once, before anything is written
+    mode = cli.wire_mode(root, makefile_created, stub)
+    print("Stack\n" + "\n".join(cli.stack_lines(det, mode, opts.get("--stack"))))
     print(GATES.format(proof=PROOF[profile]))
     if any(mark == "✗" for mark, _, _ in actions):
         print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
@@ -520,7 +537,8 @@ def main(root, args):
         print("dry run: nothing was written.")
         return 0
     agent = approvals.running_under_agent()
-    if not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):  # the agent never writes a ~ change
+    rewire = det is not None and bool(det.recipes) and stub and mode == "wire"
+    if not rewire and not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):  # the agent never writes a ~ change
         print(
             "Nothing for the agent to write: the ~ changes above are yours (see the human steps)."
             if agent and owned
@@ -535,7 +553,16 @@ def main(root, args):
             else "no terminal to confirm: nothing was written. Re-run with --yes to apply."
         )
         return 2
-    return apply(root, profile, actions, opts.get("--stack"), review, parts)
+    return apply(
+        root,
+        profile,
+        actions,
+        det if mode == "wire" else None,
+        review,
+        parts,
+        stub=stub,
+        apply_owned=not from_config,  # a profile taken from the config: human-owned files stay as they are (r2, r3)
+    )
 
 
 def _is_tty():
@@ -556,7 +583,7 @@ def _confirm():
         return False
 
 
-def apply(root, profile, actions, stack=None, review=(), parts=None):
+def apply(root, profile, actions, det=None, review=(), parts=None, stub=False, apply_owned=True):
     creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
     created = {rel for _, rel in creates}
     written, changed, wired = [], [], None
@@ -570,23 +597,35 @@ def apply(root, profile, actions, stack=None, review=(), parts=None):
                 ".aiops/config.json",
                 (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode(),
             )
-        if stack and "Makefile" in created:
-            wired = cli._wire_stack(root, stack)
+        recipes = None
+        if det is not None and det.kind and ("Makefile" in created or stub):
+            wired = cli._wire(root, det.recipes)
+            recipes = {t: det.recipes[t] for t in wired}
+            if "Makefile" not in written:  # the untouched stub, wired now: install-state records its new bytes
+                written.append("Makefile")
         from . import lifecycle
 
         pending = owned_changes(root, profile)
-        if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it
+        if pending and apply_owned and not approvals.running_under_agent():  # a human confirmed this plan: apply it
             for rel, (_old, new, _keys) in pending.items():  # the diff was shown in the plan, before the question
                 cli.write_file(root, rel, new.encode())
                 written.append(rel)
                 changed.append(rel)
             pending = {}
-        lifecycle.record(root, written, profile=profile, stack=stack, parts=parts)
+        lifecycle.record(
+            root,
+            written,
+            profile=profile,
+            stack=det.kind if recipes is not None else None,
+            parts=parts,
+            recipes=recipes,
+            makefile_unwired=recipes is None and "Makefile" in written,
+        )
     except OSError as exc:
         print(cli.write_failure(exc, written), file=sys.stderr)
         return 1
     if wired is not None:
-        print(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
+        print(f"Makefile: wired {', '.join(wired) or 'nothing'} from the detected {det.label}")
     print("Applied")
     for rel in sorted(created):
         print(f"  + {rel}")
@@ -764,6 +803,8 @@ class KeptList(list):
     """The files scaffold_first wrote, with `.kept`: the scaffold files that existed and were kept (0007 r12)."""
 
     kept = ()
+    detection = None
+    kept_makefile = False
 
 
 def scaffold_first(root, name):
@@ -783,13 +824,42 @@ def scaffold_first(root, name):
     if links:
         return [], links
     written = KeptList()
+    det = cli.detect_stack(root)  # reads only; listed in the reply, never wired here (makefile_block)
+    created_makefile = ("create", "Makefile") in actions
     try:
         cli.apply_init(root, actions, written)
         lifecycle.record(root, written, profile=name, parts=[])
     except OSError as exc:
         return written, cli.write_failure(exc, written)  # the caller says what was written
     written.kept = [rel for act, rel in actions if act == "keep" and _differs(root, rel)]  # r12/r13: named to the human
+    written.detection = det
+    written.kept_makefile = not created_makefile
     return written, None
+
+
+def makefile_block(det, kept_makefile=False):
+    """The typed command's `Makefile:` lines (0009 R-12), every one escaped: the stack text comes from repo files.
+    The typed command never wires (review round 1, the human's choice): wired, `make check` would run the repo's own
+    commands in the Stop hook at the end of the same turn, before the human has read them. It lists them instead."""
+    if det is None:
+        return ""
+    if det.kind is None:
+        lines = [f"Makefile: {det.note}; wire its stubs by hand (`sdlc doctor` lists them)"]
+    else:
+        head = f"Makefile: detected {det.label} (from {', '.join(det.evidence) or 'the preset'})"
+        head += ": your Makefile is kept as it is; copy what you want into it" if kept_makefile else ", not wired yet:"
+        lines = [head] + [f"  {t}: {det.recipes.get(t, 'not configured')}" for t in cli.CONTRACT_TARGETS]
+        if det.note:
+            lines.append(f"  note: {det.note}")
+        if not kept_makefile and det.recipes:
+            from . import lifecycle
+
+            lines.append(
+                "  Review these commands (they run the repo's own scripts), then wire them by running in your own "
+                f"terminal: `{lifecycle.human_command('setup --stack auto --yes')}` (it wires only this untouched "
+                "stub Makefile), or wire them by hand."
+            )
+    return "".join(printable(line) + "\n" for line in lines)
 
 
 def set_first_profile(root, name, cwd=None):
@@ -905,6 +975,7 @@ def set_first_profile(root, name, cwd=None):
             "Kept existing, NOT the plugin's version: compare each with the plugin's templates/scaffold/ before you "
             "push (the CI audit and CODEOWNERS especially):\n" + "\n".join(f"  = {printable(f)}" for f in kept) + "\n"
         )
+    made += makefile_block(getattr(created, "detection", None), getattr(created, "kept_makefile", False))
     notice = (
         f"profile SET: {name} in {printable(str(root))}. From now on an approval is proven by {PROOF[name]}. "
         f"{note}\n{made}"

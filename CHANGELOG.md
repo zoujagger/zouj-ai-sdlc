@@ -5,6 +5,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Added
+- **Stack auto-detection for the Makefile contract** (`.aiops/0009-stack-detection/`):
+  - **What it detects:** `sdlc setup` and `sdlc init`, run in your own terminal, read the repo top and wire a
+    Makefile they create (or one that is still the untouched stub) from the repo's own commands:
+    - Java/Spring Boot (Maven or Gradle, the `mvnw`/`gradlew` wrapper first, Checkstyle/Spotless only when
+      configured);
+    - Node, React and Angular (`package.json` scripts through the lockfile's package manager; tests run once, not
+      in watch mode);
+    - Python and Go (the presets).
+  - **`--stack auto|none|python|node|go|java|react|angular`:** `auto` is the default.
+  - **What you see:** the Stack block in the preview and `--dry-run`.
+  - **Run by Claude, or as the typed `/zouj-ai-sdlc:setup <profile>`**, setup and init detect but don't wire. They
+    list the commands and the terminal command that wires them (`setup --stack auto --yes`). Wired at once, the Stop
+    hook's `make check` would run the repo's own scripts before you had read them.
+  - **Safety:**
+    - Detection only reads: no command run, no link followed (opened `O_NOFOLLOW`, regular files only), no file
+      outside its marker list, no DTD.
+    - Only fixed script names reach the Makefile, never script bodies.
+  - **Install-state** records the wired recipes, so `upgrade`/`repair` keep the Makefile. A recorded recipe that
+    isn't one detection can produce is never written.
+  - **A Makefile you've edited** is never changed; setup and `sdlc doctor` show the detected commands as a
+    suggestion.
+  - **The `/fix` test lock** covers `src/test/` (Maven/Gradle).
+
+### Fixed
+- **`sdlc setup` without `--profile`** used to stop with "setup needs choices" (or ask again in a terminal), even
+  when `.aiops/config.json` already named a profile. It now uses that profile. Run this way, it applies no change to
+  a human-owned file: differences in the config or settings are listed as your steps. Use it to wire the Makefile
+  or add parts.
+
 ### Changed
 - **README restructured as a funnel:** the problem, a demo, a 2-command install, the workflow and a new
   "How it differs from prompt-only workflows" section. The details moved to `docs/install.md`,

@@ -120,6 +120,51 @@ class Playbook(SetupCase):
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def test_detection_changes_only_the_makefile(self):
+        """0009 S10 (AC-22): stack detection changes the Makefile's recipes, install-state and setup's output, and
+        nothing the gates, approvals, profile or CI audit read: two repos set up with --stack auto and --stack none
+        differ only there."""
+        if type(self) is not Playbook:
+            self.skipTest("run once, on the full scaffold")
+        trees = {}
+        for choice in ("auto", "none"):
+            d = self.root.parent / f"{self.root.name}.stack-{choice}"
+            d.mkdir()
+            git(d, "init", "-q", "-b", "main")
+            for key, value in (("user.name", "Human Owner"), ("user.email", "owner@example.com")):
+                git(d, "config", key, value)
+            (d / "package.json").write_text(json.dumps({"scripts": {"lint": "eslint .", "test": "node --test"}}))
+            git(d, "add", "-A")
+            git(d, "commit", "-qm", "init")
+            env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d)}
+            r = subprocess.run(
+                [sys.executable, SDLC, "setup", "--profile", "team", "--stack", choice, "--yes", "--with", "all"],
+                cwd=d,
+                input="",
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            trees[choice] = {
+                str(f.relative_to(d)): f.read_bytes()
+                for f in d.rglob("*")
+                if f.is_file() and f.relative_to(d).parts[0] != ".git"
+            }
+        auto, none = trees["auto"], trees["none"]
+        self.assertEqual(set(auto), set(none))
+        differ = {rel for rel in auto if auto[rel] != none[rel]}
+        self.assertEqual(differ, {"Makefile", ".aiops/install-state.json"})
+        self.assertIn(b"\tnpm run test\n", auto["Makefile"])
+        a, n = (json.loads(t[".aiops/install-state.json"]) for t in (auto, none))
+        self.assertEqual((a["stack"], a["recipes"]), ("node", {"lint": "npm run lint", "test": "npm run test"}))
+        self.assertNotIn("recipes", n)
+        for st in (a, n):
+            for key in ("stack", "recipes", "updated_at"):
+                st.pop(key, None)
+            st["files"].pop("Makefile")
+        self.assertEqual(a, n)  # everything else install-state records is the same
+
     def weak_approval(self, d, intent):
         """(ok, message) for `Intent Approved` with the test key, which has no passphrase and needs no touch."""
         return approvals.approve(d, intent, "intent", via="test")

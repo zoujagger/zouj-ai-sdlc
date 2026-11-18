@@ -4,6 +4,7 @@ tests/*
 test/*
 spec/*
 __tests__/*
+src/test/*
 *_test.*
 *.test.*
 *.spec.*

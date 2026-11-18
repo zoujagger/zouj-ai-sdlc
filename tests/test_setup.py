@@ -1714,5 +1714,232 @@ class FirstProfile(SetupCase):
         self.assertEqual(self.cfg(), self.template)
 
 
+SPRING_POM = """<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId></parent>
+  <artifactId>demo</artifactId>
+</project>
+"""
+JAVA_RECIPES = {
+    "typecheck": "./mvnw -B -q compile",
+    "test": "./mvnw -B -q test",
+    "build": "./mvnw -B -q package -DskipTests",
+}
+
+
+class Stack(SetupCase):
+    """0009 S5: setup and init detect the stack and wire the Makefile they create (AC-12 to AC-14, AC-17)."""
+
+    def spring(self):
+        (self.root / "pom.xml").write_text(SPRING_POM)
+        (self.root / "mvnw").write_text("#!/bin/sh\n")
+        (self.root / "mvnw").chmod(0o755)
+
+    def state(self):
+        return json.loads((self.root / ".aiops" / "install-state.json").read_text())
+
+    def test_auto_wires_created_makefile(self):
+        self.spring()
+        r = self.setup_run("--profile", "solo", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        mk = (self.root / "Makefile").read_text()
+        for cmd in JAVA_RECIPES.values():
+            self.assertIn(f"\t{cmd}\n", mk)
+        self.assertIn('[lint] not configured', mk)  # no Checkstyle: the stub stays
+        st = self.state()
+        self.assertEqual(st["stack"], "java")
+        self.assertEqual(st["recipes"], JAVA_RECIPES)
+        self.assertIn("detected Java · Spring Boot · Maven", r.stdout)
+
+    def test_dry_run_shows_block(self):
+        self.spring()
+        before = self.snapshot()
+        r = self.setup_run("--profile", "solo", "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        block = r.stdout.split("\nStack\n", 1)[1]
+        self.assertIn("detected Java · Spring Boot · Maven (from pom.xml, mvnw)", block)
+        self.assertRegex(block, r"lint\s+not configured")
+        self.assertRegex(block, r"test\s+\./mvnw -B -q test")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_existing_makefile_untouched(self):
+        mine = 'test:\n\t@echo "[test] not configured - edit Makefile"\n'
+        (self.root / "Makefile").write_text(mine)
+        (self.root / "package.json").write_text(json.dumps({"scripts": {"test": "ng test"}}))
+        (self.root / "angular.json").write_text("{}")
+        r = self.setup_run("--profile", "solo", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.root / "Makefile").read_text(), mine)
+        self.assertIn("your Makefile is kept; copy what you want into it", r.stdout)
+        self.assertIn("npm run test -- --watch=false", r.stdout)
+        self.assertNotIn("recipes", self.state())
+        self.assertIsNone(self.state()["stack"])
+        doc = self.run_sdlc("doctor")
+        self.assertIn("detected Angular", doc.stdout)
+        self.assertIn("copy what you want into your Makefile", doc.stdout)
+        self.assertIn("npm run test -- --watch=false", doc.stdout)
+
+    def test_none_forced_and_unknown(self):
+        self.spring()
+        r = self.setup_run("--profile", "solo", "--stack", "none", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.root / "Makefile").read_text().count('] not configured - edit Makefile"'), 5)
+        self.assertIn("--stack none", r.stdout)
+        shutil.rmtree(self.root / ".aiops")
+        (self.root / "Makefile").unlink()
+        r = self.setup_run("--profile", "solo", "--stack", "react", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.root / "Makefile").read_text().count('] not configured - edit Makefile"'), 5)
+        self.assertIn("--stack react needs package.json", r.stdout)
+        shutil.rmtree(self.root / ".aiops")
+        before = self.snapshot()
+        for cmd in (("setup", "--profile", "solo", "--stack", "rust", "--yes"), ("init", "--stack", "rust")):
+            r = self.run_sdlc(*cmd, env={"PATH": str(self.bin_with())})
+            self.assertEqual(r.returncode, 1, cmd)
+            self.assertIn("auto, none, python, node, go, java, react, angular", r.stdout + r.stderr, cmd)
+            self.assertEqual(self.snapshot(), before, cmd)
+
+    def test_untouched_stub_makefile_is_wired(self):
+        """Review round 1: a Makefile that is still the plugin's untouched stub template (the typed setup command
+        writes one) is wired by setup; install-state records its new bytes."""
+        from sdlc_engine import cli as engine
+
+        self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)
+        self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"))
+        self.spring()
+        doc = self.run_sdlc("doctor")
+        self.assertIn("sdlc setup --stack auto --yes", doc.stdout)
+        r = self.setup_run("--profile", "solo", "--stack", "auto", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
+        st = self.state()
+        self.assertEqual(st["recipes"], JAVA_RECIPES)
+        import hashlib
+
+        self.assertEqual(st["files"]["Makefile"]["sha256"], hashlib.sha256((self.root / "Makefile").read_bytes()).hexdigest())
+        (self.root / "Makefile").write_text((self.root / "Makefile").read_text() + "# mine\n")
+        before = (self.root / "Makefile").read_bytes()
+        self.assertEqual(self.setup_run("--profile", "solo", "--stack", "auto", "--yes").returncode, 0)
+        self.assertEqual((self.root / "Makefile").read_bytes(), before)  # no longer the stub: never touched
+
+    def test_agent_never_wires(self):
+        """Review round 2 (the human's choice, amends AC-12): run by the agent, setup and init create the stub
+        Makefile and name the human's terminal command; the repo's commands run only after the human wires them."""
+        from sdlc_engine import cli as engine
+
+        self.spring()
+        agent = {"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root)}
+        for cmd in (("setup", "--profile", "solo", "--yes"), ("init",)):
+            r = self.run_sdlc(*cmd, env={"PATH": str(self.bin_with()), **agent})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"), cmd)
+            self.assertIn("detected Java · Spring Boot · Maven", r.stdout)
+            self.assertIn("setup --stack auto --yes", r.stdout)
+            self.assertIn("in your own terminal", r.stdout)
+            self.assertNotIn("recipes", self.state())
+            self.assertIsNone(self.state()["stack"])
+            if cmd[0] == "setup":
+                shutil.rmtree(self.root / ".aiops")
+                (self.root / "Makefile").unlink()
+        doc = self.run_sdlc("doctor", env=agent)
+        self.assertIn("review them, then wire them by running in your own terminal", doc.stdout)  # not the signing row
+        r = self.setup_run("--profile", "solo", "--stack", "auto", "--yes")  # the human: wires the untouched stub
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
+
+    def test_wiring_without_profile_changes_no_config(self):
+        """Review round 2 (security LOW): `setup --stack auto --yes` with no --profile wires the stub and leaves a
+        hand-tuned config as it is; its differences become steps."""
+        from sdlc_engine import cli as engine
+
+        self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)
+        cfg = self.root / ".aiops" / "config.json"
+        tuned = {**json.loads(cfg.read_text()), "profile": "solo", "require_signed_approvals": True, "approval_key_policy": "human"}
+        cfg.write_text(json.dumps(tuned, indent=2) + "\n")
+        before = cfg.read_bytes()
+        self.spring()
+        self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"))
+        r = self.setup_run("--stack", "auto", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(cfg.read_bytes(), before)
+        self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
+
+    def test_interactive_profile_is_written(self):
+        """Review round 3 MAJOR: a profile the human picks at setup's question is applied, as with --profile; only a
+        profile taken from the config leaves human-owned files alone."""
+        import contextlib
+        import io
+
+        from sdlc_engine import setup
+
+        self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)  # a config with no profile
+        answers = iter(["strict", "y"])
+        buf = io.StringIO()
+        with (
+            mock.patch.object(setup, "_is_tty", return_value=True),
+            mock.patch("builtins.input", lambda *_: next(answers)),
+            mock.patch.object(setup, "preflight", return_value=[("✓", "git", "")]),
+            contextlib.redirect_stdout(buf),
+        ):
+            code = setup.main(self.root, [])
+        self.assertEqual(code, 0, buf.getvalue())
+        self.assertEqual(json.loads((self.root / ".aiops" / "config.json").read_text())["profile"], "strict")
+
+    def test_profile_from_config_says_changes_are_steps(self):
+        self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text(json.dumps({**json.loads(cfg.read_text()), "profile": "solo"}, indent=2) + "\n")
+        r = self.setup_run("--dry-run")
+        self.assertIn("not applied without --profile", r.stdout)
+
+    def test_wiring_command_keeps_a_forced_stack(self):
+        """Review round 3: the printed command repeats a forced --stack (auto would refuse an ambiguous repo)."""
+        self.spring()
+        (self.root / "package.json").write_text(json.dumps({"scripts": {"test": "jest"}}))
+        r = self.run_sdlc("init", "--stack", "java", env={"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root)})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("setup --stack java --yes", r.stdout)
+        self.assertNotIn("setup --stack auto --yes", r.stdout)
+
+    def test_unwired_rewrite_drops_stale_recipes(self):
+        """Review round 3: a Makefile rewritten unwired forgets the old recipes, so upgrade can't wire it back."""
+        self.spring()
+        self.assertEqual(self.setup_run("--profile", "solo", "--yes").returncode, 0)
+        self.assertEqual(self.state()["recipes"], JAVA_RECIPES)
+        self.assertEqual(self.run_sdlc("init", "--force", "--stack", "none").returncode, 0)
+        st = self.state()
+        self.assertNotIn("recipes", st)
+        self.assertIsNone(st["stack"])
+        stub = (self.root / "Makefile").read_bytes()
+        self.assertEqual(self.run_sdlc("upgrade", "--yes").returncode, 0)
+        self.assertEqual((self.root / "Makefile").read_bytes(), stub)
+
+    def test_init_wires_the_untouched_stub(self):
+        self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)
+        self.spring()
+        r = self.run_sdlc("init")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
+        self.assertEqual(self.state()["recipes"], JAVA_RECIPES)
+
+    def test_init_survives_a_hostile_package_json(self):
+        """Review round 1: detection runs before init writes anything, and a deeply nested package.json is absent."""
+        (self.root / "package.json").write_text("[" * 200000 + "]" * 200000)
+        r = self.run_sdlc("init")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("package.json", r.stdout)
+        self.assertTrue((self.root / ".aiops" / "install-state.json").is_file())
+
+    def test_init_detects_and_prints_block(self):
+        self.spring()
+        r = self.run_sdlc("init")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("detected Java · Spring Boot · Maven", r.stdout)
+        self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
+        self.assertEqual(self.state()["recipes"], JAVA_RECIPES)
+        self.assertNotIn("copy the recipes", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

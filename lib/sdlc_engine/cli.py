@@ -395,16 +395,39 @@ def cmd_unlock(root, args):
     return 0
 
 
-def wire(src, stack, recipes_text=None):
-    """(src, wired targets): the Makefile text with the stack preset's recipes in place of the stubs. recipes_text
-    defaults to the running plugin's preset (scripts/scaffold-history.py passes a release's)."""
-    recipes = {}
-    if recipes_text is None:
-        recipes_text = (TEMPLATES / "stacks" / f"{stack}.recipes").read_text()
-    for line in recipes_text.splitlines():
-        parts = line.strip().split(None, 1)
-        if len(parts) == 2 and not parts[0].startswith("#"):
-            recipes[parts[0]] = parts[1]
+CONTRACT_TARGETS = ("format", "lint", "typecheck", "test", "build")
+UNSAFE_RECIPE_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def safe_recipe(target, cmd):
+    """cmd, checked to stay one recipe line of a contract target, else ValueError (0009 R-8): no control character
+    (a newline would start a new recipe or rule), not empty, and not led by a tab, `-` or `@` (make prefixes)."""
+    if target not in CONTRACT_TARGETS:
+        raise ValueError(f"{target!r} is not a contract target ({', '.join(CONTRACT_TARGETS)})")
+    if not isinstance(cmd, str) or not cmd.strip() or UNSAFE_RECIPE_RE.search(cmd) or cmd[0] in "\t -@":
+        raise ValueError(f"unsafe recipe for {target}: {cmd!r}")
+    return cmd
+
+
+def parse_recipes(text):
+    """{target: command} from a templates/stacks/*.recipes text: stacks.parse_recipes, the one parser."""
+    from . import stacks
+
+    return stacks.parse_recipes(text)
+
+
+def preset_recipes(stack):
+    """The recipes of the running plugin's templates/stacks/<stack>.recipes."""
+    from . import stacks
+
+    return stacks.preset(stack)
+
+
+def wire(src, recipes):
+    """(src, wired targets): the Makefile text with recipes ({target: command}) in place of the "not configured"
+    stubs. Every command is checked first (safe_recipe): one bad value refuses the whole call."""
+    for target, cmd in recipes.items():
+        safe_recipe(target, cmd)
     wired = []
     for target, cmd in recipes.items():
         src, n = re.subn(
@@ -418,8 +441,67 @@ def wire(src, stack, recipes_text=None):
     return src, wired
 
 
-def _wire_stack(root, stack):
-    src, wired = wire((root / "Makefile").read_text(), stack)
+def detect_stack(root, choice=None):
+    """The stacks.Detection for a --stack choice (None or "auto": detect; a kind: forced), or None for "none"."""
+    from . import stacks
+
+    if choice == "none":
+        return None
+    return stacks.detect(root, None if choice in (None, "auto") else choice)
+
+
+def wire_mode(root, makefile_created, stub):
+    """How setup/init treat the Makefile (review round 2, the human's choice): "wire" when the human runs them and
+    the Makefile is new or still the untouched stub; "agent" when the agent runs them on such a Makefile (never
+    wired: the Stop hook would run the repo's own scripts before the human has read them); "kept" otherwise."""
+    if not (makefile_created or stub):
+        return "kept"
+    return "agent" if approvals.running_under_agent() else "wire"
+
+
+def human_wire_command(choice=None):
+    """The human's terminal command that wires the stub Makefile, repeating a forced --stack (round 3: `auto` would
+    refuse a repo with two stacks at its top)."""
+    from . import lifecycle
+
+    stack = choice if choice and choice not in ("auto", "none") else "auto"
+    return lifecycle.human_command(f"setup --stack {stack} --yes")
+
+
+def stack_lines(det, mode="wire", choice=None):
+    """The `Stack` block's lines: what was detected and each contract target's command (0009 R-13)."""
+    if det is None:
+        return ["  --stack none: the Makefile keeps its 'not configured' stubs"]
+    if det.kind is None:
+        return [f"  {det.note}"]
+    head = f"  detected {det.label} (from {', '.join(det.evidence) or 'the preset'})"
+    if mode == "kept":
+        head += ": your Makefile is kept; copy what you want into it"
+    elif mode == "agent":
+        head += ", not wired (run by Claude, setup and init never wire)"
+    lines = [head] + [f"    {t:<10} {det.recipes.get(t, 'not configured')}" for t in CONTRACT_TARGETS]
+    if det.note:
+        lines.append(f"  note: {det.note}")
+    if mode == "agent" and det.recipes:
+        lines.append(
+            "  These run the repo's own scripts: review them, then wire them by running in your own terminal: "
+            f"{human_wire_command(choice)}"
+        )
+    return lines
+
+
+def stub_makefile(root):
+    """True when root's Makefile is still the plugin's untouched stub template (a regular file, byte for byte what
+    init writes): setup may wire it, as it wires one it creates (review round 1). Any edit makes it the human's."""
+    p = root / "Makefile"
+    try:
+        return not p.is_symlink() and p.is_file() and p.read_bytes() == rendered_template("Makefile")
+    except OSError:
+        return False
+
+
+def _wire(root, recipes):
+    src, wired = wire((root / "Makefile").read_text(), recipes)
     write_file(root, "Makefile", src.encode())
     return wired
 
@@ -621,10 +703,12 @@ def apply_init(root, actions, written=None):
 
 
 def cmd_init(root, args):
+    from . import stacks
+
     stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
     force = "--force" in args
-    if stack and stack not in STACKS:
-        out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
+    if stack and stack not in stacks.CHOICES:
+        out(f"unknown stack {stack!r} ({', '.join(stacks.CHOICES)}). Nothing was written.", sys.stderr)
         return 1
     from . import lifecycle
 
@@ -645,6 +729,8 @@ def cmd_init(root, args):
     if refusal:
         out(refusal, sys.stderr)
         return 1
+    det = detect_stack(root, stack)  # reads only, before anything is written (review round 1)
+    stub = stub_makefile(root)  # judged before init writes anything
     written = []
     try:
         apply_init(root, actions, written)
@@ -659,11 +745,28 @@ def cmd_init(root, args):
             "Human-owned or locked, not reset (init --force was run by the agent). To reset them, the human runs "
             "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned)
         )
-    if stack and "Makefile" in created:
-        wired = _wire_stack(root, stack)
-        out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
+    mode = wire_mode(root, "Makefile" in created, stub)
+    recipes = None
+    if det is not None and det.kind and mode == "wire":
+        wired = _wire(root, det.recipes)
+        recipes = {t: det.recipes[t] for t in wired}
+        if "Makefile" not in written:  # the untouched stub, wired now: install-state records its new bytes
+            written.append("Makefile")
+        out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the detected {det.label}")
+    if recipes is None and "Makefile" in written:  # written unwired: forget recipes an earlier run recorded (round 3)
+        recipes, unwired = None, True
+    else:
+        unwired = False
+    out("Stack\n" + "\n".join(stack_lines(det, mode, stack)))
     try:
-        lifecycle.record(root, written, stack=stack, parts=parts)
+        lifecycle.record(
+            root,
+            written,
+            stack=det.kind if recipes is not None else None,
+            parts=parts,
+            recipes=recipes,
+            makefile_unwired=unwired,
+        )
     except OSError as exc:
         out(write_failure(exc, written), sys.stderr)
         return 1
@@ -675,8 +778,8 @@ def cmd_init(root, args):
         out(left_out)
     out("""
 zouj-ai-sdlc is now active in this repo. Next:
-  1. Wire the Makefile contract (format/lint/typecheck/test/build): copy the recipes from the plugin's
-     templates/stacks/<python|node|go>.recipes.
+  1. Check the Makefile contract (format/lint/typecheck/test/build) against the Stack block above, and wire
+     what is still "not configured" (or rerun with --stack <name>).
   2. Optional, for an unattended state 4: add the allow-rules from .aiops/README.md to .claude/settings.json.
   3. Commit the scaffold, then start: /zouj-ai-sdlc:intent "<your first need>".""")
     return 0
@@ -834,11 +937,19 @@ def cmd_doctor(root, args):
     if initialized(root) and (root / "Makefile").exists():
         mk = (root / "Makefile").read_text()
         unwired = [t for t in ("format", "lint", "typecheck", "test", "build") if f'"[{t}] not configured' in mk]
-        row(
-            not unwired,
-            "Makefile contract wired" + (f" (not: {', '.join(unwired)})" if unwired else ""),
-            "edit the Makefile's recipes (presets: the plugin's templates/stacks/<python|node|go>.recipes)",
-        )
+        hint = "edit the Makefile's recipes"
+        det = detect_stack(root) if unwired else None
+        if det is not None and det.kind and any(t in det.recipes for t in unwired):
+            hint += f"; detected {det.label}: " + "; ".join(
+                f"{t}: {det.recipes[t]}" for t in unwired if t in det.recipes
+            )
+            if not stub_makefile(root):
+                hint += "; copy what you want into your Makefile"
+            elif approvals.running_under_agent():
+                hint += f"; review them, then wire them by running in your own terminal: {human_wire_command()}"
+            else:
+                hint += "; run `sdlc setup --stack auto --yes` to wire them (your Makefile is still the untouched stub)"
+        row(not unwired, "Makefile contract wired" + (f" (not: {', '.join(unwired)})" if unwired else ""), hint)
     for b in ("gh", "jq"):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")
     if initialized(root):
