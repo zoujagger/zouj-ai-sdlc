@@ -81,6 +81,9 @@ and type `/zouj-ai-sdlc:setup solo`. Commit the scaffold with the command the re
   terminal: `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent|spec|plan`
   ([approver setup](docs/approver-setup.md)). The escape hatch `"approval_key_policy": "any"` accepts any key, at a
   cost: anything running as you can then sign approvals.
+- **The Makefile contract:** setup detects the stack at the repo top (Java/Spring Boot with Maven or Gradle, Node,
+  React, Angular, Python, Go) and wires `make check` from the repo's own commands. Override it with `--stack <name>`,
+  or keep the stubs with `--stack none`. An existing Makefile is never changed.
 - **Opt-in parts:** setup installs the core only. Add `review`, `maintain`, `deploy`, `governance` or `issues` with
   `sdlc setup --with <part>`.
 - **Your own terminal:** `sdlc` is on PATH only inside Claude Code. `sdlc where` prints the command to run there.

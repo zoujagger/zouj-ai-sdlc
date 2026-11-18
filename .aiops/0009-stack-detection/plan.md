@@ -146,7 +146,7 @@ Existing code to reuse:
   - Test first: `tests/test_shell_hooks.py::ShellHooks::test_test_lock_covers_java`: with the test lock on, Edit of
     `src/test/java/AppTest.java` → exit 2. Fails today.
   - Covers: AC-21
-- [ ] **S9**: Update the docs and skills, renumber the roadmap labels, and regenerate the scaffold history.
+- [x] **S9**: Update the docs and skills, renumber the roadmap labels, and regenerate the scaffold history.
   - Files (modify):
     - `templates/scaffold/Makefile` (the header: detection, `--stack auto|none|…`);
     - `skills/setup/SKILL.md`, `skills/init/SKILL.md` (`argument-hint`), `skills/onboard/SKILL.md`;
@@ -214,3 +214,4 @@ Existing code to reuse:
 |---|---|---|---|---|
 | 2026-11-18 | S5 | A forced `--stack python` or `--stack go` wires its preset with no marker file at the top (R-9 reads as "the forced kind's recipes still need the repo's own files") | Those presets read no repo file, and `--stack python\|go` always worked on any repo; existing tests and beta.1 users rely on it | S5 commit |
 | 2026-11-18 | S6 | With no stack detected, the typed reply says to wire the stubs by hand (`sdlc doctor` lists them), not to run `sdlc setup --stack <name>` (R-12) | The Makefile already exists by then, and setup never changes an existing Makefile (R-11), so that advice would do nothing | S6 commit |
+| 2026-11-18 | S9 | `Docs::test_changelog_has_the_release` (0008) allows an `unreleased` scaffold-history entry while the CHANGELOG's `[Unreleased]` section has entries; at a release it still requires none | The Makefile template's header changed after 0.2.0-beta.1 was tagged, so `scripts/scaffold-history.py` records the tree as `unreleased` (its documented behaviour); `test_current_scaffold_in_history` and `--check` still pin the file | S9 commit |

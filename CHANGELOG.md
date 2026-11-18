@@ -5,6 +5,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Added
+- **Stack auto-detection for the Makefile contract** (`.aiops/0009-stack-detection/`):
+  - **What it detects:** setup, init and the typed `/zouj-ai-sdlc:setup <profile>` read the repo top and wire a
+    Makefile they create from the repo's own commands:
+    - Java/Spring Boot (Maven or Gradle, the `mvnw`/`gradlew` wrapper first, Checkstyle/Spotless only when
+      configured);
+    - Node, React and Angular (`package.json` scripts through the lockfile's package manager; tests run once, not
+      in watch mode);
+    - Python and Go (the presets).
+  - **`--stack auto|none|python|node|go|java|react|angular`:** `auto` is the default.
+  - **What you see:** the Stack block in the preview, `--dry-run` and the typed reply.
+  - **Safety:** detection only reads (no command run, no link followed, no file outside its marker list), and only
+    script names reach the Makefile, never script bodies.
+  - **Install-state** records the wired recipes, so `upgrade`/`repair` keep the Makefile, and recipes that fail the
+    check are never written.
+  - **An existing Makefile** is never changed; setup and `sdlc doctor` show the detected commands as a suggestion.
+  - **The `/fix` test lock** covers `src/test/` (Maven/Gradle).
+
 ### Changed
 - **README restructured as a funnel:** the problem, a demo, a 2-command install, the workflow and a new
   "How it differs from prompt-only workflows" section. The details moved to `docs/install.md`,

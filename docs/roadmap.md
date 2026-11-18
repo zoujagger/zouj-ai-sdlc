@@ -74,9 +74,9 @@ guard-gap backlog.
   - A behavioural eval, `profile-by-setup-command`.
 - **0008, macOS.** No GNU-only `realpath -m` in the hooks, and a CI matrix of ubuntu and macos (item 11 below, pulled
   forward).
-- **0009, one-pass approval for small changes** (`/fix` and `risk: low`). One phrase opens every pending gate whose
+- **One-pass approval for small changes** (`/fix` and `risk: low`). One phrase opens every pending gate whose
   artifact validates, still as three single-file approval commits. Who decides, and what CI audits, don't change.
-- **0010, evals in CI.** Weekly and on changes to skills, agents, hooks and CLAUDE.md; about 20 cases; an opt-in eval
+- **Evals in CI.** Weekly and on changes to skills, agents, hooks and CLAUDE.md; about 20 cases; an opt-in eval
   workflow for consumers.
 - **Docs.** A shorter README with a walkthrough, the [adoption ladder](adoption.md), a managed-settings example that
   keeps this plugin's hooks on, a nit cap in REVIEW.md, and a listing in Anthropic's plugin directory.
@@ -86,7 +86,7 @@ guard-gap backlog.
   2-command install, the workflow and how it differs from prompt-only workflows. The details moved to
   [install](install.md), [approver setup](approver-setup.md), [enforcement](enforcement.md) and
   [lifecycle](lifecycle.md). The demo GIF is recorded by a human from [docs/demo/demo.tape](demo/demo.tape).
-- **Stack auto-detection** (its own intent). Setup detects the stack at the repo top and wires the Makefile contract
+- **Stack auto-detection** (built as intent `.aiops/0009-stack-detection/`). Setup detects the stack at the repo top and wires the Makefile contract
   from the repo's own scripts:
   - Java/Spring Boot (Maven or Gradle, wrapper first);
   - Node, React and Angular (package.json scripts, the package manager from the lockfile);

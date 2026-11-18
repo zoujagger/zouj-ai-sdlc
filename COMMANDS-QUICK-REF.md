@@ -8,7 +8,7 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 |---|---|
 | `/zouj-ai-sdlc:setup solo\|team\|strict` | ✋ Typed as your whole prompt: in a repo without `.aiops/` it writes the core scaffold (missing files only), then sets this repo's **first** profile and commits `.aiops/config.json` alone. Changing it later is `sdlc setup --profile <p>` in your own terminal |
 | `/zouj-ai-sdlc:setup` | Without a profile: checks prerequisites, previews every change and the gates, then asks you to type the command above. Rerunnable |
-| `/zouj-ai-sdlc:init [--stack python\|node\|go]` | The bare core scaffold, without setup's guidance |
+| `/zouj-ai-sdlc:init [--stack auto\|none\|python\|node\|go\|java\|react\|angular]` | The bare core scaffold, without setup's guidance |
 | `/zouj-ai-sdlc:configure [solo\|team\|strict]` | Shows the profile, key policy and installed files, previews a profile change, and hands you what applies it: `/zouj-ai-sdlc:setup <p>` for a first profile, one terminal command after that |
 | `/zouj-ai-sdlc:onboard` | An interactive tour of the workflow for your role |
 | `/zouj-ai-sdlc:help-me "<goal>"` | Maps what you want to do to the right command |
@@ -50,7 +50,7 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 ## Engine commands (terminal)
 | Command | What it does |
 |---|---|
-| `sdlc setup [--profile P] [--stack S] [--with PARTS] [--dry-run] [--yes]` | The guided setup, as above. `--with` adds opt-in parts: `review`, `maintain`, `deploy`, `governance`, `issues` (comma-separated, or `all`). It never removes one |
+| `sdlc setup [--profile P] [--stack S] [--with PARTS] [--dry-run] [--yes]` | The guided setup, as above. `--stack` (default `auto`) detects the stack and wires a Makefile setup creates from the repo's own commands; `--stack <name>` forces one, `--stack none` keeps the stubs. `--with` adds opt-in parts: `review`, `maintain`, `deploy`, `governance`, `issues` (comma-separated, or `all`). It never removes one |
 | `sdlc init [--stack S] [--with PARTS]` | The scaffold alone: the core files, plus the parts you name. Never overwrites a file |
 | `sdlc where` | Prints the `sdlc` command for your own terminal (absolute python and plugin paths), then the human-only subcommands. Writes nothing |
 | `sdlc status [--json]` · `sdlc next` | State and next step |

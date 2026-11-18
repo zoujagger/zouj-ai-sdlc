@@ -4,7 +4,8 @@
 #   typecheck: npx tsc --noEmit  | mypy .              | go vet ./...
 #   test:      npm test          | pytest -q          | go test ./...
 # A target still printing "not configured" counts as a pass. `sdlc doctor` flags unwired targets.
-# Presets: copy the recipes from the plugin's templates/stacks/<python|node|go>.recipes
+# Setup wires these from the detected stack (`--stack auto`, the default): Java/Spring Boot, Node, React, Angular,
+# Python, Go. `--stack <name>` forces one; `--stack none` keeps these stubs.
 
 ENV ?= staging
 

@@ -1002,6 +1002,34 @@ class Docs(unittest.TestCase):
             self.assertIn("/zouj-ai-sdlc:setup", self.text(rel), rel)
         self.assertNotIn("<plugin>/bin/sdlc setup --profile solo", self.text("docs/adoption.md"))
 
+    def test_docs_name_stack_detection(self):
+        """0009 S9 (AC-23): the docs and skills describe stack detection and every --stack choice."""
+        choices = "auto|none|python|node|go|java|react|angular"
+        for rel in (
+            "README.md",
+            "COMMANDS-QUICK-REF.md",
+            "TROUBLESHOOTING.md",
+            "docs/install.md",
+            "skills/setup/SKILL.md",
+            "skills/init/SKILL.md",
+            "skills/onboard/SKILL.md",
+            "templates/scaffold/Makefile",
+        ):
+            self.assertIn("--stack", self.text(rel), rel)
+            self.assertNotIn("--stack python|node|go", self.text(rel).replace("\\|", "|"), rel)  # the old choices
+        self.assertIn(f'argument-hint: "[--stack {choices}]', self.text("skills/init/SKILL.md"))
+        self.assertIn(choices, self.text("COMMANDS-QUICK-REF.md").replace("\\|", "|"))
+        trouble = self.text("TROUBLESHOOTING.md")
+        self.assertIn("## The wrong stack was detected, or `make check` hangs", trouble)
+        self.assertIn("--stack none", trouble)
+        self.assertIn("stacks.py", self.text("docs/architecture.md"))
+        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        for piece in (".aiops/0009-stack-detection/", "--stack auto", "src/test/"):
+            self.assertIn(piece, unreleased, piece)
+        roadmap = self.text("docs/roadmap.md")
+        self.assertNotIn("**0009, one-pass", roadmap)
+        self.assertNotIn("**0010, evals", roadmap)
+
     def test_release_banner_is_beta(self):
         """0008 AC-4: neither the README's status line nor the newest CHANGELOG section's banner says alpha."""
         log = self.text("CHANGELOG.md")
@@ -1053,7 +1081,10 @@ class Docs(unittest.TestCase):
         self.assertIn(f'"ref": "v{version}"', readme)
         history = json.loads(self.text("defaults/scaffold-history.json"))
         self.assertIn(version, history)
-        self.assertNotIn("unreleased", history)  # the tree is the release now
+        # a release's tree is that release (0008); between releases a changed template is `unreleased` (0009), and
+        # `scripts/scaffold-history.py --check` keeps the file in step with the tree either way
+        if "## [Unreleased]\n\n### " not in log:
+            self.assertNotIn("unreleased", history)
 
     def test_profile_eval_case_is_complete(self):
         """0007 AC-21: the behavioural case exists, is listed, and its fixture is a scaffolded repo with no profile."""

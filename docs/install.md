@@ -42,7 +42,8 @@ the same line as `Your terminal:`.
 ## Core by default, the rest opt-in
 Setup and `init` install the core scaffold:
 - `.aiops/`, CLAUDE.md, REVIEW.md;
-- the Makefile contract;
+- the Makefile contract, wired from the detected stack (`--stack auto`, the default; `--stack <name>` forces one,
+  `--stack none` keeps the stubs; an existing Makefile is never changed);
 - the project settings, CODEOWNERS and the PR template;
 - the two workflows the gates need (`aiops-gates.yml`, `ci.yml`).
 
@@ -61,7 +62,7 @@ Nothing in it runs on a schedule or needs a secret. Add the rest by part, now or
 
 ## Other install paths
 **Just the plugin.** The two `/plugin` commands from the README, then, in each repo:
-1. `/zouj-ai-sdlc:init` (or `sdlc init [--stack python|node|go] [--with <parts>]`);
+1. `/zouj-ai-sdlc:init` (or `sdlc init [--stack auto|none|python|node|go|java|react|angular] [--with <parts>]`);
 2. type `/zouj-ai-sdlc:setup <profile>`.
 
 **For a team, declaratively.** Commit the snippet from the README to the project's `.claude/settings.json`. `init`
