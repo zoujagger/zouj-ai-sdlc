@@ -450,9 +450,11 @@ def main(root, args):
         print(f"setup stops: {problem}. Nothing was written.", file=sys.stderr)
         return 1
     tty = _is_tty()
+    from_config = False
     if profile is None:  # a repo whose config already names one: rerunning setup (--stack, --with) keeps it
         named = (_json(root / ".aiops" / "config.json") or {}).get("profile")
         profile = named if named in PROFILES else None
+        from_config = profile is not None
     if profile is None and not dry_run and not tty:
         print(
             "setup needs choices and there's no terminal to ask them; nothing was written. Run again with:\n"
@@ -490,7 +492,14 @@ def main(root, args):
     if owned:  # shown before any confirmation (and in --dry-run)
         print(
             "Changes to human-owned files"
-            + (": the agent can't apply these, they become your human steps" if approvals.running_under_agent() else "")
+            + (
+                ": the agent can't apply these, they become your human steps"
+                if approvals.running_under_agent()
+                else ": not applied without --profile (the profile came from .aiops/config.json); they become your "
+                "human steps"
+                if from_config
+                else ""
+            )
         )
         for rel, (old, new, _keys) in owned.items():
             print(
@@ -519,7 +528,7 @@ def main(root, args):
     makefile_created = any(mark == "+" and rel == "Makefile" for mark, rel, _ in actions)
     stub = not makefile_created and cli.stub_makefile(root)  # decided once, before anything is written
     mode = cli.wire_mode(root, makefile_created, stub)
-    print("Stack\n" + "\n".join(cli.stack_lines(det, mode)))
+    print("Stack\n" + "\n".join(cli.stack_lines(det, mode, opts.get("--stack"))))
     print(GATES.format(proof=PROOF[profile]))
     if any(mark == "✗" for mark, _, _ in actions):
         print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
@@ -552,7 +561,7 @@ def main(root, args):
         review,
         parts,
         stub=stub,
-        apply_owned="--profile" in opts,  # rerun to wire or add parts: a hand-tuned config stays as it is (round 2)
+        apply_owned=not from_config,  # a profile taken from the config: human-owned files stay as they are (r2, r3)
     )
 
 
@@ -610,6 +619,7 @@ def apply(root, profile, actions, det=None, review=(), parts=None, stub=False, a
             stack=det.kind if recipes is not None else None,
             parts=parts,
             recipes=recipes,
+            makefile_unwired=recipes is None and "Makefile" in written,
         )
     except OSError as exc:
         print(cli.write_failure(exc, written), file=sys.stderr)

@@ -459,13 +459,16 @@ def wire_mode(root, makefile_created, stub):
     return "agent" if approvals.running_under_agent() else "wire"
 
 
-def human_wire_command():
+def human_wire_command(choice=None):
+    """The human's terminal command that wires the stub Makefile, repeating a forced --stack (round 3: `auto` would
+    refuse a repo with two stacks at its top)."""
     from . import lifecycle
 
-    return lifecycle.human_command("setup --stack auto --yes")
+    stack = choice if choice and choice not in ("auto", "none") else "auto"
+    return lifecycle.human_command(f"setup --stack {stack} --yes")
 
 
-def stack_lines(det, mode="wire"):
+def stack_lines(det, mode="wire", choice=None):
     """The `Stack` block's lines: what was detected and each contract target's command (0009 R-13)."""
     if det is None:
         return ["  --stack none: the Makefile keeps its 'not configured' stubs"]
@@ -482,7 +485,7 @@ def stack_lines(det, mode="wire"):
     if mode == "agent" and det.recipes:
         lines.append(
             "  These run the repo's own scripts: review them, then wire them by running in your own terminal: "
-            f"{human_wire_command()}"
+            f"{human_wire_command(choice)}"
         )
     return lines
 
@@ -750,10 +753,19 @@ def cmd_init(root, args):
         if "Makefile" not in written:  # the untouched stub, wired now: install-state records its new bytes
             written.append("Makefile")
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the detected {det.label}")
-    out("Stack\n" + "\n".join(stack_lines(det, mode)))
+    if recipes is None and "Makefile" in written:  # written unwired: forget recipes an earlier run recorded (round 3)
+        recipes, unwired = None, True
+    else:
+        unwired = False
+    out("Stack\n" + "\n".join(stack_lines(det, mode, stack)))
     try:
         lifecycle.record(
-            root, written, stack=det.kind if recipes is not None else None, parts=parts, recipes=recipes
+            root,
+            written,
+            stack=det.kind if recipes is not None else None,
+            parts=parts,
+            recipes=recipes,
+            makefile_unwired=unwired,
         )
     except OSError as exc:
         out(write_failure(exc, written), sys.stderr)

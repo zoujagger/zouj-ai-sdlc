@@ -11,6 +11,7 @@ import os
 import re
 import stat
 from collections import namedtuple
+from types import MappingProxyType
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -152,6 +153,10 @@ def detect(root, force=None):
             return DETECTORS[family](root, force)
         if not any(_regular(root, n) for n in FAMILIES[family]):
             return none(f"--stack {force} needs {' or '.join(FAMILIES[family])} at the repo top; nothing was wired")
+        broken = [n for n in FAMILIES[family] if _regular(root, n) and not _parses(root, n)]
+        if broken:  # named, as on the auto path (round 3)
+            det = DETECTORS[family](root, force)
+            return det._replace(note=(det.note + "; " if det.note else "") + _unparsed(broken).strip(" ()"))
     else:
         found, broken = _families(root)
         if not found:
@@ -244,15 +249,37 @@ def _karma(angular):
     return False
 
 
+# `[ \t]*`, never `\s*`: whitespace that could cross lines made the match quadratic on a hostile file (round 3).
 GRADLE_CHECKSTYLE = re.compile(
-    r"""(\bid\s*\(?\s*['"]checkstyle['"]|(^|[{;])\s*checkstyle\s*($|[;}])|plugin:\s*['"]checkstyle['"])""", re.M
+    r"""\bid[ \t]*\(?[ \t]*['"]checkstyle['"]|(?:^|[{;])[ \t]*checkstyle[ \t]*(?:$|[;}])|plugin:[ \t]*['"]checkstyle['"]""",
+    re.M,
 )
-# A string literal first (kept), else a comment (dropped): `"**/*.gen.java"` or a URL is not a comment (round 2).
-GRADLE_TOKENS = re.compile(r"""("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|/\*.*?\*/|//[^\n]*""", re.S)
+GRADLE_START = re.compile(r"""["']|/[*/]""")
+GRADLE_STRING_BODY = {q: re.compile(r"(?:\\.|[^%s\\\n])*" % q) for q in "\"'"}
 
 
 def _strip_comments(text):
-    return GRADLE_TOKENS.sub(lambda m: m.group(1) or "", text)
+    """text without `//` and `/* */` comments; string literals are kept (`"**/*.gen.java"` or a URL is not a
+    comment, round 2). One linear pass: an unterminated `/*` drops the rest of the file once (round 3)."""
+    out, pos, n = [], 0, len(text)
+    while True:
+        m = GRADLE_START.search(text, pos)
+        if m is None:
+            out.append(text[pos:])
+            return "".join(out)
+        i, tok = m.start(), m.group()
+        out.append(text[pos:i])
+        if tok == "//":
+            j = text.find("\n", i)
+            pos = n if j < 0 else j
+        elif tok == "/*":
+            j = text.find("*/", i + 2)
+            pos = n if j < 0 else j + 2
+        else:
+            j = GRADLE_STRING_BODY[tok].match(text, i + 1).end()
+            j = j + 1 if j < n and text[j] == tok else j
+            out.append(text[i:j])
+            pos = j
 
 
 def _local(tag):
@@ -363,13 +390,15 @@ EMITTABLE = {
 # Every preset recipe any release has shipped, per target. A recorded preset recipe must stay acceptable after an
 # upgrade, so changing templates/stacks/*.recipes means adding the new value here and keeping the old one
 # (tests/test_stacks.py::Round2::test_every_shipped_preset_stays_emittable).
-KNOWN_PRESETS = {
-    "format": ("ruff format .", "npx prettier --write .", "gofmt -w ."),
-    "lint": ("ruff check .", "npm run lint", "go vet ./..."),
-    "typecheck": ("mypy .", "npx tsc --noEmit", "go build ./..."),
-    "test": ("pytest -q", "npm test", "go test ./..."),
-    "build": ("python3 -m build   # needs: pip install build", "npm run build", "go build -o bin/ ./..."),
-}
+KNOWN_PRESETS = MappingProxyType(
+    {
+        "format": ("ruff format .", "npx prettier --write .", "gofmt -w ."),
+        "lint": ("ruff check .", "npm run lint", "go vet ./..."),
+        "typecheck": ("mypy .", "npx tsc --noEmit", "go build ./..."),
+        "test": ("pytest -q", "npm test", "go test ./..."),
+        "build": ("python3 -m build   # needs: pip install build", "npm run build", "go build -o bin/ ./..."),
+    }
+)
 
 
 def emittable(target, cmd):

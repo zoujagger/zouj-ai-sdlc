@@ -1843,7 +1843,7 @@ class Stack(SetupCase):
                 shutil.rmtree(self.root / ".aiops")
                 (self.root / "Makefile").unlink()
         doc = self.run_sdlc("doctor", env=agent)
-        self.assertIn("in your own terminal", doc.stdout)
+        self.assertIn("review them, then wire them by running in your own terminal", doc.stdout)  # not the signing row
         r = self.setup_run("--profile", "solo", "--stack", "auto", "--yes")  # the human: wires the untouched stub
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
@@ -1864,6 +1864,56 @@ class Stack(SetupCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(cfg.read_bytes(), before)
         self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
+
+    def test_interactive_profile_is_written(self):
+        """Review round 3 MAJOR: a profile the human picks at setup's question is applied, as with --profile; only a
+        profile taken from the config leaves human-owned files alone."""
+        import contextlib
+        import io
+
+        from sdlc_engine import setup
+
+        self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)  # a config with no profile
+        answers = iter(["strict", "y"])
+        buf = io.StringIO()
+        with (
+            mock.patch.object(setup, "_is_tty", return_value=True),
+            mock.patch("builtins.input", lambda *_: next(answers)),
+            mock.patch.object(setup, "preflight", return_value=[("✓", "git", "")]),
+            contextlib.redirect_stdout(buf),
+        ):
+            code = setup.main(self.root, [])
+        self.assertEqual(code, 0, buf.getvalue())
+        self.assertEqual(json.loads((self.root / ".aiops" / "config.json").read_text())["profile"], "strict")
+
+    def test_profile_from_config_says_changes_are_steps(self):
+        self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)
+        cfg = self.root / ".aiops" / "config.json"
+        cfg.write_text(json.dumps({**json.loads(cfg.read_text()), "profile": "solo"}, indent=2) + "\n")
+        r = self.setup_run("--dry-run")
+        self.assertIn("not applied without --profile", r.stdout)
+
+    def test_wiring_command_keeps_a_forced_stack(self):
+        """Review round 3: the printed command repeats a forced --stack (auto would refuse an ambiguous repo)."""
+        self.spring()
+        (self.root / "package.json").write_text(json.dumps({"scripts": {"test": "jest"}}))
+        r = self.run_sdlc("init", "--stack", "java", env={"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root)})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("setup --stack java --yes", r.stdout)
+        self.assertNotIn("setup --stack auto --yes", r.stdout)
+
+    def test_unwired_rewrite_drops_stale_recipes(self):
+        """Review round 3: a Makefile rewritten unwired forgets the old recipes, so upgrade can't wire it back."""
+        self.spring()
+        self.assertEqual(self.setup_run("--profile", "solo", "--yes").returncode, 0)
+        self.assertEqual(self.state()["recipes"], JAVA_RECIPES)
+        self.assertEqual(self.run_sdlc("init", "--force", "--stack", "none").returncode, 0)
+        st = self.state()
+        self.assertNotIn("recipes", st)
+        self.assertIsNone(st["stack"])
+        stub = (self.root / "Makefile").read_bytes()
+        self.assertEqual(self.run_sdlc("upgrade", "--yes").returncode, 0)
+        self.assertEqual((self.root / "Makefile").read_bytes(), stub)
 
     def test_init_wires_the_untouched_stub(self):
         self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)

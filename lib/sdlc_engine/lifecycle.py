@@ -53,7 +53,7 @@ def save(root, st):
     cli.write_file(root, STATE, (json.dumps(st, indent=2, sort_keys=True) + "\n").encode())
 
 
-def record(root, written, profile=None, stack=None, ref=None, parts=None, data=None, recipes=None):
+def record(root, written, profile=None, stack=None, ref=None, parts=None, data=None, recipes=None, makefile_unwired=False):
     """Record the scaffold files just written (their bytes on disk, or `data[rel]`: the bytes the caller wrote) in
     install-state, and the installed opt-in `parts` when given. Files that were only kept are not claimed. Nothing is
     written when nothing was, so a rerun leaves the state as it is."""
@@ -78,6 +78,9 @@ def record(root, written, profile=None, stack=None, ref=None, parts=None, data=N
         st["parts"] = sorted(parts)
     if recipes is not None:  # what was wired into the Makefile it created (0009 R-14)
         st["recipes"] = dict(recipes)
+    elif makefile_unwired:  # the Makefile was written with its stubs: an older record must not wire it back (round 3)
+        st.pop("recipes", None)
+        st["stack"] = None
     for rel in paths:
         st["files"][rel] = {
             "sha256": hashlib.sha256(data[rel]).hexdigest() if data and rel in data else sha256_file(root / rel),

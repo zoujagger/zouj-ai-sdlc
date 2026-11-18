@@ -479,5 +479,38 @@ class Round2(StackCase):
                 self.assertTrue(stacks.emittable(target, cmd), (name, target))
 
 
+class Round3(StackCase):
+    """Review round 3: Gradle parsing is linear (a hostile build file can't stall the typed setup command's hook or
+    setup/init/doctor); a forced kind names a broken marker; the preset table can't be changed at run time."""
+
+    def test_hostile_gradle_files_finish_fast(self):
+        import time
+
+        size = stacks.MAX_BYTES - 16
+        for body in ("/*x" * (size // 3), "\n" * size, "{" + " " * (size - 1), "id" + "\n" * (size - 2), "'" * size):
+            self.put("build.gradle", body)
+            start = time.monotonic()
+            det = self.detect()
+            self.assertLess(time.monotonic() - start, 2.0, repr(body[:8]))
+            self.assertEqual(det.kind, "java")
+
+    def test_unterminated_block_comment_drops_the_rest(self):
+        self.put("build.gradle", "plugins { id 'checkstyle' }\n/* open\napply plugin: 'com.diffplug.spotless'\n")
+        det = self.detect()
+        self.assertIn("lint", det.recipes)
+        self.assertNotIn("format", det.recipes)
+
+    def test_forced_kind_names_a_broken_marker(self):
+        self.put("pom.xml", "<project")
+        self.put("build.gradle", "plugins { id 'java' }\n")
+        det = self.detect(force="java")
+        self.assertEqual(det.label, "Java · Gradle")
+        self.assertEqual(det.note.count("pom.xml"), 1)
+
+    def test_known_presets_are_read_only(self):
+        with self.assertRaises(TypeError):
+            stacks.KNOWN_PRESETS["lint"] = ("rm -rf ~",)
+
+
 if __name__ == "__main__":
     unittest.main()
