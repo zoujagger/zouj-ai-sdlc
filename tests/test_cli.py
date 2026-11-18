@@ -1062,9 +1062,9 @@ class Docs(unittest.TestCase):
         self.assertIn("## The wrong stack was detected, or `make check` hangs", trouble)
         self.assertIn("--stack none", trouble)
         self.assertIn("stacks.py", self.text("docs/architecture.md"))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        newer = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.1]", 1)[0]  # unreleased or shipped since beta.1 (0010)
         for piece in (".aiops/0009-stack-detection/", "--stack auto", "src/test/"):
-            self.assertIn(piece, unreleased, piece)
+            self.assertIn(piece, newer, piece)
         roadmap = self.text("docs/roadmap.md")
         self.assertNotIn("**0009, one-pass", roadmap)
         self.assertNotIn("**0010, evals", roadmap)
@@ -1097,9 +1097,12 @@ class Docs(unittest.TestCase):
         import re
 
         version = json.loads(self.text(".claude-plugin/plugin.json"))["version"]
-        self.assertEqual(version, "0.2.0-beta.1")  # 0008: the unreleased alpha was renamed
+        self.assertEqual(version, "0.2.0-beta.2")  # 0010: 0009 stack detection + the README funnel
         log = self.text("CHANGELOG.md")
         section = log.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
+        for piece in (".aiops/0009-stack-detection/", "--stack auto", "README"):
+            self.assertIn(piece, section, piece)
+        beta1 = log.split("## [0.2.0-beta.1]", 1)[1].split("\n## [", 1)[0]  # 0008's release keeps its checks
         for piece in (
             ".aiops/0005-guard-gaps/",
             ".aiops/0007-first-run/",
@@ -1110,9 +1113,10 @@ class Docs(unittest.TestCase):
             "G-FILE-06",
             "### Upgrading from 0.2.0-alpha.3",
         ):
-            self.assertIn(piece, section, piece)
+            self.assertIn(piece, beta1, piece)
         unreleased = log.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
         self.assertNotIn("Planned as", unreleased)  # nothing is left waiting there
+        self.assertNotIn("### ", unreleased)  # 0010: everything moved into the release
         self.assertIn(f"[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{version}...HEAD", log)
         readme = self.text("README.md")
         self.assertEqual(set(re.findall(r"0\.2\.0-(?:alpha|beta|rc)\.\d+", readme.split("\n## Lifecycle", 1)[0])), {version})

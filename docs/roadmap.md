@@ -82,11 +82,11 @@ guard-gap backlog.
   keeps this plugin's hooks on, a nit cap in REVIEW.md, and a listing in Anthropic's plugin directory.
 
 ### Next: adoption, part 2 (agreed with zoujagger on 2026-11-18)
-- **README funnel** (docs only, shipped on `main` after 0.2.0-beta.1). The README covers the problem, a demo, a
+- **README funnel** (docs only, shipped in 0.2.0-beta.2). The README covers the problem, a demo, a
   2-command install, the workflow and how it differs from prompt-only workflows. The details moved to
   [install](install.md), [approver setup](approver-setup.md), [enforcement](enforcement.md) and
   [lifecycle](lifecycle.md). The demo GIF is recorded by a human from [docs/demo/demo.tape](demo/demo.tape).
-- **Stack auto-detection** (built as intent `.aiops/0009-stack-detection/`). Setup detects the stack at the repo top and wires the Makefile contract
+- **Stack auto-detection** (built as intent `.aiops/0009-stack-detection/`, 0.2.0-beta.2). Setup detects the stack at the repo top and wires the Makefile contract
   from the repo's own scripts:
   - Java/Spring Boot (Maven or Gradle, wrapper first);
   - Node, React and Angular (package.json scripts, the package manager from the lockfile);
