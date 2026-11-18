@@ -38,7 +38,7 @@ Existing tests are reused:
 - `tests/test_lifecycle.py::Detected::test_beta1_state_unchanged` (AC-7), unchanged.
 
 ## Steps
-- [ ] **S1**: Bump the current release to 0.2.0-beta.2: tests first, then the version source, the CHANGELOG, the
+- [x] **S1**: Bump the current release to 0.2.0-beta.2: tests first, then the version source, the CHANGELOG, the
   scaffold history and the README and roadmap.
   - **Files (modify):**
     - `tests/test_shell_hooks.py`: `test_version_matches_changelog` expects `0.2.0-beta.2`.
@@ -98,3 +98,4 @@ Existing tests are reused:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-18 | S1 | `tests/test_cli.py::Docs::test_docs_name_stack_detection` (0009) now looks for the detection entries in everything newer than `[0.2.0-beta.1]`, not only `[Unreleased]` | The release moves those entries into `[0.2.0-beta.2]`; the test failed after the move | S1 commit |

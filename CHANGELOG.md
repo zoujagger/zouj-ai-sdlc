@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.2.0-beta.2] - 2026-11-18
+
+> **Beta.** The workflow, the gates and the file formats are settling, but may still change between betas; the
+> CHANGELOG names every change.
+
+Ships `.aiops/0009-stack-detection/` (stack auto-detection for the Makefile contract) and the README funnel
+(PR #22). The playbook workflow, the gates and what CI audits are unchanged.
+
 ### Added
 - **Stack auto-detection for the Makefile contract** (`.aiops/0009-stack-detection/`):
   - **What it detects:** `sdlc setup` and `sdlc init`, run in your own terminal, read the repo top and wire a
@@ -542,7 +550,8 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.1...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.2...HEAD
+[0.2.0-beta.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.3...v0.2.0-beta.1
 [0.2.0-alpha.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.2...v0.2.0-alpha.3
 [0.2.0-alpha.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.1...v0.2.0-alpha.2
