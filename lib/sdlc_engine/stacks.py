@@ -154,9 +154,10 @@ def detect(root, force=None):
         if not any(_regular(root, n) for n in FAMILIES[family]):
             return none(f"--stack {force} needs {' or '.join(FAMILIES[family])} at the repo top; nothing was wired")
         broken = [n for n in FAMILIES[family] if _regular(root, n) and not _parses(root, n)]
-        if broken:  # named, as on the auto path (round 3)
-            det = DETECTORS[family](root, force)
+        det = DETECTORS[family](root, force)
+        if broken and det.kind:  # named, as on the auto path (round 3); a detector that found nothing already says why
             return det._replace(note=(det.note + "; " if det.note else "") + _unparsed(broken).strip(" ()"))
+        return det
     else:
         found, broken = _families(root)
         if not found:
@@ -249,9 +250,10 @@ def _karma(angular):
     return False
 
 
-# `[ \t]*`, never `\s*`: whitespace that could cross lines made the match quadratic on a hostile file (round 3).
+# Linear on a hostile file: `[ \t]*`, never `\s*` (round 3), and no two whitespace runs that can trade characters,
+# as `[ \t]*\(?[ \t]*` did (round 4). An `id` split over lines (`id\n "checkstyle"`) isn't matched.
 GRADLE_CHECKSTYLE = re.compile(
-    r"""\bid[ \t]*\(?[ \t]*['"]checkstyle['"]|(?:^|[{;])[ \t]*checkstyle[ \t]*(?:$|[;}])|plugin:[ \t]*['"]checkstyle['"]""",
+    r"""\bid[ \t]*(?:\([ \t]*)?['"]checkstyle['"]|(?:^|[{;])[ \t]*checkstyle[ \t]*(?:$|[;}])|plugin:[ \t]*['"]checkstyle['"]""",
     re.M,
 )
 GRADLE_START = re.compile(r"""["']|/[*/]""")
@@ -320,9 +322,12 @@ def _wrapper(root, name, fallback, evidence):
 def _java(root, force):
     """Maven or Gradle, from the first Java marker that parses (pom.xml, build.gradle.kts, build.gradle): a broken
     one next to a valid one doesn't block detection (round 2); detect() names the broken one in the note."""
-    usable = [n for n in FAMILIES["java"] if _regular(root, n) and _parses(root, n)]
+    present = [n for n in FAMILIES["java"] if _regular(root, n)]
+    usable = [n for n in present if _parses(root, n)]
     if not usable:
-        return none("no stack detected: no Java build file at the repo top can be read")
+        return none(f"no stack detected: {', '.join(present) or 'no Java build file'} can't be read" + (
+            " (a link, over 1 MiB, or not valid)" if present else ""
+        ))
     if usable[0] == "pom.xml":
         tree = _xml(root, "pom.xml")
         parent, ids = _maven_ids(tree)

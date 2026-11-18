@@ -487,7 +487,16 @@ class Round3(StackCase):
         import time
 
         size = stacks.MAX_BYTES - 16
-        for body in ("/*x" * (size // 3), "\n" * size, "{" + " " * (size - 1), "id" + "\n" * (size - 2), "'" * size):
+        for body in (
+            "/*x" * (size // 3),
+            "\n" * size,
+            "{" + " " * (size - 1),
+            "id" + "\n" * (size - 2),
+            "'" * size,
+            "id" + " " * (size - 2),  # round 4: two `[ \t]*` around an optional `(` backtracked
+            "id(" + " " * (size - 3),
+            "id\t" * (size // 3),
+        ):
             self.put("build.gradle", body)
             start = time.monotonic()
             det = self.detect()
@@ -510,6 +519,15 @@ class Round3(StackCase):
     def test_known_presets_are_read_only(self):
         with self.assertRaises(TypeError):
             stacks.KNOWN_PRESETS["lint"] = ("rm -rf ~",)
+
+
+class Round4(StackCase):
+    def test_broken_only_marker_is_named_once(self):
+        self.put("package.json", "{")
+        self.assertEqual(self.detect(force="node").note.count("package.json"), 1)
+        (self.root / "package.json").unlink()
+        self.put("pom.xml", "<project")
+        self.assertEqual(self.detect(force="java").note.count("pom.xml"), 1)
 
 
 if __name__ == "__main__":
