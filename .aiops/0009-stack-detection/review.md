@@ -1,8 +1,8 @@
 ---
 id: 0009
 verdict: CHANGES_REQUESTED   # PASS | CHANGES_REQUESTED (the human still decides the merge)
-commit: af7704c92478fb048908c56bc065f4acb0124a66
-score: 74/100
+commit: 211506d2d8ca9bbdba413e26dc69d00948659f09
+score: 88/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-18
 ---
@@ -13,6 +13,27 @@ created: 2026-11-18
      af7704c. Each persona got only the intent folder and the base branch `main`. -->
 
 ## Summary
+**Round 2, at 211506d: CHANGES_REQUESTED (88).** The code reviewer and the security reviewer reported; the
+verifier was stopped before it reported, because round 3 re-verifies.
+- **Fixed from round 1:** the blocker, the typed path, every LOW, and the test debt.
+- **Still open:**
+  - **[MAJOR] A broken `pom.xml` next to a valid `build.gradle` still blocks detection.** `_java` takes the
+    `pom.xml` branch.
+  - **[MEDIUM, security] The agent's own `sdlc init` / `sdlc setup --yes` still wire a new Makefile**, so the Stop
+    hook runs repo scripts before review (reproduced). The human chose (2026-11-18) that only a human-run
+    setup/init wires, which amends AC-12.
+  - **[LOW, security]** The wiring command, run with no `--profile`, re-applies the profile's keys to a hand-tuned
+    config.
+  - **Minors:**
+    - the Gradle comment stripper eats string contents (`"**/*.gen.java"`);
+    - `emittable` isn't keyed by target, allows `CI=true` anywhere, and accepts only the running plugin's presets;
+    - the profile-from-config rule applies with a tty too, unlike its log entry;
+    - stale docs ("never changes an existing Makefile", init "wires the stub");
+    - the architecture residual overstates the guarantee;
+    - doctor's hint under the agent;
+    - `_stub_wirable` evaluated mid-apply.
+- **Scores:** spec 36/40, security 21/25, tests 18/20, plan 9/10, maintainability 4/5.
+
 Round 1, at af7704c.
 
 **The verdict is CHANGES_REQUESTED**, for two findings:
