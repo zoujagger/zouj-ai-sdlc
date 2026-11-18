@@ -52,7 +52,7 @@ Existing code to reuse:
     - `test_reads_only_markers` patches `Path.read_bytes`/`open` and asserts that every opened path is in `MARKERS`
       and at the top (no `.env`, `.npmrc`, `settings.xml`).
   - Covers: AC-10, AC-11
-- [ ] **S2**: Detect the Node family (node, react, angular) from the repo's own scripts.
+- [x] **S2**: Detect the Node family (node, react, angular) from the repo's own scripts.
   - Files: `lib/sdlc_engine/stacks.py` (modify): `_node_family(root)`:
     - the package manager from the lockfile;
     - the per-target script order;

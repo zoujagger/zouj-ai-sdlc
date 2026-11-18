@@ -135,5 +135,97 @@ class Family(StackCase):
         self.assertEqual(stacks.CHOICES, ("auto", "none") + stacks.KINDS)
 
 
+class Node(StackCase):
+    """S2: Node, React and Angular from the repo's own scripts (AC-4 to AC-8)."""
+
+    def test_pnpm_scripts(self):
+        self.package({"lint": "eslint .", "test": "vitest run", "build": "tsc -p .", "typecheck": "tsc --noEmit"})
+        self.put("pnpm-lock.yaml")
+        det = self.detect()
+        self.assertEqual(det.kind, "node")
+        self.assertEqual(
+            det.recipes,
+            {"lint": "pnpm run lint", "typecheck": "pnpm run typecheck", "test": "pnpm run test", "build": "pnpm run build"},
+        )
+        self.assertEqual(det.evidence, ["package.json", "pnpm-lock.yaml"])
+
+    def test_package_manager_from_lockfile(self):
+        self.package({"test": "jest"})
+        self.assertEqual(self.detect().recipes["test"], "npm run test")
+        self.put("bun.lockb")
+        self.assertEqual(self.detect().recipes["test"], "bun run test")
+        self.put("yarn.lock")
+        self.assertEqual(self.detect().recipes["test"], "yarn run test")
+
+    def test_react_cra_and_vite(self):
+        self.package({"test": "react-scripts test", "build": "react-scripts build"}, deps={"react": "^18.3.1"})
+        self.put("yarn.lock")
+        det = self.detect()
+        self.assertEqual(det.kind, "react")
+        self.assertEqual(det.label, "React")
+        self.assertEqual(det.recipes["test"], "CI=true yarn run test")
+        (self.root / "yarn.lock").unlink()
+        self.package({"test:ci": "vitest run", "test": "vitest"}, dev={"react": "^18.3.1"})
+        det = self.detect()
+        self.assertEqual(det.kind, "react")
+        self.assertEqual(det.recipes["test"], "npm run test:ci")
+
+    def test_angular_karma_and_not(self):
+        self.package({"test": "ng test", "lint": "ng lint", "build": "ng build"}, deps={"@angular/core": "^18.0.0"})
+        karma = {"projects": {"app": {"architect": {"test": {"builder": "@angular-devkit/build-angular:karma"}}}}}
+        self.put("angular.json", json.dumps(karma))
+        det = self.detect()
+        self.assertEqual(det.kind, "angular")
+        self.assertEqual(det.label, "Angular")
+        self.assertEqual(det.recipes["test"], "npm run test -- --watch=false --browsers=ChromeHeadless")
+        self.assertIn("angular.json", det.evidence)
+        jest = {"projects": {"app": {"architect": {"test": {"builder": "@angular-builders/jest:run"}}}}}
+        self.put("angular.json", json.dumps(jest))
+        self.assertEqual(self.detect().recipes["test"], "npm run test -- --watch=false")
+
+    def test_tsc_fallback_and_npm_placeholder(self):
+        self.package({"test": 'echo "Error: no test specified" && exit 1'})
+        det = self.detect()
+        self.assertNotIn("test", det.recipes)
+        self.assertNotIn("typecheck", det.recipes)
+        self.put("tsconfig.json", "{}")
+        det = self.detect()
+        self.assertEqual(det.recipes["typecheck"], "npx tsc --noEmit")
+        self.assertIn("tsconfig.json", det.evidence)
+
+    def test_script_order(self):
+        self.package({"prettier": "prettier -w .", "format": "biome format", "type-check": "tsc", "tsc": "tsc -b"})
+        det = self.detect()
+        self.assertEqual(det.recipes["format"], "npm run format")
+        self.assertEqual(det.recipes["typecheck"], "npm run type-check")
+
+    def test_unsafe_script_names(self):
+        bodies = {
+            "lint;rm -rf ~": "BODY-ONE",
+            "$(x)": "BODY-TWO",
+            "a\nb": "BODY-THREE",
+            "-x": "BODY-FOUR",
+            "test": "BODY-FIVE $(curl evil)",
+        }
+        self.package(bodies)
+        det = self.detect()
+        self.assertEqual(det.recipes, {"test": "npm run test"})  # only the safe name, never a body
+        for cmd in det.recipes.values():
+            for body in ("BODY", "curl", "rm -rf", "$("):
+                self.assertNotIn(body, cmd)
+
+    def test_forced_kind_reads_scripts(self):
+        self.package({"test": "react-scripts test"})
+        det = self.detect(force="react")
+        self.assertEqual(det.kind, "react")
+        self.assertEqual(det.recipes["test"], "CI=true npm run test")
+
+    def test_scripts_not_an_object(self):
+        self.put("package.json", json.dumps({"scripts": ["lint"]}))
+        det = self.detect()
+        self.assertEqual(det.kind, "node")
+        self.assertEqual(det.recipes, {})
+
+
 if __name__ == "__main__":
     unittest.main()

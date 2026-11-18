@@ -117,11 +117,77 @@ def detect(root, force=None):
     return DETECTORS[family](root, force)
 
 
+NODE_SCRIPTS = (
+    ("format", ("format", "prettier")),
+    ("lint", ("lint",)),
+    ("typecheck", ("typecheck", "type-check", "tsc")),
+    ("test", ("test:ci", "test")),
+    ("build", ("build",)),
+)
+NPM_PLACEHOLDER = "no test specified"
+NODE_LABELS = {"node": "Node", "react": "React", "angular": "Angular"}
+
+
 def _node_family(root, force):
     pkg = _json(root, "package.json")
     if pkg is None:
         return none("no stack detected: package.json can't be read as JSON (or is a link, or over 1 MiB)")
-    return Detection(force or "node", "Node", {}, ["package.json"], "")
+    evidence = ["package.json"]
+    scripts = pkg.get("scripts")
+    scripts = {k: v for k, v in scripts.items() if isinstance(v, str)} if isinstance(scripts, dict) else {}
+    deps = {}
+    for key in ("dependencies", "devDependencies"):
+        if isinstance(pkg.get(key), dict):
+            deps.update(pkg[key])
+    angular = _json(root, "angular.json") if _regular(root, "angular.json") else None
+    if force:
+        kind = force
+    elif _regular(root, "angular.json"):
+        kind = "angular"
+    elif "react" in deps:
+        kind = "react"
+    else:
+        kind = "node"
+    pm = "npm"
+    for lock, name in LOCKFILES:
+        if _regular(root, lock):
+            pm = name
+            evidence.append(lock)
+            break
+    recipes = {}
+    for target, names in NODE_SCRIPTS:
+        for name in names:
+            body = scripts.get(name)
+            if body is None or not SCRIPT_NAME.match(name):
+                continue
+            if name == "test" and NPM_PLACEHOLDER in body:
+                continue
+            cmd = f"{pm} run {name}"
+            if name == "test" and kind == "react" and re.search(r"\breact-scripts\s+test\b", body):
+                cmd = f"CI=true {cmd}"  # CRA's test watches unless CI is set
+            elif name == "test" and kind == "angular" and re.search(r"\bng\s+test\b", body):
+                cmd += " -- --watch=false" + (" --browsers=ChromeHeadless" if _karma(angular) else "")
+            recipes[target] = cmd
+            break
+    if "typecheck" not in recipes and _regular(root, "tsconfig.json"):
+        recipes["typecheck"] = "npx tsc --noEmit"
+        evidence.append("tsconfig.json")
+    if kind == "angular" and angular is not None:
+        evidence.append("angular.json")
+    ordered = {t: recipes[t] for t in TARGETS if t in recipes}
+    return Detection(kind, NODE_LABELS[kind], ordered, evidence, "")
+
+
+def _karma(angular):
+    """True when an angular.json test target uses the Karma builder (it opens a browser)."""
+    if not isinstance(angular, dict) or not isinstance(angular.get("projects"), dict):
+        return False
+    for project in angular["projects"].values():
+        architect = project.get("architect") if isinstance(project, dict) else None
+        test = architect.get("test") if isinstance(architect, dict) else None
+        if isinstance(test, dict) and str(test.get("builder", "")).endswith(":karma"):
+            return True
+    return False
 
 
 def _java(root, force):
