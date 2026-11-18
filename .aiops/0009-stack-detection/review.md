@@ -1,7 +1,7 @@
 ---
 id: 0009
 verdict: CHANGES_REQUESTED   # PASS | CHANGES_REQUESTED (the human still decides the merge)
-commit: 211506d2d8ca9bbdba413e26dc69d00948659f09
+commit: ad0ab2b4dd44fe786abf4b80fa6e8e4898cdf7c6
 score: 88/100
 reviewers: verifier, code-reviewer, security-reviewer
 created: 2026-11-18
@@ -13,6 +13,24 @@ created: 2026-11-18
      af7704c. Each persona got only the intent folder and the base branch `main`. -->
 
 ## Summary
+**Round 3, at ad0ab2b: CHANGES_REQUESTED (88).** All three personas reported.
+- **Verifier:** every AC is met, as amended by the logged deviations. `make check` 504 OK, `make validate` passed.
+- **Code review, one MAJOR (a regression from the round-2 LOW fix):** setup with no `--profile` applies no
+  human-owned change, so a profile the human picks *interactively* in a terminal is silently not written.
+- **Minors:**
+  - the printed wiring command ignores a forced `--stack`;
+  - a Makefile rewritten unwired (`init --force --stack none`) keeps stale `recipes`, and `upgrade` re-wires it;
+  - `test_agent_never_wires`'s doctor assertion is vacuous.
+- **Nits:**
+  - the scaffold Makefile header doesn't say who wires;
+  - a forced `--stack java` doesn't name a broken `pom.xml`;
+  - `KNOWN_PRESETS` is mutable.
+- **Security, two LOWs:**
+  - quadratic Gradle regexes (about 25 min on a 1 MiB file), reachable from the typed command's hook;
+  - in a repo without `.aiops/`, env-stripped `sdlc init` wires as the human. The agent can already write a wired
+    Makefile there, so this needs a documented residual.
+- **Scores:** spec 35/40, security 23/25, tests 17/20, plan 9/10, maintainability 4/5.
+
 **Round 2, at 211506d: CHANGES_REQUESTED (88).** The code reviewer and the security reviewer reported; the
 verifier was stopped before it reported, because round 3 re-verifies.
 - **Fixed from round 1:** the blocker, the typed path, every LOW, and the test debt.
