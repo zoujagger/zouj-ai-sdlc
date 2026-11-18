@@ -1771,12 +1771,13 @@ class Stack(SetupCase):
         r = self.setup_run("--profile", "solo", "--yes")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual((self.root / "Makefile").read_text(), mine)
-        self.assertIn("your Makefile is kept", r.stdout)
+        self.assertIn("your Makefile is kept; copy what you want into it", r.stdout)
         self.assertIn("npm run test -- --watch=false", r.stdout)
         self.assertNotIn("recipes", self.state())
         self.assertIsNone(self.state()["stack"])
         doc = self.run_sdlc("doctor")
         self.assertIn("detected Angular", doc.stdout)
+        self.assertIn("copy what you want into your Makefile", doc.stdout)
         self.assertIn("npm run test -- --watch=false", doc.stdout)
 
     def test_none_forced_and_unknown(self):
@@ -1798,6 +1799,47 @@ class Stack(SetupCase):
             self.assertEqual(r.returncode, 1, cmd)
             self.assertIn("auto, none, python, node, go, java, react, angular", r.stdout + r.stderr, cmd)
             self.assertEqual(self.snapshot(), before, cmd)
+
+    def test_untouched_stub_makefile_is_wired(self):
+        """Review round 1: a Makefile that is still the plugin's untouched stub template (the typed setup command
+        writes one) is wired by setup; install-state records its new bytes."""
+        from sdlc_engine import cli as engine
+
+        self.assertEqual(self.run_sdlc("init", "--stack", "none").returncode, 0)
+        self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"))
+        self.spring()
+        doc = self.run_sdlc("doctor")
+        self.assertIn("sdlc setup --stack auto --yes", doc.stdout)
+        r = self.setup_run("--profile", "solo", "--stack", "auto", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
+        st = self.state()
+        self.assertEqual(st["recipes"], JAVA_RECIPES)
+        import hashlib
+
+        self.assertEqual(st["files"]["Makefile"]["sha256"], hashlib.sha256((self.root / "Makefile").read_bytes()).hexdigest())
+        (self.root / "Makefile").write_text((self.root / "Makefile").read_text() + "# mine\n")
+        before = (self.root / "Makefile").read_bytes()
+        self.assertEqual(self.setup_run("--profile", "solo", "--stack", "auto", "--yes").returncode, 0)
+        self.assertEqual((self.root / "Makefile").read_bytes(), before)  # no longer the stub: never touched
+
+    def test_agent_setup_wires_created_makefile(self):
+        """Review round 1 (AC-12 as written): the agent's `sdlc setup --yes` in a fresh repo wires the Makefile it
+        creates; its config stays init's (no profile)."""
+        self.spring()
+        r = self.setup_run("--profile", "solo", "--yes", env={"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root)})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("\t./mvnw -B -q test\n", (self.root / "Makefile").read_text())
+        self.assertEqual(self.state()["recipes"], JAVA_RECIPES)
+        self.assertNotIn("profile", json.loads((self.root / ".aiops" / "config.json").read_text()))
+
+    def test_init_survives_a_hostile_package_json(self):
+        """Review round 1: detection runs before init writes anything, and a deeply nested package.json is absent."""
+        (self.root / "package.json").write_text("[" * 200000 + "]" * 200000)
+        r = self.run_sdlc("init")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("package.json", r.stdout)
+        self.assertTrue((self.root / ".aiops" / "install-state.json").is_file())
 
     def test_init_detects_and_prints_block(self):
         self.spring()

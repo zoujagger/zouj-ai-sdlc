@@ -92,8 +92,9 @@ guard-gap backlog.
   - Node, React and Angular (package.json scripts, the package manager from the lockfile);
   - Python and Go (the existing presets).
 
-  This works in `sdlc setup` and in the typed `/zouj-ai-sdlc:setup <profile>`. Detection reads files only and runs
-  nothing; an existing Makefile is never changed.
+  `sdlc setup` and `sdlc init` wire it. The typed `/zouj-ai-sdlc:setup <profile>` only lists the commands, so
+  nothing from the repo runs before the human has read them. Detection reads files only and runs nothing, and an
+  existing Makefile is never changed.
 
 ### Phase 3: beta, reach
 10. **Pinned distribution without npm.**

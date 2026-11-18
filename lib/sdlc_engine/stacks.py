@@ -9,6 +9,7 @@ counts as absent and is named in `note`. Stdlib only, and no import of the rest 
 import json
 import os
 import re
+import stat
 from collections import namedtuple
 from pathlib import Path
 from xml.etree import ElementTree
@@ -52,18 +53,34 @@ def _regular(root, name):
 
 
 def _read(root, name):
-    """The text of a top-level marker file, or None: missing, a link, not regular, over MAX_BYTES or unreadable."""
+    """The text of a top-level marker file, or None: missing, a link, not regular, over MAX_BYTES or unreadable.
+    The file is opened without following a link and without waiting on a FIFO, then checked to be a regular file
+    by its descriptor, so nothing swapped in after _regular() is followed or blocks (review round 1)."""
     p = _regular(root, name)
     if p is None:
         return None
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        if p.stat().st_size > MAX_BYTES:
-            return None
-        with open(p, "rb") as f:
-            data = f.read(MAX_BYTES + 1)
+        fd = os.open(str(p), flags)
     except OSError:
         return None
-    return None if len(data) > MAX_BYTES else data.decode("utf-8", errors="replace")
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > MAX_BYTES:
+            return None
+        chunks, size = [], 0
+        while size <= MAX_BYTES:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    data = b"".join(chunks)
+    return None if len(data) > MAX_BYTES else data.decode("utf-8-sig", errors="replace")
 
 
 def _json(root, name):
@@ -72,24 +89,52 @@ def _json(root, name):
         return None
     try:
         data = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):  # deep nesting raises RecursionError (review round 1)
         return None
     return data if isinstance(data, dict) else None
 
 
+DTD_RE = re.compile(r"<!\s*(DOCTYPE|ENTITY)", re.I)
+
+
 def _xml(root, name):
+    """The parsed XML, or None. A DTD or entity declaration is refused before parsing: an old expat doesn't limit
+    entity expansion, and a build file needs neither."""
     text = _read(root, name)
-    if text is None:
+    if text is None or DTD_RE.search(text):
         return None
     try:
         return ElementTree.fromstring(text)
-    except ElementTree.ParseError:
+    except (ElementTree.ParseError, RecursionError, ValueError):
         return None
 
 
+def _parses(root, name):
+    """True when a present marker can be read by the parser its family uses (json, xml or text)."""
+    if name == "package.json":
+        return _json(root, name) is not None
+    if name == "pom.xml":
+        return _xml(root, name) is not None
+    if name.startswith("build.gradle"):
+        return _read(root, name) is not None
+    return True  # python and go markers are only looked at, never parsed
+
+
 def _families(root):
-    """The families whose markers are present (regular files at the top), in FAMILIES order."""
-    return [fam for fam, names in FAMILIES.items() if any(_regular(root, n) for n in names)]
+    """([families whose markers are present and parse], [present markers that don't parse]), in FAMILIES order.
+    A marker that fails its parser counts as absent (R-2) and is named in the note."""
+    found, broken = [], []
+    for fam, names in FAMILIES.items():
+        present = [n for n in names if _regular(root, n)]
+        ok = [n for n in present if _parses(root, n)]
+        broken += [n for n in present if n not in ok]
+        if ok:
+            found.append(fam)
+    return found, broken
+
+
+def _unparsed(broken):
+    return f" ({', '.join(broken)} can't be read: a link, over 1 MiB, or not valid)" if broken else ""
 
 
 def none(note):
@@ -108,15 +153,18 @@ def detect(root, force=None):
         if not any(_regular(root, n) for n in FAMILIES[family]):
             return none(f"--stack {force} needs {' or '.join(FAMILIES[family])} at the repo top; nothing was wired")
     else:
-        found = _families(root)
+        found, broken = _families(root)
         if not found:
-            return none("no stack detected: no build file at the repo top")
+            return none("no stack detected: no build file at the repo top" + _unparsed(broken))
         if len(found) > 1:
             return none(
                 f"no stack chosen: the repo top has more than one ({', '.join(found)}); "
-                f"pass --stack {'|'.join(found)}"
+                f"pass --stack {'|'.join(found)}" + _unparsed(broken)
             )
         family = found[0]
+        if broken:
+            det = DETECTORS[family](root, force)
+            return det._replace(note=(det.note + "; " if det.note else "") + _unparsed(broken).strip(" ()"))
     return DETECTORS[family](root, force)
 
 
@@ -161,7 +209,7 @@ def _node_family(root, force):
     for target, names in NODE_SCRIPTS:
         for name in names:
             body = scripts.get(name)
-            if body is None or not SCRIPT_NAME.match(name):
+            if body is None:  # names come from NODE_SCRIPTS, never from the repo: no repo text reaches a recipe
                 continue
             if name == "test" and NPM_PLACEHOLDER in body:
                 continue
@@ -175,10 +223,13 @@ def _node_family(root, force):
     if "typecheck" not in recipes and _regular(root, "tsconfig.json"):
         recipes["typecheck"] = "npx tsc --noEmit"
         evidence.append("tsconfig.json")
+    note = ""
     if kind == "angular" and angular is not None:
         evidence.append("angular.json")
+    elif kind == "angular" and _regular(root, "angular.json"):
+        note = "angular.json can't be read, so a Karma test runs without --browsers=ChromeHeadless"
     ordered = {t: recipes[t] for t in TARGETS if t in recipes}
-    return Detection(kind, NODE_LABELS[kind], ordered, evidence, "")
+    return Detection(kind, NODE_LABELS[kind], ordered, evidence, note)
 
 
 def _karma(angular):
@@ -193,7 +244,36 @@ def _karma(angular):
     return False
 
 
-GRADLE_CHECKSTYLE = re.compile(r"""(\bid\s*\(?\s*['"]checkstyle['"]|^\s*checkstyle\s*$|plugin:\s*['"]checkstyle['"])""", re.M)
+GRADLE_CHECKSTYLE = re.compile(
+    r"""(\bid\s*\(?\s*['"]checkstyle['"]|(^|[{;])\s*checkstyle\s*($|[;}])|plugin:\s*['"]checkstyle['"])""", re.M
+)
+GRADLE_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+
+
+def _local(tag):
+    return str(tag).rsplit("}", 1)[-1]
+
+
+def _children(el, name):
+    return [c for c in el if _local(c.tag) == name]
+
+
+def _artifact(el):
+    ids = _children(el, "artifactId")
+    return (ids[0].text or "").strip() if ids else ""
+
+
+def _maven_ids(tree):
+    """(the parent's artifactId, the artifactIds of project/build/plugins/plugin): plugins under pluginManagement or
+    reporting don't run in `mvn compile|test`, so they don't count."""
+    parent = "".join(_artifact(p) for p in _children(tree, "parent"))
+    plugins = {
+        _artifact(plugin)
+        for build in _children(tree, "build")
+        for group in _children(build, "plugins")
+        for plugin in _children(group, "plugin")
+    }
+    return parent, plugins
 
 
 def _wrapper(root, name, fallback, evidence):
@@ -210,10 +290,10 @@ def _java(root, force):
         tree = _xml(root, "pom.xml")
         if tree is None:
             return none("no stack detected: pom.xml can't be read as XML (or is a link, or over 1 MiB)")
-        ids = {(el.text or "").strip() for el in tree.iter() if str(el.tag).rsplit("}", 1)[-1] == "artifactId"}
+        parent, ids = _maven_ids(tree)
         evidence = ["pom.xml"]
         run = _wrapper(root, "mvnw", "mvn", evidence) + " -B -q"
-        boot = bool(ids & {"spring-boot-starter-parent", "spring-boot-maven-plugin"})
+        boot = parent == "spring-boot-starter-parent" or "spring-boot-maven-plugin" in ids
         recipes = {}
         if "spotless-maven-plugin" in ids:
             recipes["format"] = f"{run} spotless:apply"
@@ -227,6 +307,7 @@ def _java(root, force):
         if text is None:
             return none(f"no stack detected: {name} can't be read (or is a link, or over 1 MiB)")
         evidence = [name]
+        text = GRADLE_COMMENT.sub("", text)  # a commented-out plugin doesn't count
         run = _wrapper(root, "gradlew", "gradle", evidence) + " -q"
         boot = "org.springframework.boot" in text
         recipes = {}
@@ -240,14 +321,42 @@ def _java(root, force):
     return Detection("java", label, recipes, evidence, "")
 
 
-def preset(name):
-    """{target: command} from templates/stacks/<name>.recipes (python, node, go)."""
+def parse_recipes(text):
+    """{target: command} from a templates/stacks/*.recipes text (`<target> <command>` lines, `#` comments). The one
+    recipe parser: cli.parse_recipes is this function."""
     out = {}
-    for line in (STACKS_DIR / f"{name}.recipes").read_text().splitlines():
+    for line in text.splitlines():
         parts = line.strip().split(None, 1)
-        if len(parts) == 2 and not parts[0].startswith("#") and parts[0] in TARGETS:
+        if len(parts) == 2 and not parts[0].startswith("#"):
             out[parts[0]] = parts[1]
     return out
+
+
+def preset(name):
+    """{target: command} from the running plugin's templates/stacks/<name>.recipes (python, node, go)."""
+    return parse_recipes((STACKS_DIR / f"{name}.recipes").read_text())
+
+
+# The grammar of every recipe this module can emit. lifecycle.recipes_ok accepts a recorded recipe only if it matches,
+# so a tampered install-state can't carry `$(shell …)`, `;`, a pipe or a redirection into the Makefile (review round 1).
+EMITTABLE = (
+    re.compile(
+        r"^(CI=true )?(npm|pnpm|yarn|bun) run (format|prettier|lint|typecheck|type-check|tsc|test:ci|test|build)"
+        r"( -- --watch=false( --browsers=ChromeHeadless)?)?$"
+    ),
+    re.compile(r"^npx tsc --noEmit$"),
+    re.compile(r"^(\./mvnw|mvn) -B -q (spotless:apply|checkstyle:check|compile|test|package -DskipTests)$"),
+    re.compile(r"^(\./gradlew|gradle) -q (spotlessApply|checkstyleMain|classes|test|assemble)$"),
+)
+
+
+def emittable(cmd):
+    """True when cmd is a recipe detection or a preset of the running plugin can produce."""
+    if not isinstance(cmd, str):
+        return False
+    if any(rx.match(cmd) for rx in EMITTABLE):
+        return True
+    return any(cmd in preset(name).values() for name in ("python", "node", "go"))
 
 
 def _python(root, force):
@@ -259,5 +368,3 @@ def _go(root, force):
 
 
 DETECTORS = {"java": _java, "node": _node_family, "python": _python, "go": _go}
-
-SCRIPT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$")

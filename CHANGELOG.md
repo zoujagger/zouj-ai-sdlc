@@ -7,21 +7,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ### Added
 - **Stack auto-detection for the Makefile contract** (`.aiops/0009-stack-detection/`):
-  - **What it detects:** setup, init and the typed `/zouj-ai-sdlc:setup <profile>` read the repo top and wire a
-    Makefile they create from the repo's own commands:
+  - **What it detects:** `sdlc setup` and `sdlc init` read the repo top and wire a Makefile they create (or one
+    that is still the untouched stub) from the repo's own commands:
     - Java/Spring Boot (Maven or Gradle, the `mvnw`/`gradlew` wrapper first, Checkstyle/Spotless only when
       configured);
     - Node, React and Angular (`package.json` scripts through the lockfile's package manager; tests run once, not
       in watch mode);
     - Python and Go (the presets).
   - **`--stack auto|none|python|node|go|java|react|angular`:** `auto` is the default.
-  - **What you see:** the Stack block in the preview, `--dry-run` and the typed reply.
-  - **Safety:** detection only reads (no command run, no link followed, no file outside its marker list), and only
-    script names reach the Makefile, never script bodies.
-  - **Install-state** records the wired recipes, so `upgrade`/`repair` keep the Makefile, and recipes that fail the
-    check are never written.
+  - **What you see:** the Stack block in the preview and `--dry-run`.
+  - **The typed `/zouj-ai-sdlc:setup <profile>`** detects but doesn't wire. Its reply lists the commands and the
+    terminal command that wires them (`sdlc setup --stack auto --yes`). Wired at once, the Stop hook's `make check`
+    would run the repo's own scripts before you had read them.
+  - **Safety:**
+    - Detection only reads: no command run, no link followed (opened `O_NOFOLLOW`, regular files only), no file
+      outside its marker list, no DTD.
+    - Only fixed script names reach the Makefile, never script bodies.
+  - **Install-state** records the wired recipes, so `upgrade`/`repair` keep the Makefile. A recorded recipe that
+    isn't one detection can produce is never written.
   - **An existing Makefile** is never changed; setup and `sdlc doctor` show the detected commands as a suggestion.
   - **The `/fix` test lock** covers `src/test/` (Maven/Gradle).
+
+### Fixed
+- **`sdlc setup` with no `--profile` and no terminal** used to stop with "setup needs choices", even when
+  `.aiops/config.json` already named a profile. It now uses that profile and never changes it. This applies when
+  Claude reruns setup with `--with` or `--stack`.
 
 ### Changed
 - **README restructured as a funnel:** the problem, a demo, a 2-command install, the workflow and a new

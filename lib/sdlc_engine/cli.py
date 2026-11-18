@@ -410,18 +410,17 @@ def safe_recipe(target, cmd):
 
 
 def parse_recipes(text):
-    """{target: command} from a templates/stacks/*.recipes text (`<target> <command>` lines, `#` comments)."""
-    recipes = {}
-    for line in text.splitlines():
-        parts = line.strip().split(None, 1)
-        if len(parts) == 2 and not parts[0].startswith("#"):
-            recipes[parts[0]] = parts[1]
-    return recipes
+    """{target: command} from a templates/stacks/*.recipes text: stacks.parse_recipes, the one parser."""
+    from . import stacks
+
+    return stacks.parse_recipes(text)
 
 
 def preset_recipes(stack):
     """The recipes of the running plugin's templates/stacks/<stack>.recipes."""
-    return parse_recipes((TEMPLATES / "stacks" / f"{stack}.recipes").read_text())
+    from . import stacks
+
+    return stacks.preset(stack)
 
 
 def wire(src, recipes):
@@ -461,6 +460,16 @@ def stack_lines(det, kept=False):
     if kept:
         head += ": your Makefile is kept; copy what you want into it"
     return [head] + [f"    {t:<10} {det.recipes.get(t, 'not configured')}" for t in CONTRACT_TARGETS]
+
+
+def stub_makefile(root):
+    """True when root's Makefile is still the plugin's untouched stub template (a regular file, byte for byte what
+    init writes): setup may wire it, as it wires one it creates (review round 1). Any edit makes it the human's."""
+    p = root / "Makefile"
+    try:
+        return not p.is_symlink() and p.is_file() and p.read_bytes() == rendered_template("Makefile")
+    except OSError:
+        return False
 
 
 def _wire(root, recipes):
@@ -692,6 +701,7 @@ def cmd_init(root, args):
     if refusal:
         out(refusal, sys.stderr)
         return 1
+    det = detect_stack(root, stack)  # reads only, before anything is written (review round 1)
     written = []
     try:
         apply_init(root, actions, written)
@@ -706,7 +716,6 @@ def cmd_init(root, args):
             "Human-owned or locked, not reset (init --force was run by the agent). To reset them, the human runs "
             "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned)
         )
-    det = detect_stack(root, stack)
     kept_makefile = "Makefile" not in created
     recipes = None
     if det is not None and det.kind and not kept_makefile:
@@ -893,6 +902,11 @@ def cmd_doctor(root, args):
         if det is not None and det.kind and any(t in det.recipes for t in unwired):
             hint += f"; detected {det.label}: " + "; ".join(
                 f"{t}: {det.recipes[t]}" for t in unwired if t in det.recipes
+            )
+            hint += (
+                "; run `sdlc setup --stack auto --yes` to wire them (your Makefile is still the untouched stub)"
+                if stub_makefile(root)
+                else "; copy what you want into your Makefile"
             )
         row(not unwired, "Makefile contract wired" + (f" (not: {', '.join(unwired)})" if unwired else ""), hint)
     for b in ("gh", "jq"):

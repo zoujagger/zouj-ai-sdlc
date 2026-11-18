@@ -450,6 +450,9 @@ def main(root, args):
         print(f"setup stops: {problem}. Nothing was written.", file=sys.stderr)
         return 1
     tty = _is_tty()
+    if profile is None:  # a repo whose config already names one: rerunning setup (--stack, --with) keeps it
+        named = (_json(root / ".aiops" / "config.json") or {}).get("profile")
+        profile = named if named in PROFILES else None
     if profile is None and not dry_run and not tty:
         print(
             "setup needs choices and there's no terminal to ask them; nothing was written. Run again with:\n"
@@ -514,7 +517,14 @@ def main(root, args):
             )
     det = cli.detect_stack(root, opts.get("--stack"))
     makefile_created = any(mark == "+" and rel == "Makefile" for mark, rel, _ in actions)
-    print("Stack\n" + "\n".join(cli.stack_lines(det, kept=not makefile_created)))
+    print("Stack\n" + "\n".join(cli.stack_lines(det, kept=not (makefile_created or _stub_wirable(root)))))
+    if det is not None and det.recipes and not makefile_created and cli.stub_makefile(root) and not _stub_wirable(root):
+        from . import lifecycle
+
+        print(
+            "  The Makefile is under the read-only lock, so the agent can't wire it. The human runs, in their own "
+            f"terminal: {lifecycle.human_command('setup --stack auto --yes')}"
+        )
     print(GATES.format(proof=PROOF[profile]))
     if any(mark == "✗" for mark, _, _ in actions):
         print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
@@ -523,7 +533,8 @@ def main(root, args):
         print("dry run: nothing was written.")
         return 0
     agent = approvals.running_under_agent()
-    if not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):  # the agent never writes a ~ change
+    rewire = det is not None and bool(det.recipes) and _stub_wirable(root)
+    if not rewire and not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):  # the agent never writes a ~ change
         print(
             "Nothing for the agent to write: the ~ changes above are yours (see the human steps)."
             if agent and owned
@@ -574,9 +585,11 @@ def apply(root, profile, actions, det=None, review=(), parts=None):
                 (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode(),
             )
         recipes = None
-        if det is not None and det.kind and "Makefile" in created:
+        if det is not None and det.kind and ("Makefile" in created or _stub_wirable(root)):
             wired = cli._wire(root, det.recipes)
             recipes = {t: det.recipes[t] for t in wired}
+            if "Makefile" not in written:  # the untouched stub, wired now: install-state records its new bytes
+                written.append("Makefile")
         from . import lifecycle
 
         pending = owned_changes(root, profile)
@@ -797,16 +810,11 @@ def scaffold_first(root, name):
     if links:
         return [], links
     written = KeptList()
-    det = cli.detect_stack(root)  # 0009 R-12: reads only; the Makefile created below is wired with it
+    det = cli.detect_stack(root)  # reads only; listed in the reply, never wired here (makefile_block)
     created_makefile = ("create", "Makefile") in actions
-    recipes = None
     try:
         cli.apply_init(root, actions, written)
-        if created_makefile and det.kind:
-            recipes = {t: det.recipes[t] for t in cli._wire(root, det.recipes)}
-        lifecycle.record(
-            root, written, profile=name, parts=[], stack=det.kind if recipes is not None else None, recipes=recipes
-        )
+        lifecycle.record(root, written, profile=name, parts=[])
     except OSError as exc:
         return written, cli.write_failure(exc, written)  # the caller says what was written
     written.kept = [rel for act, rel in actions if act == "keep" and _differs(root, rel)]  # r12/r13: named to the human
@@ -815,17 +823,36 @@ def scaffold_first(root, name):
     return written, None
 
 
+def _stub_wirable(root):
+    """True when setup may wire an existing Makefile: it is the untouched stub template, and (run by the agent) the
+    agent could write it itself (not under the read-only lock)."""
+    from . import lifecycle
+
+    return cli.stub_makefile(root) and (not approvals.running_under_agent() or lifecycle.agent_may_write(root, "Makefile"))
+
+
 def makefile_block(det, kept_makefile=False):
-    """The typed command's `Makefile:` lines (0009 R-12), every one escaped: the stack text comes from repo files."""
+    """The typed command's `Makefile:` lines (0009 R-12), every one escaped: the stack text comes from repo files.
+    The typed command never wires (review round 1, the human's choice): wired, `make check` would run the repo's own
+    commands in the Stop hook at the end of the same turn, before the human has read them. It lists them instead."""
     if det is None:
         return ""
     if det.kind is None:
         lines = [f"Makefile: {det.note}; wire its stubs by hand (`sdlc doctor` lists them)"]
     else:
         head = f"Makefile: detected {det.label} (from {', '.join(det.evidence) or 'the preset'})"
-        if kept_makefile:
-            head += ": your Makefile is kept as it is; copy what you want into it"
+        head += ": your Makefile is kept as it is; copy what you want into it" if kept_makefile else ", not wired yet:"
         lines = [head] + [f"  {t}: {det.recipes.get(t, 'not configured')}" for t in cli.CONTRACT_TARGETS]
+        if det.note:
+            lines.append(f"  note: {det.note}")
+        if not kept_makefile and det.recipes:
+            from . import lifecycle
+
+            lines.append(
+                "  Review these commands (they run the repo's own scripts), then wire them by running in your own "
+                f"terminal: `{lifecycle.human_command('setup --stack auto --yes')}` (it wires only this untouched "
+                "stub Makefile), or wire them by hand."
+            )
     return "".join(printable(line) + "\n" for line in lines)
 
 

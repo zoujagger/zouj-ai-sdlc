@@ -23,7 +23,9 @@ only, nothing existing changed). Then it sets the first profile and commits `.ai
 qualified form counts: a bare `/setup <profile>`, or the command with other text, sets nothing.
 
 1. **Read the hook's reminder first.**
-   - It says `profile SET`: relay the files it created and the human steps exactly as numbered. Introduce
+   - It says `profile SET`: relay the files it created, its `Makefile:` block (the detected stack's commands, not
+     wired yet: the human reviews them and wires them from their own terminal with the command it gives), and the
+     human steps exactly as numbered. Introduce
      terminal commands with "Run these in your own terminal:", and keep steps that happen in Claude Code (such as
      a `git` commit you may run for them only if asked) apart. Write nothing yourself. Go to step 6.
    - It says `profile NOT set`: relay the reason and the terminal command it gives, then stop.

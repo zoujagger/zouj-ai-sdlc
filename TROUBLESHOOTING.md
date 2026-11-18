@@ -97,7 +97,9 @@ Makefile's recipes. `sdlc doctor` names the detected stack's command for each un
 
 ## The wrong stack was detected, or `make check` hangs
 Setup and init detect the stack from the files at the repo top (`--stack auto`, the default) and wire only a Makefile
-they create. The Stack block in their output (and the typed `/zouj-ai-sdlc:setup` reply) shows what was wired.
+they create, or one that is still the untouched stub. The Stack block in their output shows what was wired. The typed
+`/zouj-ai-sdlc:setup` only lists what it detected: review it, then run the `setup --stack auto --yes` command its
+reply gives, in your own terminal.
 - **Wrong guess:** edit the Makefile's recipes. On a fresh scaffold, rerun with `--stack <name>` (`java`, `node`,
   `react`, `angular`, `python`, `go`), or `--stack none` to keep the stubs.
 - **Several stacks at the top** (e.g. `pom.xml` and `package.json`): nothing is guessed; pick one with `--stack`.

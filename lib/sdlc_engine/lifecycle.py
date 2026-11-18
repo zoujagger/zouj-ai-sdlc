@@ -215,7 +215,7 @@ def expected(rel, ref, stack=None, recipes=None):
     """The bytes the running plugin would write for rel today (ref pinned, the recorded recipes wired in, else the
     stack's preset). Recipes that fail cli.safe_recipe raise ValueError: callers treat the Makefile as modified."""
     data = render(rel, ref)
-    if rel == "Makefile" and recipes:
+    if rel == "Makefile" and recipes is not None:  # `{}` is a record too: detection wired nothing (review round 1)
         data = cli.wire(data.decode(), recipes)[0].encode()
     elif rel == "Makefile" and stack in cli.STACKS:
         data = cli.wire(data.decode(), cli.preset_recipes(stack))[0].encode()
@@ -229,7 +229,11 @@ def expected_for(rel, ref, st):
 
 def recipes_ok(st):
     """False when install-state's recorded recipes fail the recipe check (a tampered or hand-edited state): the
-    Makefile is then never rewritten or restored from them (0009 AC-19)."""
+    Makefile is then never rewritten or restored from them (0009 AC-19). A recorded recipe must be one safe line
+    (cli.safe_recipe) that detection or a preset can produce (stacks.emittable: no `$(…)`, `;`, pipe or
+    redirection; review round 1)."""
+    from . import stacks
+
     recipes = st.get("recipes")
     if recipes is None:
         return True
@@ -240,7 +244,7 @@ def recipes_ok(st):
             cli.safe_recipe(target, cmd)
     except ValueError:
         return False
-    return True
+    return all(stacks.emittable(cmd) for cmd in recipes.values())
 
 
 def classify(root, st):
