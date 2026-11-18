@@ -213,7 +213,7 @@ def expected(rel, ref, stack=None):
     """The bytes the running plugin would write for rel today (ref pinned, the stack's recipes wired in)."""
     data = render(rel, ref)
     if rel == "Makefile" and stack in cli.STACKS:
-        data = cli.wire(data.decode(), stack)[0].encode()
+        data = cli.wire(data.decode(), cli.preset_recipes(stack))[0].encode()
     return data
 
 

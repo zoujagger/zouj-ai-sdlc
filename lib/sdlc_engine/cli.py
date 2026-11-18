@@ -395,16 +395,40 @@ def cmd_unlock(root, args):
     return 0
 
 
-def wire(src, stack, recipes_text=None):
-    """(src, wired targets): the Makefile text with the stack preset's recipes in place of the stubs. recipes_text
-    defaults to the running plugin's preset (scripts/scaffold-history.py passes a release's)."""
+CONTRACT_TARGETS = ("format", "lint", "typecheck", "test", "build")
+UNSAFE_RECIPE_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def safe_recipe(target, cmd):
+    """cmd, checked to stay one recipe line of a contract target, else ValueError (0009 R-8): no control character
+    (a newline would start a new recipe or rule), not empty, and not led by a tab, `-` or `@` (make prefixes)."""
+    if target not in CONTRACT_TARGETS:
+        raise ValueError(f"{target!r} is not a contract target ({', '.join(CONTRACT_TARGETS)})")
+    if not isinstance(cmd, str) or not cmd.strip() or UNSAFE_RECIPE_RE.search(cmd) or cmd[0] in "\t -@":
+        raise ValueError(f"unsafe recipe for {target}: {cmd!r}")
+    return cmd
+
+
+def parse_recipes(text):
+    """{target: command} from a templates/stacks/*.recipes text (`<target> <command>` lines, `#` comments)."""
     recipes = {}
-    if recipes_text is None:
-        recipes_text = (TEMPLATES / "stacks" / f"{stack}.recipes").read_text()
-    for line in recipes_text.splitlines():
+    for line in text.splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and not parts[0].startswith("#"):
             recipes[parts[0]] = parts[1]
+    return recipes
+
+
+def preset_recipes(stack):
+    """The recipes of the running plugin's templates/stacks/<stack>.recipes."""
+    return parse_recipes((TEMPLATES / "stacks" / f"{stack}.recipes").read_text())
+
+
+def wire(src, recipes):
+    """(src, wired targets): the Makefile text with recipes ({target: command}) in place of the "not configured"
+    stubs. Every command is checked first (safe_recipe): one bad value refuses the whole call."""
+    for target, cmd in recipes.items():
+        safe_recipe(target, cmd)
     wired = []
     for target, cmd in recipes.items():
         src, n = re.subn(
@@ -418,8 +442,8 @@ def wire(src, stack, recipes_text=None):
     return src, wired
 
 
-def _wire_stack(root, stack):
-    src, wired = wire((root / "Makefile").read_text(), stack)
+def _wire(root, recipes):
+    src, wired = wire((root / "Makefile").read_text(), recipes)
     write_file(root, "Makefile", src.encode())
     return wired
 
@@ -660,7 +684,7 @@ def cmd_init(root, args):
             "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned)
         )
     if stack and "Makefile" in created:
-        wired = _wire_stack(root, stack)
+        wired = _wire(root, preset_recipes(stack))
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
     try:
         lifecycle.record(root, written, stack=stack, parts=parts)

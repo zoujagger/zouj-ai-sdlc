@@ -81,7 +81,7 @@ Existing code to reuse:
 
     `tests/test_stacks.py::Presets`: pyproject only, go.mod only (AC-9).
   - Covers: AC-1, AC-2, AC-3, AC-9
-- [ ] **S4**: Make `cli.wire` take a recipes dict, validate every value, and add `parse_recipes`/`preset_recipes`.
+- [x] **S4**: Make `cli.wire` take a recipes dict, validate every value, and add `parse_recipes`/`preset_recipes`.
   - Files:
     - `lib/sdlc_engine/cli.py` (modify): `wire(src, recipes)`, `parse_recipes(text)`, `preset_recipes(stack)`,
       `_safe_recipe(cmd)` (one line, no control characters, no leading tab, `-` or `@`; `ValueError` otherwise).

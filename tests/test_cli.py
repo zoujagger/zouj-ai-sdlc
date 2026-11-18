@@ -15,6 +15,39 @@ class Init(RepoCase):
         super().setUp()
         shutil.rmtree(self.root / ".aiops")
 
+    def test_wire_refuses_unsafe_recipes(self):
+        """0009 S4 (AC-19): wire takes a {target: command} dict and refuses any value that could break out of
+        its recipe line, whatever its source."""
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+        from sdlc_engine import cli
+
+        stub = '\t@echo "[test] not configured - edit Makefile"\n'
+        src, wired = cli.wire(stub, {"test": "npm run test"})
+        self.assertEqual((src, wired), ("\tnpm run test\n", ["test"]))
+        for bad in ("npm test\n\trm -rf ~", "\tnpm test", "@npm test", "-npm test", "npm\x1btest", "", "a\rb"):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                cli.wire(stub, {"test": bad})
+        with self.assertRaises(ValueError):
+            cli.wire(stub, {"deploy": "make it so"})  # only the five contract targets
+
+    def test_preset_wiring_bytes_unchanged(self):
+        """0009 S4 (AC-20): a preset wired through the new API hashes as the released Makefile+<stack> entries, so
+        repos wired by beta.1 stay `current`."""
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+        from sdlc_engine import cli, lifecycle
+
+        entry = lifecycle.history()[lifecycle.history_key()]
+        template = (cli.TEMPLATES / "scaffold" / "Makefile").read_text()
+        for stack in cli.STACKS:
+            wired = cli.wire(template, cli.preset_recipes(stack))[0].encode()
+            self.assertEqual(lifecycle.sha256_bytes(lifecycle.normalize(wired)), entry[f"Makefile+{stack}"], stack)
+            text = (cli.TEMPLATES / "stacks" / f"{stack}.recipes").read_text()
+            self.assertEqual(cli.parse_recipes(text), cli.preset_recipes(stack))
+
     def test_scaffolds_without_overwriting(self):
         (self.root / "Makefile").write_text("mine:\n\techo keep\n")
         r = self.run_sdlc("init", "--with", "all")

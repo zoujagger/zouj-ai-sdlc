@@ -34,7 +34,7 @@ def hashes(read, paths, recipes):
         out[rel] = lifecycle.sha256_bytes(lifecycle.normalize(data))
         if rel == "Makefile":
             for stack, text in recipes.items():
-                wired = cli.wire(data.decode(), stack, text)[0].encode()
+                wired = cli.wire(data.decode(), cli.parse_recipes(text))[0].encode()
                 out[f"Makefile+{stack}"] = lifecycle.sha256_bytes(lifecycle.normalize(wired))
     return out
 

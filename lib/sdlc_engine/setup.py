@@ -571,7 +571,7 @@ def apply(root, profile, actions, stack=None, review=(), parts=None):
                 (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode(),
             )
         if stack and "Makefile" in created:
-            wired = cli._wire_stack(root, stack)
+            wired = cli._wire(root, cli.preset_recipes(stack))
         from . import lifecycle
 
         pending = owned_changes(root, profile)
