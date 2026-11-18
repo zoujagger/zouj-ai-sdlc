@@ -605,7 +605,7 @@ class SetupCommand(RepoCase):
         self.assertNotIn("recipes", json.loads((self.root / ".aiops" / "install-state.json").read_text()))
         agent = {"CLAUDECODE": "1", "CLAUDE_PROJECT_DIR": str(self.root)}
         r = self.run_sdlc("setup", "--stack", "auto", "--yes", env=agent)
-        self.assertIn("read-only lock", r.stdout)  # no active intent: the agent can't write the Makefile
+        self.assertIn("in your own terminal", r.stdout)  # run by the agent, setup never wires
         self.assertEqual((self.root / "Makefile").read_bytes(), engine.rendered_template("Makefile"))
         r = self.run_sdlc("setup", "--stack", "auto", "--yes")  # the human, in their own terminal
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

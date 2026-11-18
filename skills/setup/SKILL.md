@@ -43,7 +43,9 @@ qualified form counts: a bare `/setup <profile>`, or the command with other text
    - the "Review before committing" section, verbatim: it shows what those `!` files contain
    - the **Stack** block: the detected stack and each Makefile target's command (`--stack auto`, the default). If
      the human disagrees, preview again with `--stack <name>` (java, node, react, angular, python, go) or
-     `--stack none`. An existing Makefile is never changed: the block is then only a suggestion
+     `--stack none`. Run by you, setup **never wires**: relay the block and the terminal command it names, and say
+     that the commands run the repo's own scripts, so the human reviews them before wiring them. A Makefile the
+     human has edited is never changed: the block is then only a suggestion
    - the Gates summary, verbatim
 
    If any row is `✗`, stop: the command would refuse too until it's fixed.

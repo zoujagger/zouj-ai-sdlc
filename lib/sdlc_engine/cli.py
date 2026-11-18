@@ -450,16 +450,41 @@ def detect_stack(root, choice=None):
     return stacks.detect(root, None if choice in (None, "auto") else choice)
 
 
-def stack_lines(det, kept=False):
+def wire_mode(root, makefile_created, stub):
+    """How setup/init treat the Makefile (review round 2, the human's choice): "wire" when the human runs them and
+    the Makefile is new or still the untouched stub; "agent" when the agent runs them on such a Makefile (never
+    wired: the Stop hook would run the repo's own scripts before the human has read them); "kept" otherwise."""
+    if not (makefile_created or stub):
+        return "kept"
+    return "agent" if approvals.running_under_agent() else "wire"
+
+
+def human_wire_command():
+    from . import lifecycle
+
+    return lifecycle.human_command("setup --stack auto --yes")
+
+
+def stack_lines(det, mode="wire"):
     """The `Stack` block's lines: what was detected and each contract target's command (0009 R-13)."""
     if det is None:
         return ["  --stack none: the Makefile keeps its 'not configured' stubs"]
     if det.kind is None:
         return [f"  {det.note}"]
     head = f"  detected {det.label} (from {', '.join(det.evidence) or 'the preset'})"
-    if kept:
+    if mode == "kept":
         head += ": your Makefile is kept; copy what you want into it"
-    return [head] + [f"    {t:<10} {det.recipes.get(t, 'not configured')}" for t in CONTRACT_TARGETS]
+    elif mode == "agent":
+        head += ", not wired (run by Claude, setup and init never wire)"
+    lines = [head] + [f"    {t:<10} {det.recipes.get(t, 'not configured')}" for t in CONTRACT_TARGETS]
+    if det.note:
+        lines.append(f"  note: {det.note}")
+    if mode == "agent" and det.recipes:
+        lines.append(
+            "  These run the repo's own scripts: review them, then wire them by running in your own terminal: "
+            f"{human_wire_command()}"
+        )
+    return lines
 
 
 def stub_makefile(root):
@@ -702,6 +727,7 @@ def cmd_init(root, args):
         out(refusal, sys.stderr)
         return 1
     det = detect_stack(root, stack)  # reads only, before anything is written (review round 1)
+    stub = stub_makefile(root)  # judged before init writes anything
     written = []
     try:
         apply_init(root, actions, written)
@@ -716,13 +742,15 @@ def cmd_init(root, args):
             "Human-owned or locked, not reset (init --force was run by the agent). To reset them, the human runs "
             "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned)
         )
-    kept_makefile = "Makefile" not in created
+    mode = wire_mode(root, "Makefile" in created, stub)
     recipes = None
-    if det is not None and det.kind and not kept_makefile:
+    if det is not None and det.kind and mode == "wire":
         wired = _wire(root, det.recipes)
         recipes = {t: det.recipes[t] for t in wired}
+        if "Makefile" not in written:  # the untouched stub, wired now: install-state records its new bytes
+            written.append("Makefile")
         out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the detected {det.label}")
-    out("Stack\n" + "\n".join(stack_lines(det, kept=kept_makefile)))
+    out("Stack\n" + "\n".join(stack_lines(det, mode)))
     try:
         lifecycle.record(
             root, written, stack=det.kind if recipes is not None else None, parts=parts, recipes=recipes
@@ -903,11 +931,12 @@ def cmd_doctor(root, args):
             hint += f"; detected {det.label}: " + "; ".join(
                 f"{t}: {det.recipes[t]}" for t in unwired if t in det.recipes
             )
-            hint += (
-                "; run `sdlc setup --stack auto --yes` to wire them (your Makefile is still the untouched stub)"
-                if stub_makefile(root)
-                else "; copy what you want into your Makefile"
-            )
+            if not stub_makefile(root):
+                hint += "; copy what you want into your Makefile"
+            elif approvals.running_under_agent():
+                hint += f"; review them, then wire them by running in your own terminal: {human_wire_command()}"
+            else:
+                hint += "; run `sdlc setup --stack auto --yes` to wire them (your Makefile is still the untouched stub)"
         row(not unwired, "Makefile contract wired" + (f" (not: {', '.join(unwired)})" if unwired else ""), hint)
     for b in ("gh", "jq"):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")

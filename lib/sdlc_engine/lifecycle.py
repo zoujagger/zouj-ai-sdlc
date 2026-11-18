@@ -244,7 +244,7 @@ def recipes_ok(st):
             cli.safe_recipe(target, cmd)
     except ValueError:
         return False
-    return all(stacks.emittable(cmd) for cmd in recipes.values())
+    return all(stacks.emittable(target, cmd) for target, cmd in recipes.items())
 
 
 def classify(root, st):

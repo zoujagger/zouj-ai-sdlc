@@ -517,14 +517,9 @@ def main(root, args):
             )
     det = cli.detect_stack(root, opts.get("--stack"))
     makefile_created = any(mark == "+" and rel == "Makefile" for mark, rel, _ in actions)
-    print("Stack\n" + "\n".join(cli.stack_lines(det, kept=not (makefile_created or _stub_wirable(root)))))
-    if det is not None and det.recipes and not makefile_created and cli.stub_makefile(root) and not _stub_wirable(root):
-        from . import lifecycle
-
-        print(
-            "  The Makefile is under the read-only lock, so the agent can't wire it. The human runs, in their own "
-            f"terminal: {lifecycle.human_command('setup --stack auto --yes')}"
-        )
+    stub = not makefile_created and cli.stub_makefile(root)  # decided once, before anything is written
+    mode = cli.wire_mode(root, makefile_created, stub)
+    print("Stack\n" + "\n".join(cli.stack_lines(det, mode)))
     print(GATES.format(proof=PROOF[profile]))
     if any(mark == "✗" for mark, _, _ in actions):
         print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
@@ -533,7 +528,7 @@ def main(root, args):
         print("dry run: nothing was written.")
         return 0
     agent = approvals.running_under_agent()
-    rewire = det is not None and bool(det.recipes) and _stub_wirable(root)
+    rewire = det is not None and bool(det.recipes) and stub and mode == "wire"
     if not rewire and not any(mark in ("+" if agent else "+~") for mark, _, _ in actions):  # the agent never writes a ~ change
         print(
             "Nothing for the agent to write: the ~ changes above are yours (see the human steps)."
@@ -549,7 +544,16 @@ def main(root, args):
             else "no terminal to confirm: nothing was written. Re-run with --yes to apply."
         )
         return 2
-    return apply(root, profile, actions, det, review, parts)
+    return apply(
+        root,
+        profile,
+        actions,
+        det if mode == "wire" else None,
+        review,
+        parts,
+        stub=stub,
+        apply_owned="--profile" in opts,  # rerun to wire or add parts: a hand-tuned config stays as it is (round 2)
+    )
 
 
 def _is_tty():
@@ -570,7 +574,7 @@ def _confirm():
         return False
 
 
-def apply(root, profile, actions, det=None, review=(), parts=None):
+def apply(root, profile, actions, det=None, review=(), parts=None, stub=False, apply_owned=True):
     creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
     created = {rel for _, rel in creates}
     written, changed, wired = [], [], None
@@ -585,7 +589,7 @@ def apply(root, profile, actions, det=None, review=(), parts=None):
                 (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode(),
             )
         recipes = None
-        if det is not None and det.kind and ("Makefile" in created or _stub_wirable(root)):
+        if det is not None and det.kind and ("Makefile" in created or stub):
             wired = cli._wire(root, det.recipes)
             recipes = {t: det.recipes[t] for t in wired}
             if "Makefile" not in written:  # the untouched stub, wired now: install-state records its new bytes
@@ -593,7 +597,7 @@ def apply(root, profile, actions, det=None, review=(), parts=None):
         from . import lifecycle
 
         pending = owned_changes(root, profile)
-        if pending and not approvals.running_under_agent():  # a human confirmed this plan: apply it
+        if pending and apply_owned and not approvals.running_under_agent():  # a human confirmed this plan: apply it
             for rel, (_old, new, _keys) in pending.items():  # the diff was shown in the plan, before the question
                 cli.write_file(root, rel, new.encode())
                 written.append(rel)
@@ -821,14 +825,6 @@ def scaffold_first(root, name):
     written.detection = det
     written.kept_makefile = not created_makefile
     return written, None
-
-
-def _stub_wirable(root):
-    """True when setup may wire an existing Makefile: it is the untouched stub template, and (run by the agent) the
-    agent could write it itself (not under the read-only lock)."""
-    from . import lifecycle
-
-    return cli.stub_makefile(root) and (not approvals.running_under_agent() or lifecycle.agent_may_write(root, "Makefile"))
 
 
 def makefile_block(det, kept_makefile=False):

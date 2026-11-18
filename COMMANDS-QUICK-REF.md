@@ -50,7 +50,7 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 ## Engine commands (terminal)
 | Command | What it does |
 |---|---|
-| `sdlc setup [--profile P] [--stack S] [--with PARTS] [--dry-run] [--yes]` | The guided setup, as above. `--stack` (default `auto`) detects the stack and wires a Makefile setup creates from the repo's own commands; `--stack <name>` forces one, `--stack none` keeps the stubs. `--with` adds opt-in parts: `review`, `maintain`, `deploy`, `governance`, `issues` (comma-separated, or `all`). It never removes one |
+| `sdlc setup [--profile P] [--stack S] [--with PARTS] [--dry-run] [--yes]` | The guided setup, as above. `--stack` (default `auto`) detects the stack and, when you run it yourself, wires a new or untouched stub Makefile from the repo's own commands (run by Claude it only lists them); `--stack <name>` forces one, `--stack none` keeps the stubs. `--with` adds opt-in parts: `review`, `maintain`, `deploy`, `governance`, `issues` (comma-separated, or `all`). It never removes one |
 | `sdlc init [--stack S] [--with PARTS]` | The scaffold alone: the core files, plus the parts you name. Never overwrites a file |
 | `sdlc where` | Prints the `sdlc` command for your own terminal (absolute python and plugin paths), then the human-only subcommands. Writes nothing |
 | `sdlc status [--json]` · `sdlc next` | State and next step |

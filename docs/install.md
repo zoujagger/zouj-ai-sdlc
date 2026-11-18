@@ -42,8 +42,10 @@ the same line as `Your terminal:`.
 ## Core by default, the rest opt-in
 Setup and `init` install the core scaffold:
 - `.aiops/`, CLAUDE.md, REVIEW.md;
-- the Makefile contract, wired from the detected stack (`--stack auto`, the default; `--stack <name>` forces one,
-  `--stack none` keeps the stubs; an existing Makefile is never changed);
+- the Makefile contract. A `setup` or `init` you run yourself wires it from the detected stack: `--stack auto` is
+  the default, `--stack <name>` forces one, and `--stack none` keeps the stubs. Run by Claude, or as the typed
+  setup command, they only list the commands and the terminal command that wires them. A Makefile you've edited
+  is never changed;
 - the project settings, CODEOWNERS and the PR template;
 - the two workflows the gates need (`aiops-gates.yml`, `ci.yml`).
 

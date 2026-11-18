@@ -25,7 +25,7 @@ STACKS_DIR = Path(__file__).resolve().parents[2] / "templates" / "stacks"
 
 # Each family's marker files, in the order they're tried.
 FAMILIES = {
-    "java": ("pom.xml", "build.gradle", "build.gradle.kts"),
+    "java": ("pom.xml", "build.gradle.kts", "build.gradle"),
     "node": ("package.json",),
     "python": ("pyproject.toml", "setup.cfg", "setup.py", "requirements.txt"),
     "go": ("go.mod",),
@@ -247,7 +247,12 @@ def _karma(angular):
 GRADLE_CHECKSTYLE = re.compile(
     r"""(\bid\s*\(?\s*['"]checkstyle['"]|(^|[{;])\s*checkstyle\s*($|[;}])|plugin:\s*['"]checkstyle['"])""", re.M
 )
-GRADLE_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+# A string literal first (kept), else a comment (dropped): `"**/*.gen.java"` or a URL is not a comment (round 2).
+GRADLE_TOKENS = re.compile(r"""("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|/\*.*?\*/|//[^\n]*""", re.S)
+
+
+def _strip_comments(text):
+    return GRADLE_TOKENS.sub(lambda m: m.group(1) or "", text)
 
 
 def _local(tag):
@@ -286,10 +291,13 @@ def _wrapper(root, name, fallback, evidence):
 
 
 def _java(root, force):
-    if _regular(root, "pom.xml"):
+    """Maven or Gradle, from the first Java marker that parses (pom.xml, build.gradle.kts, build.gradle): a broken
+    one next to a valid one doesn't block detection (round 2); detect() names the broken one in the note."""
+    usable = [n for n in FAMILIES["java"] if _regular(root, n) and _parses(root, n)]
+    if not usable:
+        return none("no stack detected: no Java build file at the repo top can be read")
+    if usable[0] == "pom.xml":
         tree = _xml(root, "pom.xml")
-        if tree is None:
-            return none("no stack detected: pom.xml can't be read as XML (or is a link, or over 1 MiB)")
         parent, ids = _maven_ids(tree)
         evidence = ["pom.xml"]
         run = _wrapper(root, "mvnw", "mvn", evidence) + " -B -q"
@@ -302,12 +310,10 @@ def _java(root, force):
         recipes.update(typecheck=f"{run} compile", test=f"{run} test", build=f"{run} package -DskipTests")
         tool = "Maven"
     else:
-        name = "build.gradle.kts" if _regular(root, "build.gradle.kts") else "build.gradle"
+        name = usable[0]
         text = _read(root, name)
-        if text is None:
-            return none(f"no stack detected: {name} can't be read (or is a link, or over 1 MiB)")
         evidence = [name]
-        text = GRADLE_COMMENT.sub("", text)  # a commented-out plugin doesn't count
+        text = _strip_comments(text)  # a commented-out plugin doesn't count
         run = _wrapper(root, "gradlew", "gradle", evidence) + " -q"
         boot = "org.springframework.boot" in text
         recipes = {}
@@ -337,26 +343,40 @@ def preset(name):
     return parse_recipes((STACKS_DIR / f"{name}.recipes").read_text())
 
 
-# The grammar of every recipe this module can emit. lifecycle.recipes_ok accepts a recorded recipe only if it matches,
-# so a tampered install-state can't carry `$(shell …)`, `;`, a pipe or a redirection into the Makefile (review round 1).
-EMITTABLE = (
-    re.compile(
-        r"^(CI=true )?(npm|pnpm|yarn|bun) run (format|prettier|lint|typecheck|type-check|tsc|test:ci|test|build)"
-        r"( -- --watch=false( --browsers=ChromeHeadless)?)?$"
+# The grammar of every recipe this module can emit, per target. lifecycle.recipes_ok accepts a recorded recipe only if
+# it matches its own target, so a tampered install-state can't carry `$(shell …)`, `;`, a pipe, a redirection or
+# another target's command into the Makefile (review rounds 1 and 2).
+_PM = r"(npm|pnpm|yarn|bun) run "
+_MVN = r"(\./mvnw|mvn) -B -q "
+_GRADLE = r"(\./gradlew|gradle) -q "
+EMITTABLE = {
+    "format": (_PM + r"(format|prettier)", _MVN + r"spotless:apply", _GRADLE + r"spotlessApply"),
+    "lint": (_PM + r"lint", _MVN + r"checkstyle:check", _GRADLE + r"checkstyleMain"),
+    "typecheck": (_PM + r"(typecheck|type-check|tsc)", r"npx tsc --noEmit", _MVN + r"compile", _GRADLE + r"classes"),
+    "test": (
+        r"(CI=true )?" + _PM + r"(test:ci|test)( -- --watch=false( --browsers=ChromeHeadless)?)?",
+        _MVN + r"test",
+        _GRADLE + r"test",
     ),
-    re.compile(r"^npx tsc --noEmit$"),
-    re.compile(r"^(\./mvnw|mvn) -B -q (spotless:apply|checkstyle:check|compile|test|package -DskipTests)$"),
-    re.compile(r"^(\./gradlew|gradle) -q (spotlessApply|checkstyleMain|classes|test|assemble)$"),
-)
+    "build": (_PM + r"build", _MVN + r"package -DskipTests", _GRADLE + r"assemble"),
+}
+# Every preset recipe any release has shipped, per target. A recorded preset recipe must stay acceptable after an
+# upgrade, so changing templates/stacks/*.recipes means adding the new value here and keeping the old one
+# (tests/test_stacks.py::Round2::test_every_shipped_preset_stays_emittable).
+KNOWN_PRESETS = {
+    "format": ("ruff format .", "npx prettier --write .", "gofmt -w ."),
+    "lint": ("ruff check .", "npm run lint", "go vet ./..."),
+    "typecheck": ("mypy .", "npx tsc --noEmit", "go build ./..."),
+    "test": ("pytest -q", "npm test", "go test ./..."),
+    "build": ("python3 -m build   # needs: pip install build", "npm run build", "go build -o bin/ ./..."),
+}
 
 
-def emittable(cmd):
-    """True when cmd is a recipe detection or a preset of the running plugin can produce."""
-    if not isinstance(cmd, str):
+def emittable(target, cmd):
+    """True when cmd is a recipe detection or a shipped preset can produce for that target."""
+    if not isinstance(cmd, str) or target not in EMITTABLE:
         return False
-    if any(rx.match(cmd) for rx in EMITTABLE):
-        return True
-    return any(cmd in preset(name).values() for name in ("python", "node", "go"))
+    return cmd in KNOWN_PRESETS[target] or any(re.fullmatch(rx, cmd) for rx in EMITTABLE[target])
 
 
 def _python(root, force):

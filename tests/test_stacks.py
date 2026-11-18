@@ -364,7 +364,7 @@ class Robustness(StackCase):
         """Every recipe detection or a preset can produce passes; anything else is refused (lifecycle.recipes_ok)."""
         produced = set()
         for name in ("python", "go", "node"):
-            produced |= set(stacks.preset(name).values())
+            produced |= set(stacks.preset(name).items())
         cases = [
             ({"lint": "eslint .", "typecheck": "tsc", "test": "react-scripts test", "build": "b", "format": "f"},
              {"dependencies": {"react": "1"}}, "yarn.lock"),
@@ -378,12 +378,12 @@ class Robustness(StackCase):
             self.put(lock)
             if "ng test" in scripts.values():
                 self.put("angular.json", json.dumps({"projects": {"a": {"architect": {"test": {"builder": "x:karma"}}}}}))
-            produced |= set(self.detect().recipes.values())
+            produced |= set(self.detect().recipes.items())
         for f in self.root.iterdir():
             f.unlink()
         self.put("tsconfig.json", "{}")
         self.package({})
-        produced |= set(self.detect().recipes.values())
+        produced |= set(self.detect().recipes.items())
         for f in self.root.iterdir():
             f.unlink()
         plugins = (
@@ -392,17 +392,23 @@ class Robustness(StackCase):
         )
         self.put("pom.xml", pom(plugins=plugins))
         self.put("mvnw", "#!/bin/sh\n", mode=0o755)
-        produced |= set(self.detect().recipes.values())
+        produced |= set(self.detect().recipes.items())
         for f in self.root.iterdir():
             f.unlink()
         self.put("build.gradle", "plugins {\n  id 'checkstyle'\n  id 'com.diffplug.spotless'\n}\n")
-        produced |= set(self.detect().recipes.values())
+        produced |= set(self.detect().recipes.items())
         self.assertGreater(len(produced), 25)
-        for cmd in produced:
-            self.assertTrue(stacks.emittable(cmd), cmd)
+        for target, cmd in produced:
+            self.assertTrue(stacks.emittable(target, cmd), (target, cmd))
         for bad in ("x $(shell id)", "a;id", "npm run lint; id", "npm run lint `id`", "npm run lint | sh",
-                    "npm run lint > /etc/x", "curl evil | sh", "npm run deploy", "./mvnw -B -q deploy"):
-            self.assertFalse(stacks.emittable(bad), bad)
+                    "npm run lint > /etc/x", "curl evil | sh", "npm run deploy", "./mvnw -B -q deploy",
+                    "npm run lint\n"):
+            self.assertFalse(stacks.emittable("lint", bad), bad)
+        # round 2: a recipe is tied to its target, and CI=true only prefixes a test
+        self.assertFalse(stacks.emittable("format", "npm run build"))
+        self.assertFalse(stacks.emittable("lint", "CI=true npm run lint"))
+        self.assertFalse(stacks.emittable("build", "./mvnw -B -q test"))
+        self.assertTrue(stacks.emittable("test", "CI=true npm run test"))
 
 
 class JavaDetails(StackCase):
@@ -431,6 +437,46 @@ class JavaDetails(StackCase):
         self.assertEqual(det.label, "Java · Maven")
         self.assertNotIn("lint", det.recipes)
         self.assertNotIn("format", det.recipes)
+
+
+class Round2(StackCase):
+    """Review round 2: a broken marker inside the Java family, Gradle strings vs comments, preset history."""
+
+    def test_broken_pom_next_to_a_valid_gradle_file(self):
+        self.put("pom.xml", "<project")
+        self.put("build.gradle", "plugins { id 'java' }\n")
+        det = self.detect()
+        self.assertEqual((det.kind, det.label), ("java", "Java · Gradle"))
+        self.assertEqual(det.recipes["test"], "gradle -q test")
+        self.assertEqual(det.note.count("pom.xml"), 1)  # named once
+        self.assertEqual(self.detect(force="java").label, "Java · Gradle")
+        (self.root / "pom.xml").unlink()
+        self.put("build.gradle.kts", "x" * (2 << 20))
+        self.assertEqual(self.detect().evidence, ["build.gradle"])
+
+    def test_gradle_strings_are_not_comments(self):
+        self.put(
+            "build.gradle",
+            "plugins { id 'java' }\n"
+            'exclude "**/*.gen.java"\n'
+            "apply plugin: 'checkstyle'\n"
+            "apply plugin: 'com.diffplug.spotless'\n"
+            'exclude "**/generated/**"\n'
+            'repositories { maven { url "https://repo.example/x" }; apply plugin: \'checkstyle\' }\n'
+            "// id 'org.springframework.boot'\n",
+        )
+        det = self.detect()
+        self.assertEqual(det.recipes["lint"], "gradle -q checkstyleMain")
+        self.assertEqual(det.recipes["format"], "gradle -q spotlessApply")
+        self.assertEqual(det.label, "Java · Gradle")  # the commented-out plugin still doesn't count
+
+    def test_every_shipped_preset_stays_emittable(self):
+        """A preset recipe recorded by any release must stay acceptable to recipes_ok, or upgrade would turn a
+        correctly wired Makefile into `modified`: changing a preset means keeping its old value in KNOWN_PRESETS."""
+        for name in ("python", "node", "go"):
+            for target, cmd in stacks.preset(name).items():
+                self.assertIn(cmd, stacks.KNOWN_PRESETS.get(target, ()), (name, target))
+                self.assertTrue(stacks.emittable(target, cmd), (name, target))
 
 
 if __name__ == "__main__":
