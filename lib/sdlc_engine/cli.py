@@ -442,6 +442,27 @@ def wire(src, recipes):
     return src, wired
 
 
+def detect_stack(root, choice=None):
+    """The stacks.Detection for a --stack choice (None or "auto": detect; a kind: forced), or None for "none"."""
+    from . import stacks
+
+    if choice == "none":
+        return None
+    return stacks.detect(root, None if choice in (None, "auto") else choice)
+
+
+def stack_lines(det, kept=False):
+    """The `Stack` block's lines: what was detected and each contract target's command (0009 R-13)."""
+    if det is None:
+        return ["  --stack none: the Makefile keeps its 'not configured' stubs"]
+    if det.kind is None:
+        return [f"  {det.note}"]
+    head = f"  detected {det.label} (from {', '.join(det.evidence) or 'the preset'})"
+    if kept:
+        head += ": your Makefile is kept; copy what you want into it"
+    return [head] + [f"    {t:<10} {det.recipes.get(t, 'not configured')}" for t in CONTRACT_TARGETS]
+
+
 def _wire(root, recipes):
     src, wired = wire((root / "Makefile").read_text(), recipes)
     write_file(root, "Makefile", src.encode())
@@ -645,10 +666,12 @@ def apply_init(root, actions, written=None):
 
 
 def cmd_init(root, args):
+    from . import stacks
+
     stack = args[args.index("--stack") + 1] if "--stack" in args[:-1] else None
     force = "--force" in args
-    if stack and stack not in STACKS:
-        out(f"unknown stack {stack!r} (python, node, go)", sys.stderr)
+    if stack and stack not in stacks.CHOICES:
+        out(f"unknown stack {stack!r} ({', '.join(stacks.CHOICES)}). Nothing was written.", sys.stderr)
         return 1
     from . import lifecycle
 
@@ -683,11 +706,18 @@ def cmd_init(root, args):
             "Human-owned or locked, not reset (init --force was run by the agent). To reset them, the human runs "
             "`sdlc init --force` in your own terminal:\n  " + "\n  ".join(owned)
         )
-    if stack and "Makefile" in created:
-        wired = _wire(root, preset_recipes(stack))
-        out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
+    det = detect_stack(root, stack)
+    kept_makefile = "Makefile" not in created
+    recipes = None
+    if det is not None and det.kind and not kept_makefile:
+        wired = _wire(root, det.recipes)
+        recipes = {t: det.recipes[t] for t in wired}
+        out(f"Makefile: wired {', '.join(wired) or 'nothing'} from the detected {det.label}")
+    out("Stack\n" + "\n".join(stack_lines(det, kept=kept_makefile)))
     try:
-        lifecycle.record(root, written, stack=stack, parts=parts)
+        lifecycle.record(
+            root, written, stack=det.kind if recipes is not None else None, parts=parts, recipes=recipes
+        )
     except OSError as exc:
         out(write_failure(exc, written), sys.stderr)
         return 1
@@ -699,8 +729,8 @@ def cmd_init(root, args):
         out(left_out)
     out("""
 zouj-ai-sdlc is now active in this repo. Next:
-  1. Wire the Makefile contract (format/lint/typecheck/test/build): copy the recipes from the plugin's
-     templates/stacks/<python|node|go>.recipes.
+  1. Check the Makefile contract (format/lint/typecheck/test/build) against the Stack block above, and wire
+     what is still "not configured" (or rerun with --stack <name>).
   2. Optional, for an unattended state 4: add the allow-rules from .aiops/README.md to .claude/settings.json.
   3. Commit the scaffold, then start: /zouj-ai-sdlc:intent "<your first need>".""")
     return 0
@@ -858,11 +888,13 @@ def cmd_doctor(root, args):
     if initialized(root) and (root / "Makefile").exists():
         mk = (root / "Makefile").read_text()
         unwired = [t for t in ("format", "lint", "typecheck", "test", "build") if f'"[{t}] not configured' in mk]
-        row(
-            not unwired,
-            "Makefile contract wired" + (f" (not: {', '.join(unwired)})" if unwired else ""),
-            "edit the Makefile's recipes (presets: the plugin's templates/stacks/<python|node|go>.recipes)",
-        )
+        hint = "edit the Makefile's recipes"
+        det = detect_stack(root) if unwired else None
+        if det is not None and det.kind and any(t in det.recipes for t in unwired):
+            hint += f"; detected {det.label}: " + "; ".join(
+                f"{t}: {det.recipes[t]}" for t in unwired if t in det.recipes
+            )
+        row(not unwired, "Makefile contract wired" + (f" (not: {', '.join(unwired)})" if unwired else ""), hint)
     for b in ("gh", "jq"):
         out(f"  {'✓' if shutil.which(b) else '!'} {b} (optional)")
     if initialized(root):

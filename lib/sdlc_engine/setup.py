@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import approvals, cli
+from . import approvals, cli, stacks
 from . import artifacts as A
 from .machine import config, git, initialized, intent_dirs
 
@@ -404,7 +404,7 @@ def _with_marketplace(settings):
     return merged
 
 
-OPTIONS = {"--profile": PROFILES, "--stack": cli.STACKS, "--dry-run": None, "--yes": None}  # option: its values
+OPTIONS = {"--profile": PROFILES, "--stack": stacks.CHOICES, "--dry-run": None, "--yes": None}  # option: its values
 WITH = "--with"  # its value is a list of opt-in parts (lifecycle.parse_parts)
 
 
@@ -424,7 +424,7 @@ def parse(args):
             continue
         if name not in OPTIONS:
             return None, (
-                f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack python|node|go, "
+                f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack {'|'.join(stacks.CHOICES)}, "
                 f"--with {','.join(lifecycle.PARTS)} (or all), --dry-run and --yes"
             )
         allowed = OPTIONS[name]
@@ -512,6 +512,9 @@ def main(root, args):
                 )
                 or f"  (same as the template: {rel})"
             )
+    det = cli.detect_stack(root, opts.get("--stack"))
+    makefile_created = any(mark == "+" and rel == "Makefile" for mark, rel, _ in actions)
+    print("Stack\n" + "\n".join(cli.stack_lines(det, kept=not makefile_created)))
     print(GATES.format(proof=PROOF[profile]))
     if any(mark == "✗" for mark, _, _ in actions):
         print("setup stops: a ✗ file in the plan has a symlink on its path; nothing was written.", file=sys.stderr)
@@ -535,7 +538,7 @@ def main(root, args):
             else "no terminal to confirm: nothing was written. Re-run with --yes to apply."
         )
         return 2
-    return apply(root, profile, actions, opts.get("--stack"), review, parts)
+    return apply(root, profile, actions, det, review, parts)
 
 
 def _is_tty():
@@ -556,7 +559,7 @@ def _confirm():
         return False
 
 
-def apply(root, profile, actions, stack=None, review=(), parts=None):
+def apply(root, profile, actions, det=None, review=(), parts=None):
     creates = [("create", rel) for mark, rel, _ in actions if mark == "+"]
     created = {rel for _, rel in creates}
     written, changed, wired = [], [], None
@@ -570,8 +573,10 @@ def apply(root, profile, actions, stack=None, review=(), parts=None):
                 ".aiops/config.json",
                 (json.dumps({**(_json(f) or {}), **PROFILE_CONFIG[profile]}, indent=2) + "\n").encode(),
             )
-        if stack and "Makefile" in created:
-            wired = cli._wire(root, cli.preset_recipes(stack))
+        recipes = None
+        if det is not None and det.kind and "Makefile" in created:
+            wired = cli._wire(root, det.recipes)
+            recipes = {t: det.recipes[t] for t in wired}
         from . import lifecycle
 
         pending = owned_changes(root, profile)
@@ -581,12 +586,19 @@ def apply(root, profile, actions, stack=None, review=(), parts=None):
                 written.append(rel)
                 changed.append(rel)
             pending = {}
-        lifecycle.record(root, written, profile=profile, stack=stack, parts=parts)
+        lifecycle.record(
+            root,
+            written,
+            profile=profile,
+            stack=det.kind if recipes is not None else None,
+            parts=parts,
+            recipes=recipes,
+        )
     except OSError as exc:
         print(cli.write_failure(exc, written), file=sys.stderr)
         return 1
     if wired is not None:
-        print(f"Makefile: wired {', '.join(wired) or 'nothing'} from the {stack} preset")
+        print(f"Makefile: wired {', '.join(wired) or 'nothing'} from the detected {det.label}")
     print("Applied")
     for rel in sorted(created):
         print(f"  + {rel}")

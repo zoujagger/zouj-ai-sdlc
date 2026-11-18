@@ -93,7 +93,7 @@ Existing code to reuse:
     its normalized hash with `defaults/scaffold-history.json`'s current `Makefile+<stack>`. It fails before the
     change because `wire` takes no dict.
   - Covers: AC-19 (the refusal), AC-20 (preset bytes unchanged)
-- [ ] **S5**: Wire detection into `sdlc setup` and `sdlc init`: the `--stack` choices, the default `auto`, the
+- [x] **S5**: Wire detection into `sdlc setup` and `sdlc init`: the `--stack` choices, the default `auto`, the
   Stack block, and the suggestion for an existing Makefile.
   - Files:
     - `lib/sdlc_engine/setup.py` (modify):
@@ -212,3 +212,4 @@ Existing code to reuse:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-18 | S5 | A forced `--stack python` or `--stack go` wires its preset with no marker file at the top (R-9 reads as "the forced kind's recipes still need the repo's own files") | Those presets read no repo file, and `--stack python\|go` always worked on any repo; existing tests and beta.1 users rely on it | S5 commit |

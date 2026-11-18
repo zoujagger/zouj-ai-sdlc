@@ -103,6 +103,8 @@ def detect(root, force=None):
         if force not in KINDS:
             raise ValueError(f"unknown stack {force!r} (one of: {', '.join(KINDS)})")
         family = FAMILY_OF[force]
+        if family in ("python", "go"):  # a preset: it reads nothing, as --stack python|go always did
+            return DETECTORS[family](root, force)
         if not any(_regular(root, n) for n in FAMILIES[family]):
             return none(f"--stack {force} needs {' or '.join(FAMILIES[family])} at the repo top; nothing was wired")
     else:
