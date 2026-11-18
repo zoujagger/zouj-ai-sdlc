@@ -67,7 +67,7 @@ Existing code to reuse:
     - the `tsconfig` fallback and the npm placeholder (AC-7);
     - names `lint;rm -rf ~`, `$(x)`, `a\nb`, `-x` never appear, and no body substring appears in any recipe (AC-8).
   - Covers: AC-4, AC-5, AC-6, AC-7, AC-8
-- [ ] **S3**: Detect Java (Maven and Gradle, Spring Boot label, wrapper, Checkstyle/Spotless only when configured),
+- [x] **S3**: Detect Java (Maven and Gradle, Spring Boot label, wrapper, Checkstyle/Spotless only when configured),
   Python and Go.
   - Files: `lib/sdlc_engine/stacks.py` (modify):
     - `_java(root)`: `pom.xml` through `xml.etree`, Gradle files by text match; the wrapper is used when it is an

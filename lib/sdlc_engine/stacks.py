@@ -7,6 +7,7 @@ counts as absent and is named in `note`. Stdlib only, and no import of the rest 
 """
 
 import json
+import os
 import re
 from collections import namedtuple
 from pathlib import Path
@@ -190,23 +191,69 @@ def _karma(angular):
     return False
 
 
+GRADLE_CHECKSTYLE = re.compile(r"""(\bid\s*\(?\s*['"]checkstyle['"]|^\s*checkstyle\s*$|plugin:\s*['"]checkstyle['"])""", re.M)
+
+
+def _wrapper(root, name, fallback, evidence):
+    """`./<name>` when the repo has it as an executable regular file at the top, else the installed tool."""
+    p = _regular(root, name)
+    if p is not None and os.access(p, os.X_OK):
+        evidence.append(name)
+        return f"./{name}"
+    return fallback
+
+
 def _java(root, force):
     if _regular(root, "pom.xml"):
-        if _xml(root, "pom.xml") is None:
+        tree = _xml(root, "pom.xml")
+        if tree is None:
             return none("no stack detected: pom.xml can't be read as XML (or is a link, or over 1 MiB)")
-        return Detection("java", "Java · Maven", {}, ["pom.xml"], "")
-    name = "build.gradle.kts" if _regular(root, "build.gradle.kts") else "build.gradle"
-    if _read(root, name) is None:
-        return none(f"no stack detected: {name} can't be read")
-    return Detection("java", "Java · Gradle", {}, [name], "")
+        ids = {(el.text or "").strip() for el in tree.iter() if str(el.tag).rsplit("}", 1)[-1] == "artifactId"}
+        evidence = ["pom.xml"]
+        run = _wrapper(root, "mvnw", "mvn", evidence) + " -B -q"
+        boot = bool(ids & {"spring-boot-starter-parent", "spring-boot-maven-plugin"})
+        recipes = {}
+        if "spotless-maven-plugin" in ids:
+            recipes["format"] = f"{run} spotless:apply"
+        if "maven-checkstyle-plugin" in ids:
+            recipes["lint"] = f"{run} checkstyle:check"
+        recipes.update(typecheck=f"{run} compile", test=f"{run} test", build=f"{run} package -DskipTests")
+        tool = "Maven"
+    else:
+        name = "build.gradle.kts" if _regular(root, "build.gradle.kts") else "build.gradle"
+        text = _read(root, name)
+        if text is None:
+            return none(f"no stack detected: {name} can't be read (or is a link, or over 1 MiB)")
+        evidence = [name]
+        run = _wrapper(root, "gradlew", "gradle", evidence) + " -q"
+        boot = "org.springframework.boot" in text
+        recipes = {}
+        if "com.diffplug.spotless" in text:
+            recipes["format"] = f"{run} spotlessApply"
+        if GRADLE_CHECKSTYLE.search(text):
+            recipes["lint"] = f"{run} checkstyleMain"
+        recipes.update(typecheck=f"{run} classes", test=f"{run} test", build=f"{run} assemble")
+        tool = "Gradle"
+    label = "Java · Spring Boot · " + tool if boot else "Java · " + tool
+    return Detection("java", label, recipes, evidence, "")
+
+
+def preset(name):
+    """{target: command} from templates/stacks/<name>.recipes (python, node, go)."""
+    out = {}
+    for line in (STACKS_DIR / f"{name}.recipes").read_text().splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) == 2 and not parts[0].startswith("#") and parts[0] in TARGETS:
+            out[parts[0]] = parts[1]
+    return out
 
 
 def _python(root, force):
-    return Detection("python", "Python", {}, [n for n in FAMILIES["python"] if _regular(root, n)], "")
+    return Detection("python", "Python", preset("python"), [n for n in FAMILIES["python"] if _regular(root, n)], "")
 
 
 def _go(root, force):
-    return Detection("go", "Go", {}, ["go.mod"], "")
+    return Detection("go", "Go", preset("go"), ["go.mod"], "")
 
 
 DETECTORS = {"java": _java, "node": _node_family, "python": _python, "go": _go}

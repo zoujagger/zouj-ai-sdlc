@@ -227,5 +227,90 @@ class Node(StackCase):
         self.assertEqual(det.recipes, {})
 
 
+class Java(StackCase):
+    """S3: Maven and Gradle, the Spring Boot label, the wrapper, lint/format only when configured (AC-1 to AC-3)."""
+
+    def test_spring_boot_maven_wrapper(self):
+        self.put("pom.xml", pom(BOOT_PARENT))
+        self.put("mvnw", "#!/bin/sh\n", mode=0o755)
+        det = self.detect()
+        self.assertEqual(det.kind, "java")
+        self.assertEqual(det.label, "Java · Spring Boot · Maven")
+        self.assertEqual(
+            det.recipes,
+            {
+                "typecheck": "./mvnw -B -q compile",
+                "test": "./mvnw -B -q test",
+                "build": "./mvnw -B -q package -DskipTests",
+            },
+        )
+        self.assertEqual(det.evidence, ["pom.xml", "mvnw"])
+
+    def test_maven_checkstyle_spotless_no_wrapper(self):
+        plugins = (
+            "<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-checkstyle-plugin</artifactId></plugin>"
+            "<plugin><groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId></plugin>"
+        )
+        self.put("pom.xml", pom(plugins=plugins))
+        det = self.detect()
+        self.assertEqual(det.label, "Java · Maven")
+        self.assertEqual(det.recipes["lint"], "mvn -B -q checkstyle:check")
+        self.assertEqual(det.recipes["format"], "mvn -B -q spotless:apply")
+        self.assertEqual(det.recipes["test"], "mvn -B -q test")
+        self.assertEqual(list(det.recipes), ["format", "lint", "typecheck", "test", "build"])
+
+    def test_non_executable_wrapper_falls_back(self):
+        self.put("pom.xml", pom())
+        self.put("mvnw", "#!/bin/sh\n", mode=0o644)
+        self.assertEqual(self.detect().recipes["test"], "mvn -B -q test")
+
+    def test_gradle_kts_spring_boot(self):
+        self.put("build.gradle.kts", 'plugins {\n  java\n  id("org.springframework.boot") version "3.3.0"\n}\n')
+        self.put("gradlew", "#!/bin/sh\n", mode=0o755)
+        det = self.detect()
+        self.assertEqual(det.label, "Java · Spring Boot · Gradle")
+        self.assertEqual(
+            det.recipes,
+            {"typecheck": "./gradlew -q classes", "test": "./gradlew -q test", "build": "./gradlew -q assemble"},
+        )
+        self.assertEqual(det.evidence, ["build.gradle.kts", "gradlew"])
+
+    def test_gradle_checkstyle_spotless(self):
+        self.put("build.gradle", "plugins {\n  id 'java'\n  id 'checkstyle'\n  id 'com.diffplug.spotless' version '6.25.0'\n}\n")
+        det = self.detect()
+        self.assertEqual(det.label, "Java · Gradle")
+        self.assertEqual(det.recipes["lint"], "gradle -q checkstyleMain")
+        self.assertEqual(det.recipes["format"], "gradle -q spotlessApply")
+
+    def test_spring_boot_maven_plugin_without_parent(self):
+        plugins = "<plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin>"
+        self.put("pom.xml", pom(plugins=plugins))
+        self.assertEqual(self.detect().label, "Java · Spring Boot · Maven")
+
+
+class Presets(StackCase):
+    """S3: Python and Go keep their presets (AC-9)."""
+
+    def preset(self, name):
+        out = {}
+        for line in (stacks.STACKS_DIR / f"{name}.recipes").read_text().splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and not parts[0].startswith("#"):
+                out[parts[0]] = parts[1]
+        return out
+
+    def test_python_and_go(self):
+        self.put("pyproject.toml", "[project]\nname = 'x'\n")
+        det = self.detect()
+        self.assertEqual((det.kind, det.label), ("python", "Python"))
+        self.assertEqual(det.recipes, self.preset("python"))
+        self.assertEqual(det.evidence, ["pyproject.toml"])
+        (self.root / "pyproject.toml").unlink()
+        self.put("go.mod", "module x\n")
+        det = self.detect()
+        self.assertEqual((det.kind, det.label), ("go", "Go"))
+        self.assertEqual(det.recipes, self.preset("go"))
+
+
 if __name__ == "__main__":
     unittest.main()
