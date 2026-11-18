@@ -58,7 +58,7 @@ Existing tests are reused:
   - **Test first:** `test_version_matches_changelog` and `test_changelog_has_the_release` fail on beta.1
     (`'0.2.0-beta.1' != '0.2.0-beta.2'`).
   - Covers: AC-1, AC-2, AC-3, AC-4
-- [ ] **S2**: Prove the release commit.
+- [x] **S2**: Prove the release commit.
   - **Commands:**
     - `make check`;
     - `claude plugin validate .`;
@@ -99,3 +99,4 @@ Existing tests are reused:
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-18 | S1 | `tests/test_cli.py::Docs::test_docs_name_stack_detection` (0009) now looks for the detection entries in everything newer than `[0.2.0-beta.1]`, not only `[Unreleased]` | The release moves those entries into `[0.2.0-beta.2]`; the test failed after the move | S1 commit |
+| 2026-11-18 | S2 | None; the results | `make check` OK (513 tests, 3 skipped); `claude plugin validate .` passes (ICON_MISSING only); `scaffold-history.py --check` up to date; `git diff --name-only origin/main` lists `plugin.json`, `CHANGELOG.md`, `README.md`, `docs/roadmap.md`, `defaults/scaffold-history.json`, `tests/test_cli.py`, `tests/test_shell_hooks.py` and `.aiops/0010-*` (`tests/test_rules.py` needed no change); history check against `origin/main`: every released entry equal, `0.2.0-beta.2` == main's `unreleased`, no `unreleased` key; eval `profile-by-setup-command` (3 runs per arm, `evals/results/2026-11-18T13-26-24-467Z`): with the plugin 1.00 ×3, without 0.83, Δ +0.17, $0.93 | S2 commit |
