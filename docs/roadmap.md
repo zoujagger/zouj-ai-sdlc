@@ -81,6 +81,20 @@ guard-gap backlog.
 - **Docs.** A shorter README with a walkthrough, the [adoption ladder](adoption.md), a managed-settings example that
   keeps this plugin's hooks on, a nit cap in REVIEW.md, and a listing in Anthropic's plugin directory.
 
+### Next: adoption, part 2 (agreed with zoujagger on 2026-11-18)
+- **README funnel** (docs only, shipped on `main` after 0.2.0-beta.1). The README covers the problem, a demo, a
+  2-command install, the workflow and how it differs from prompt-only workflows. The details moved to
+  [install](install.md), [approver setup](approver-setup.md), [enforcement](enforcement.md) and
+  [lifecycle](lifecycle.md). The demo GIF is recorded by a human from [docs/demo/demo.tape](demo/demo.tape).
+- **Stack auto-detection** (its own intent). Setup detects the stack at the repo top and wires the Makefile contract
+  from the repo's own scripts:
+  - Java/Spring Boot (Maven or Gradle, wrapper first);
+  - Node, React and Angular (package.json scripts, the package manager from the lockfile);
+  - Python and Go (the existing presets).
+
+  This works in `sdlc setup` and in the typed `/zouj-ai-sdlc:setup <profile>`. Detection reads files only and runs
+  nothing; an existing Makefile is never changed.
+
 ### Phase 3: beta, reach
 10. **Pinned distribution without npm.**
     - Publish `zouj-ai-sdlc` to PyPI, so `uvx zouj-ai-sdlc@0.2.0b1 setup` or `pipx run …` works.
