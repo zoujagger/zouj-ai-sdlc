@@ -38,7 +38,7 @@ Code reused:
   `Docs::test_changelog_has_the_release` allows it while `[Unreleased]` has entries, which it does (0011).
 
 ## Steps
-- [ ] **S1**: Register the `dsl` part: explicit opt-in, never through `all` or the legacy fallbacks.
+- [x] **S1**: Register the `dsl` part: explicit opt-in, never through `all` or the legacy fallbacks.
   - **Files:**
     - `tests/test_lifecycle.py` (modify):
       - `Parts::test_parse_parts`: `all` → the five legacy parts, `all,dsl` → six, `dsl` alone → `["dsl"]`;
@@ -187,3 +187,5 @@ Code reused:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-20 | S1 | Seven existing tests not named in S1 changed to the new meaning of "every part" (`LEGACY_PARTS`): `test_setup.py::Init::test_init_actions_preview_matches_apply`, `::Parts::test_with_maintain_adds_only_maintain`; `test_cli.py::InitParts::test_with_all`, `::test_edited_config_without_state_gets_every_part`, `::test_template_config_with_full_scaffold_gets_every_part`; `test_lifecycle.py::Compat::test_release_repo_without_state_keeps_every_part`, `::InstallState::test_init_records_every_file` (now `--with all,dsl`) | They asserted that `--with all` and the legacy fallbacks cover every scaffold file, which R-1/R-2 make untrue for `dsl` by design | S1 green commit |
+| 2026-11-20 | S1 | `parts_line` lists only missing legacy parts and names `dsl` as installed by name, rather than listing `dsl` as missing | Otherwise every repo set up with `--with all` would be told `dsl` is "not installed" forever; `dsl` is a choice of method, not a gap. `CoreOnly::test_list_installed_hides_parts_not_installed` keeps passing unchanged | S1 green commit |

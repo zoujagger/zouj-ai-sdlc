@@ -425,7 +425,7 @@ def parse(args):
         if name not in OPTIONS:
             return None, (
                 f"unknown option {name!r}; setup takes --profile solo|team|strict, --stack {'|'.join(stacks.CHOICES)}, "
-                f"--with {','.join(lifecycle.PARTS)} (or all), --dry-run and --yes"
+                f"--with {','.join(lifecycle.PARTS)} (or all: every part but dsl), --dry-run and --yes"
             )
         allowed = OPTIONS[name]
         if allowed is None:

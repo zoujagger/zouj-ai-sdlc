@@ -25,7 +25,7 @@ class InstallState(RepoCase):
         return json.loads((self.root / STATE).read_text())
 
     def test_init_records_every_file(self):
-        r = self.run_sdlc("init", "--with", "all")
+        r = self.run_sdlc("init", "--with", "all,dsl")  # every part (0012: `all` alone leaves dsl out)
         self.assertEqual(r.returncode, 0, r.stderr)
         st = self.state()
         self.assertEqual(st["schema"], 1)

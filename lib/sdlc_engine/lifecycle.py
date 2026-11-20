@@ -101,7 +101,10 @@ NEVER_DECLINED = {
 
 STATUSES = ("current", "stale", "modified", "missing", "unmanaged", "dropped", "new", "declined")
 
-PARTS = ("review", "maintain", "deploy", "governance", "issues")  # opt-in (`--with`); `core` is always installed
+PARTS = ("review", "maintain", "deploy", "governance", "issues", "dsl")  # opt-in (`--with`); `core` always installed
+# The parts that existed before `dsl` (0012). `all` and the "every part" fallbacks for repos older than install-state's
+# `parts` key mean these: `dsl` adds a requirement to every later spec, so it is installed only when named.
+LEGACY_PARTS = ("review", "maintain", "deploy", "governance", "issues")
 PARTS_FILE = PLUGIN_ROOT / "defaults" / "scaffold-parts"
 
 
@@ -122,24 +125,26 @@ def part_of(rel, rules=None):
 
 
 def parse_parts(value):
-    """(sorted opt-in part names, None) for a `--with` value (comma-separated names, or `all`), or (None, why)."""
-    if value == "all":
-        return sorted(PARTS), None
+    """(sorted opt-in part names, None) for a `--with` value (comma-separated names, `all` among them), or (None, why).
+    `all` is every part but `dsl` (0012), which is installed only when named: `--with all,dsl`."""
     names = value.split(",")
-    bad = [n for n in names if n not in PARTS]
+    bad = [n for n in names if n not in PARTS and n != "all"]
     if bad:
-        return None, f"unknown part {bad[0]!r}; --with takes a comma-separated list of {', '.join(PARTS)}, or all"
-    return sorted(set(names)), None
+        return None, (
+            f"unknown part {bad[0]!r}; --with takes a comma-separated list of {', '.join(PARTS)}, or all "
+            "(every part but dsl)"
+        )
+    return sorted({p for n in names for p in (LEGACY_PARTS if n == "all" else (n,))}), None
 
 
 def parts_line(parts, command="setup"):
     """One line naming the opt-in parts that aren't installed and how to add them; "" when every part is."""
-    missing = [p for p in PARTS if p not in parts]
+    missing = [p for p in LEGACY_PARTS if p not in parts]  # dsl is a choice of method, offered but never missing
     if not missing:
         return ""
     return (
         f"Not installed (opt-in parts): {', '.join(missing)}. Add one with `sdlc {command} --with <part>` "
-        "(comma-separated, or `--with all`)."
+        "(comma-separated, or `--with all`; `dsl`, the domain model, is installed only by name)."
     )
 
 
@@ -206,11 +211,11 @@ def installed_parts(root, st, requested=()):
       setup that stopped part-way installs what the first run chose; a repo with an edited config was initialized
       before install-state existed and has every part."""
     if st is not None:
-        base = [p for p in st["parts"] if p in PARTS] if isinstance(st.get("parts"), list) else PARTS
+        base = [p for p in st["parts"] if p in PARTS] if isinstance(st.get("parts"), list) else LEGACY_PARTS
     elif config_written(root) is not None:
         base = parts_on_disk(root)
     else:
-        base = PARTS
+        base = LEGACY_PARTS
     return sorted(set(base) | set(requested))
 
 
@@ -265,7 +270,7 @@ def classify(root, st):
     version = cli.plugin_version()
     scaffold = set(scaffold_paths())
     files = (st or {}).get("files", {})
-    rules, installed = part_rules(), {"core", *(installed_parts(root, st) if st else PARTS)}
+    rules, installed = part_rules(), {"core", *(installed_parts(root, st) if st else LEGACY_PARTS)}
     out = {}
     for rel, entry in files.items():
         f = root / rel

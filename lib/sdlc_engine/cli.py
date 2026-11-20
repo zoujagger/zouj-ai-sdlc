@@ -59,7 +59,7 @@ Lifecycle (any user or agent)
   lock                       /fix: lock test files after the human approved the failing test
   init [--stack python|node|go] [--with PARTS] [--force]   scaffold this repo: the core files (.aiops/, Makefile
                              contract, CI audit, REVIEW.md), plus opt-in PARTS (review, maintain, deploy,
-                             governance, issues, comma-separated, or all)
+                             governance, issues, dsl; comma-separated, or all: every part but dsl)
   setup [--profile solo|team|strict] [--stack S] [--with PARTS] [--dry-run] [--yes]   guided, rerunnable setup
   feedback                   issue links and a doctor summary to paste (sends nothing)
   list-installed             what the plugin installed here: current, stale, modified, missing, unmanaged

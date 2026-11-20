@@ -21,7 +21,8 @@ class Init(RepoCase):
 
     def test_init_actions_preview_matches_apply(self):
         (self.root / "Makefile").write_text("mine:\n\techo keep\n")
-        actions = cli.init_actions(self.root)
+        from sdlc_engine.lifecycle import LEGACY_PARTS as legacy  # what `--with all` installs (0012)
+        actions = cli.init_actions(self.root, parts=legacy)
         created = {rel for act, rel in actions if act == "create"}
         kept = {rel for act, rel in actions if act == "keep"}
         self.assertIn("Makefile", kept)
@@ -31,7 +32,7 @@ class Init(RepoCase):
         for rel in created | kept:
             self.assertTrue((self.root / rel).exists(), rel)
         self.assertEqual((self.root / "Makefile").read_text(), "mine:\n\techo keep\n")
-        again = cli.init_actions(self.root)
+        again = cli.init_actions(self.root, parts=legacy)
         self.assertEqual({act for act, _ in again}, {"keep"})  # a rerun plans no creation
         rerun = self.run_sdlc("init", "--with", "all")
         self.assertIn("Kept existing", rerun.stdout)
@@ -1037,8 +1038,8 @@ class Parts(SetupCase):
         self.assertEqual(self.parts(), ["maintain"])
         self.assertNotRegex(r.stdout, r"(?m)^  \+ ")  # no file to create in the plan
         self.ok("--profile", "solo", "--with", "all", "--yes")
-        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())
-        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+        self.assertTrue(set(self.lc.scaffold_paths(self.lc.LEGACY_PARTS)) <= self.files())
+        self.assertEqual(self.parts(), sorted(self.lc.LEGACY_PARTS))  # `all` leaves dsl out (0012)
 
     def test_bogus_part_refused(self):
         for args in (("--with", "bogus"), ("--with", "maintain,bogus"), ("--with",)):

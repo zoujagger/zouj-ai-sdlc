@@ -482,9 +482,11 @@ class InitParts(RepoCase):
         self.assertEqual(self.parts(), ["deploy", "maintain", "review"])  # --with only adds
 
     def test_with_all(self):
-        self.init("--with", "all")
-        self.assertEqual(self.files() - self.base, set(self.lc.scaffold_paths()) | {STATE, ".gitignore"})
-        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+        self.init("--with", "all")  # every part but dsl (0012)
+        self.assertEqual(
+            self.files() - self.base, set(self.lc.scaffold_paths(self.lc.LEGACY_PARTS)) | {STATE, ".gitignore"}
+        )
+        self.assertEqual(self.parts(), sorted(self.lc.LEGACY_PARTS))
 
     def test_unknown_part_refused_before_writing(self):
         for value in ("bogus", "maintain,bogus", "core"):
@@ -508,8 +510,8 @@ class InitParts(RepoCase):
         (self.root / ".aiops").mkdir()  # initialized before install-state
         (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
         self.init()
-        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())
-        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+        self.assertTrue(set(self.lc.scaffold_paths(self.lc.LEGACY_PARTS)) <= self.files())
+        self.assertEqual(self.parts(), sorted(self.lc.LEGACY_PARTS))  # never dsl (0012)
 
     def test_template_config_with_full_scaffold_gets_every_part(self):
         self.init("--with", "all")
@@ -517,8 +519,8 @@ class InitParts(RepoCase):
         (self.root / "ops" / "bands.yaml").unlink()
         (self.root / ".github" / "workflows" / "deploy.yml").unlink()
         self.init()
-        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())  # both restored: every part counts
-        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+        self.assertTrue(set(self.lc.scaffold_paths(self.lc.LEGACY_PARTS)) <= self.files())  # both restored
+        self.assertEqual(self.parts(), sorted(self.lc.LEGACY_PARTS))  # every part but dsl (0012)
 
     def test_rerun_after_partial_core_setup_stays_core(self):
         self.init()
