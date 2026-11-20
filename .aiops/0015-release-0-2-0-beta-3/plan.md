@@ -37,7 +37,7 @@ Existing tests reused:
 - **`tests/test_lifecycle.py::Detected::test_wired_makefile_keeps_recipes_with_validate_dsl`**, unchanged (AC-5).
 
 ## Steps
-- [ ] **S1**: Bump the current release to 0.2.0-beta.3: the tests first, then the version, the CHANGELOG, the
+- [x] **S1**: Bump the current release to 0.2.0-beta.3: the tests first, then the version, the CHANGELOG, the
   scaffold history and the README pins.
   - **Files (modify):**
     - `tests/test_shell_hooks.py`: `test_version_matches_changelog` expects `0.2.0-beta.3`.

@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.2.0-beta.3] - 2026-11-20
+
+> **Beta.** The workflow, the gates and the file formats are settling, but may still change between betas; the
+> CHANGELOG names every change.
+
+Ships `.aiops/0011-scope-sizing/` (scope sizing), `.aiops/0012-dsl-part/` with `.aiops/0013-dsl-hardening/` (the
+opt-in `dsl` part), `.aiops/0014-spec-quality/` (sharper specs), and the docs audit that describes them (PR #29).
+The playbook workflow, the gates and what CI audits are unchanged.
+
 ### Added
 - **Sharper specs** (`.aiops/0014-spec-quality/`): the architect and the spec skill write the engineering half for a
   fast review. Sections with no change (`## Data model`, `## API contracts`, `## Rollout & rollback`) read exactly
@@ -583,7 +592,8 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.2...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.3...HEAD
+[0.2.0-beta.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [0.2.0-beta.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.3...v0.2.0-beta.1
 [0.2.0-alpha.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.2...v0.2.0-alpha.3
