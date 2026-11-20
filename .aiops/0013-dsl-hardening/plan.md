@@ -67,7 +67,7 @@ Code reused:
   - **Test first:** `test_non_dsl_domain_dir_is_skipped` fails, because the current recipe fails on any `domain/`.
     The skip-line assertion also fails.
   - Covers: AC-2
-- [ ] **S3**: Report non-string references and a symlinked `domain/` in the validator, never raise.
+- [x] **S3**: Report non-string references and a symlinked `domain/` in the validator, never raise.
   - **Files:**
     - `tests/test_dsl.py` (modify): in `ValidateDsl`:
       - `test_non_string_references`: one subtest each for `kind`, transition `from`, `to`, `initial`, a `final`

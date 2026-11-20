@@ -278,10 +278,10 @@
   "docs/postmortems/README.md": "67e5f4c4a32477bf7e1f47ab1336604213efdd3470cd5373dedb663d2a3334fb",
   "docs/retros/README.md": "f732e2e4e18566962d8ecc36df9acab9933decbab38e10e9f3162c6c45fa9d99",
   "docs/runbooks/README.md": "8a3923e61970d857d80a6d47a1e45a86086ed9c5a837ff79a9c6652063ec442e",
-  "domain/README.md": "12158e61064d42c78c54876452482e9e5c57620bb5b5ed67031f16897d410eec",
+  "domain/README.md": "098628e6f120e5744e5685dbb8bc5ff4e24e924270d001936ca8dac234de536f",
   "governance/managed-settings.example.json": "b13fa57aa6625c29c32a5998a16d55f43fdcbdf39bec052831eebd15a55e0b62",
   "ops/bands.yaml": "d1c287b5d93bdcf36b5e34bc285f11d71553c739fb7bab392b56c935d83c131d",
   "scripts/check-bands.py": "0bd4e60203b1b5d99196e8042187530fd52a0e80aa1b01019ec4bbb6c153fe22",
-  "scripts/validate-dsl.py": "4963b3fc12524d62387acbf0cd235f985a14611c7f8c582a03156cb3d2028404"
+  "scripts/validate-dsl.py": "23154dc61a24201c750f84e8143c550d57e5b5aefee33f02222a17c9d2320ef6"
  }
 }

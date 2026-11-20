@@ -87,5 +87,5 @@ name domain concepts; nothing evaluates them.
 ```
 
 ## Limits
-Only regular `*.dsl.json` files directly in `domain/` are read: a link, a file over 1 MiB, or nesting deeper than 64
-levels is reported as a problem. Other files, like this README, are ignored.
+Only regular `*.dsl.json` files directly in `domain/` are read: a link (a linked `domain/` included), a file over
+1 MiB, or nesting deeper than 64 levels is reported as a problem. Other files, like this README, are ignored.

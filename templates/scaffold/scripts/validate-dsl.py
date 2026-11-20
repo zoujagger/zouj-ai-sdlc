@@ -150,13 +150,19 @@ def state_machine(model, out):
             states.append(state)
     if "initial" not in model:
         out.append("$.initial: missing")
+    elif not isinstance(model["initial"], str):
+        out.append("$.initial: expected a state name")
     elif model["initial"] not in states:
         out.append(f'$.initial: unknown state "{model["initial"]}"')
     final = model.get("final", [])
     if not isinstance(final, list):
         out.append("$.final: expected a list")
     else:
-        out += [f'$.final[{i}]: unknown state "{s}"' for i, s in enumerate(final) if s not in states]
+        for i, s in enumerate(final):
+            if not isinstance(s, str):
+                out.append(f"$.final[{i}]: expected a state name")
+            elif s not in states:
+                out.append(f'$.final[{i}]: unknown state "{s}"')
     pairs = set()
     for i, t in enumerate(items(model, "transitions", out)):
         path = f"$.transitions[{i}]"
@@ -167,14 +173,17 @@ def state_machine(model, out):
         for end in ("from", "to"):
             if end not in t:
                 out.append(f"{path}.{end}: missing")
+            elif not isinstance(t[end], str):
+                out.append(f"{path}.{end}: expected a state name")
             elif t[end] not in states:
                 out.append(f'{path}.{end}: unknown state "{t[end]}"')
         if not text(t.get("event")):
             out.append(f"{path}.event: expected non-empty text")
-        elif (t.get("from"), t["event"]) in pairs:
-            out.append(f'{path}: duplicate transition from "{t.get("from")}" on "{t["event"]}"')
-        else:
-            pairs.add((t.get("from"), t["event"]))
+        elif isinstance(t.get("from"), str):  # a non-string `from` is reported above, and left out of the pairs
+            if (t["from"], t["event"]) in pairs:
+                out.append(f'{path}: duplicate transition from "{t["from"]}" on "{t["event"]}"')
+            else:
+                pairs.add((t["from"], t["event"]))
         if "guard" in t and not text(t["guard"]):
             out.append(f"{path}.guard: expected non-empty text")
 
@@ -201,9 +210,15 @@ def workflow(model, out):
         if not isinstance(nxt, list):
             out.append(f"$.steps[{i}].next: expected a list")
             continue
-        out += [f'$.steps[{i}].next[{j}]: unknown step "{n}"' for j, n in enumerate(nxt) if n not in ids]
+        for j, n in enumerate(nxt):
+            if not isinstance(n, str):
+                out.append(f"$.steps[{i}].next[{j}]: expected a step id")
+            elif n not in ids:
+                out.append(f'$.steps[{i}].next[{j}]: unknown step "{n}"')
     if "start" not in model:
         out.append("$.start: missing")
+    elif not isinstance(model["start"], str):
+        out.append("$.start: expected a step id")
     elif model["start"] not in ids:
         out.append(f'$.start: unknown step "{model["start"]}"')
 
@@ -219,6 +234,9 @@ def check_model(model):
     if model.get("dsl") != 1 or isinstance(model.get("dsl"), bool):
         out.append("$.dsl: expected 1")
     kind = model.get("kind")
+    if not isinstance(kind, str):
+        out.append("$.kind: expected text (state_machine, rules or workflow)")
+        return out
     if kind not in KINDS:
         out.append(f'$.kind: unknown kind "{kind}" (state_machine, rules or workflow)')
         return out
@@ -233,7 +251,11 @@ def check_model(model):
 
 def main(argv):
     folder = (argv[1] if len(argv) > 1 else "domain").rstrip("/") or "."
-    if not os.path.isdir(folder) or os.path.islink(folder):
+    if os.path.islink(folder):  # never followed, never silently skipped (0013 R-4)
+        print(f"{folder}: a link, not followed (validate the real directory)")
+        print("validate-dsl: 1 problem(s) in 0 model(s)")
+        return 1
+    if not os.path.isdir(folder):
         print(f"validate-dsl: no {folder}/ - skipped")
         return 0
     problems, names, count = [], {}, 0
