@@ -116,8 +116,8 @@ def _domain_dsl(d, a, secs, text):
         "contracts follow from it), or write `No domain changes` with a reason for a purely technical or UI change"
     )
     if "Domain DSL" not in secs:
-        return [f"`## Domain DSL` is missing; it is required while the dsl part is active (domain/ exists or "
-                f"install-state names dsl): {forms}"]
+        return [f"`## Domain DSL` is missing; it is required while the dsl part is active (a domain/*.dsl.json file "
+                f"exists or install-state names dsl): {forms}"]
     body = A.COMMENT_RE.sub("", secs["Domain DSL"])
     if NO_DOMAIN_RE.search(body) or DSL_FILE_RE.search(body):
         return []

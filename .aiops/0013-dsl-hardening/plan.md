@@ -39,7 +39,7 @@ Code reused:
   the draft test (`tests/test_cli.py:~250`).
 
 ## Steps
-- [ ] **S1**: Activate the part by model files or install-state, never by a bare `domain/`.
+- [x] **S1**: Activate the part by model files or install-state, never by a bare `domain/`.
   - **Files:**
     - `tests/test_engine.py` (modify): in `DomainDsl`:
       - a helper `model()` writes `domain/x.dsl.json`;

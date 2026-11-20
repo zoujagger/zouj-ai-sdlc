@@ -196,9 +196,9 @@ def cmd_next(root, args):
 
 
 DOMAIN_DSL_SECTION = """## Domain DSL
-<!-- The dsl part is active (domain/ exists or install-state names dsl), so this section is required. Model first:
-     name the domain/<name>.dsl.json files this change adds or edits and what they declare (state machines, rules,
-     workflows); the Data model and API contracts below follow from them. A purely technical or UI change writes
+<!-- The dsl part is active (a domain/*.dsl.json file exists or install-state names dsl), so this section is
+     required. Model first: name the domain/<name>.dsl.json files this change adds or edits and what they declare
+     (state machines, rules, workflows); the Data model and API contracts below follow from them. A purely technical or UI change writes
      `No domain changes` and the reason. The format is in domain/README.md. -->
 <The domain model files this change adds or edits, and what they declare>
 """
