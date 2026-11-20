@@ -16,7 +16,7 @@ Intent: `$ARGUMENTS` (default: active).
    - **Steps** are chronological and file-by-file. Each step is one TDD cycle naming its proof test and the ACs it covers.
    - **Risks** have mitigations.
    - **Test definitions** have at least one row per AC. `sdlc validate <id>` must pass.
-   - **Model first (the `dsl` part).** If the dsl part is active (`domain/` exists, or install-state names `dsl`), S1 updates the `domain/*.dsl.json` files that the spec's `## Domain DSL` names, with `make validate-dsl` run red (the rule or state the change needs is missing or invalid) and then green, before any application code. If the spec says `No domain changes`, there is no such step.
+   - **Model first (the `dsl` part).** If the dsl part is active (a `domain/*.dsl.json` file exists, or install-state names `dsl`), S1 updates the `domain/*.dsl.json` files that the spec's `## Domain DSL` names, with `make validate-dsl` run red (the rule or state the change needs is missing or invalid) and then green, before any application code. If the spec says `No domain changes`, there is no such step.
 4. **Stress test.** Ask the human the planner's 3 hardest questions (failure modes, rollback, test gaps). Revise plan.md from their answers.
 5. **HALT.** Summarise the steps (count, files, risks), then say exactly:
    > Execution is locked. Review `.aiops/NNNN-slug/plan.md`, then type **`Plan Approved NNNN`** (or, if signing needs your passphrase, run the printed `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN plan` command in your terminal) to unlock autonomous execution.

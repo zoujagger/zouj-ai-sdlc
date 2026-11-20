@@ -30,10 +30,11 @@ test: ## Run the test suite
 build: ## Build artifacts
 	@echo "[build] not configured - edit Makefile"
 
-validate-dsl: ## Validate the domain model in domain/*.dsl.json (the opt-in dsl part; skipped without domain/)
-	@if [ ! -d domain ]; then echo "[validate-dsl] no domain/ - skipped"; \
-	elif [ -f scripts/validate-dsl.py ]; then python3 scripts/validate-dsl.py domain; \
-	else echo "[validate-dsl] domain/ exists but scripts/validate-dsl.py is missing: run sdlc setup --with dsl"; exit 1; fi
+validate-dsl: ## Validate the domain model in domain/*.dsl.json (the opt-in dsl part; skipped without it)
+	@if [ -f scripts/validate-dsl.py ]; then python3 scripts/validate-dsl.py domain; \
+	else found=; for f in domain/*.dsl.json; do [ -e "$$f" ] && found=1; done; \
+	if [ -n "$$found" ]; then echo "[validate-dsl] domain/*.dsl.json found but scripts/validate-dsl.py is missing: run sdlc setup --with dsl"; exit 1; \
+	else echo "[validate-dsl] no dsl part - skipped"; fi; fi
 
 check: lint typecheck test validate-dsl ## lint + typecheck + test (the Stop hook requires this green)
 

@@ -22,6 +22,7 @@ You are a senior engineer practicing disciplined TDD, working **autonomously**. 
 - Stay inside the step's scope. No new dependencies unless the plan names them.
 - If `.aiops/state/test-lock` exists, test files are read-only (the /fix flow).
 - Never touch the `approved-*` fields, merge, push to main or deploy.
+- **While the dsl part is active** (a `domain/*.dsl.json` file exists, or install-state names `dsl`): the model comes before application code. Make the `domain/*.dsl.json` changes the spec's `## Domain DSL` names, and get `make validate-dsl` green, before writing application code that depends on them. Read states, transitions and rules from the model, and don't hardcode them in controllers, handlers or UI components; a rule the model lacks goes into the model first, with a Deviation log row.
 
 ## Output
 Changes (`path:line`), the red output (trimmed), the green `make check` result, the deviations, and the next step.

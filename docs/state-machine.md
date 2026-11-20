@@ -68,4 +68,4 @@ the upstream artifact (`requires`), and the cross-checks:
 | `covers_spec_acs` | plan and review reference every spec AC id |
 | `valid_verdict` | review `verdict` is PASS or CHANGES_REQUESTED, and `commit` is a sha |
 | `scope_size` | spec `## Acceptance criteria`: more than 5 distinct AC ids warns; more than 8 is an error while the spec's gate is closed (approved specs only warn) |
-| `domain_dsl` | while the `dsl` part is active (`domain/` exists, or install-state names `dsl`) and the spec's gate is closed: `## Domain DSL` names `domain/<name>.dsl.json` files or says `No domain changes` |
+| `domain_dsl` | while the `dsl` part is active (a `domain/*.dsl.json` file exists, or install-state names `dsl`; a bare `domain/` never counts) and the spec's gate is closed: `## Domain DSL` names `domain/<name>.dsl.json` files or says `No domain changes` |

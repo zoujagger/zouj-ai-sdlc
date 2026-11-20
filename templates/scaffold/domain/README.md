@@ -4,7 +4,7 @@ This directory holds the domain model: the state machines, business rules and wo
 once and validated on every `make check`. It belongs to the opt-in `dsl` part of zouj-ai-sdlc
 (`sdlc setup --with dsl`).
 
-- **Model first.** While this directory exists, every `spec.md` needs a `## Domain DSL` section. The section names
+- **Model first.** While this directory holds a `*.dsl.json` model, every `spec.md` needs a `## Domain DSL` section. The section names
   the `domain/<name>.dsl.json` files the change adds or edits, or says `No domain changes` for a purely technical or
   UI change. The Data model and API contracts are derived from the model, not the other way round.
 - **Plan Step 1.** The plan's first step updates these files and runs `make validate-dsl` red, then green, before
@@ -87,5 +87,5 @@ name domain concepts; nothing evaluates them.
 ```
 
 ## Limits
-Only regular `*.dsl.json` files directly in `domain/` are read: a link, a file over 1 MiB, or nesting deeper than 64
-levels is reported as a problem. Other files, like this README, are ignored.
+Only regular `*.dsl.json` files directly in `domain/` are read: a link (a linked `domain/` included), a file over
+1 MiB, or nesting deeper than 64 levels is reported as a problem. Other files, like this README, are ignored.

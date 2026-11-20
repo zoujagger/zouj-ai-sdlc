@@ -109,14 +109,18 @@ PARTS_FILE = PLUGIN_ROOT / "defaults" / "scaffold-parts"
 
 
 def dsl_active(root):
-    """True when the dsl part is active in root (0012 R-6): install-state's `parts` list names `dsl`, or `domain/` is a
-    directory (CI ignores install-state but sees domain/). Only an explicit entry counts: the legacy "every part"
-    fallbacks never mean dsl. It can only add the spec's `## Domain DSL` requirement, never lift a check."""
-    if (root / "domain").is_dir():
-        return True
+    """True when the dsl part is active in root (0012 R-6, 0013 R-1): install-state's `parts` list names `dsl`, or
+    `domain/` holds a `*.dsl.json` file (CI ignores install-state but sees the model). A bare `domain/`, such as a
+    repo's own DDD source folder, never counts, and neither do the legacy "every part" fallbacks. It can only add the
+    spec's `## Domain DSL` requirement, never lift a check."""
     st = load(root)
     parts = st.get("parts") if st else None
-    return isinstance(parts, list) and "dsl" in parts
+    if isinstance(parts, list) and "dsl" in parts:
+        return True
+    try:
+        return any(p.name.endswith(".dsl.json") for p in (root / "domain").iterdir())
+    except OSError:  # no domain/, not a directory, or unreadable
+        return False
 
 
 def part_rules():

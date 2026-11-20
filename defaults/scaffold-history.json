@@ -267,10 +267,10 @@
   ".github/workflows/claude.yml": "5ac90cd50dbd117fac7554e717eca487af66f6473a5af66fc6a679aec98ca1d4",
   ".github/workflows/deploy.yml": "04d36e5ba5ad7c5eb4dd95b87d09d07882c64924d24850d9f192f4d8bff3955d",
   "CLAUDE.md": "695d70d4add9cabfb53721b6d6cdbcab1b1a273744a25eaa429b9d8515c9c3bb",
-  "Makefile": "366df6f4d118cd6f562b3f275803a28fa114c97b9218cd0068640fe07e0b5d67",
-  "Makefile+go": "64c8adbb85a36eec7198bfa96b3dcf956ef015396d9dddcc18513657a9e1ec57",
-  "Makefile+node": "55babbe26b6398c66e44771c5f57b2819e154fabd28c91a96f5fac7a9b91b972",
-  "Makefile+python": "a38d1406dfed1454fb5b4fa79c85ecc63a3b499eef100c29c6ecebd789405965",
+  "Makefile": "b2762e32be34af9e80330734360d6d6081178031478b85c54738427ed8c84874",
+  "Makefile+go": "2359a42e283e811e507e3f92d7c531e5c1ae5117a90d6b53c2e8c1ac1b2993ae",
+  "Makefile+node": "3c8c38eecddb35e24884e26d899151bfabada0599a24889e712878684b5341b4",
+  "Makefile+python": "8af90526607bd678eecfd4a1d53eff19a847a018fd5405d7159fb1f41c47a7f6",
   "REVIEW.md": "4557c9d833100b9d64b4840111d0547987f09ac9b7ab7ed5f9aba65ffef271e0",
   "docs/adr/0001-record-architecture-decisions.md": "23dd1b7d726a4ca364d7ab2cbcd3df1860de4c249898ca89c32ad28187acc891",
   "docs/ai-usage-policy.md": "72030c20155ede51a7ce91de4fa1b19818c5b9d82936181702744ad70bc82842",
@@ -278,10 +278,10 @@
   "docs/postmortems/README.md": "67e5f4c4a32477bf7e1f47ab1336604213efdd3470cd5373dedb663d2a3334fb",
   "docs/retros/README.md": "f732e2e4e18566962d8ecc36df9acab9933decbab38e10e9f3162c6c45fa9d99",
   "docs/runbooks/README.md": "8a3923e61970d857d80a6d47a1e45a86086ed9c5a837ff79a9c6652063ec442e",
-  "domain/README.md": "12158e61064d42c78c54876452482e9e5c57620bb5b5ed67031f16897d410eec",
+  "domain/README.md": "c913bd48256c3cd48a6f4106f418843b88f4336b6a88aa7e7113953b6f391f4a",
   "governance/managed-settings.example.json": "b13fa57aa6625c29c32a5998a16d55f43fdcbdf39bec052831eebd15a55e0b62",
   "ops/bands.yaml": "d1c287b5d93bdcf36b5e34bc285f11d71553c739fb7bab392b56c935d83c131d",
   "scripts/check-bands.py": "0bd4e60203b1b5d99196e8042187530fd52a0e80aa1b01019ec4bbb6c153fe22",
-  "scripts/validate-dsl.py": "4963b3fc12524d62387acbf0cd235f985a14611c7f8c582a03156cb3d2028404"
+  "scripts/validate-dsl.py": "318d9a40b788dd03360e0b61098bf5cdf1710840e6a5e76ce2fdcbb55aea550a"
  }
 }

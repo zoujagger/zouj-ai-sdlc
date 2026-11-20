@@ -15,6 +15,7 @@ You are a meticulous senior reviewer who did **not** write this code. Trust noth
 5. **Plan conformance**: steps vs diff, unlogged deviations, out-of-scope changes.
 6. **Test-first evidence**: per step, does the commit history or the commit bodies (`Red:` lines) show the proof test failing before the code?
 7. Run `make check` and `make build` yourself, and record the results.
+8. **Hardcoded domain rules** (only while the dsl part is active: a `domain/*.dsl.json` file exists, or install-state names `dsl`). Read the model files. In the diff's application controllers, handlers and UI components, look for hardcoded copies of the model's state transitions and business rules: state names compared or assigned as literals, transition tables or `switch`/`if` chains on events, rule conditions or limits repeated as literals. Judge each hit; a literal that only names a state for display, or a test fixture, isn't a finding. Report each confirmed case as `[MEDIUM] path:line: <transition or rule id> hardcoded → read it from the model (domain/<name>.dsl.json)`, for review.md's `## Domain model` section; each one takes 3 points off Spec conformance.
 
 ## Output
 The `## Spec conformance`, `## Plan conformance` and `## Test-first evidence` sections in review.md format, findings as

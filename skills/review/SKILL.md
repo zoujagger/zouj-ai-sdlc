@@ -11,9 +11,10 @@ Arguments: `$ARGUMENTS`.
 1. **Precondition.** `sdlc status` shows state 5 and `make check` is green. Commit any outstanding work first, because the review is pinned to a commit.
 2. **Secondary personas, in fresh contexts and in parallel.** Give each **only** the intent folder and the base branch. Never pass your own conclusions.
    - **verifier**: AC → test evidence, `make check` and `make build` results.
-   - **code-reviewer**: bugs, spec and plan conformance, test-first evidence, scores.
+   - **code-reviewer**: bugs, spec and plan conformance, test-first evidence, scores, and, while the dsl part is active (a `domain/*.dsl.json` file exists, or install-state names `dsl`), the hardcoding check below.
    - **security-reviewer**: exploit paths, whether the spec's data-leak flags are mitigated, security score.
 3. **Write review.md.** Run `sdlc draft <id> review`. Fill it in from the persona reports only: per-AC table, security findings, plan conformance, test-first evidence, and the **Score** table. Set `commit:` to `git rev-parse HEAD`.
+   - **Domain model (the `dsl` part).** While the part is active, add a `## Domain model` section with the code-reviewer's hardcoding findings: state transitions or business rules declared in `domain/*.dsl.json` that the diff hardcodes in application controllers, handlers or UI components. Each confirmed case is a **MEDIUM** finding, `[MEDIUM] path:line: <transition or rule id> hardcoded → read it from the model (domain/<name>.dsl.json)`, and takes **3 points** off Spec conformance (never below 0). On its own it doesn't change the verdict rule below. Write "None found" when there are none.
    - `verdict: PASS` only if the total is ≥ 80, there are no BLOCKER or CRITICAL/HIGH findings, and every AC is ✅.
    - Otherwise use `CHANGES_REQUESTED`, list the fixes, and go back to `/zouj-ai-sdlc:implement` (then review again).
 4. **Write pr.md** from `${CLAUDE_PLUGIN_ROOT}/templates/artifacts/pr.md` into the intent folder: summary, ACs with tests, deviations, risks and rollback, review score.

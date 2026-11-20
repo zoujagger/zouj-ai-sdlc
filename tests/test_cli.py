@@ -255,6 +255,11 @@ class Lifecycle(RepoCase):
         self.assertNotIn("## Domain DSL", (self.d / "spec.md").read_text())  # inactive: the template as it is
         (self.d / "spec.md").unlink()
         (self.root / "domain").mkdir()
+        (self.root / "domain" / "user.py").write_text("class User: ...\n")  # 0013: a bare domain/ isn't the part
+        self.assertEqual(self.run_sdlc("draft", "0001", "spec").returncode, 0)
+        self.assertNotIn("## Domain DSL", (self.d / "spec.md").read_text())
+        (self.d / "spec.md").unlink()
+        (self.root / "domain" / "order.dsl.json").write_text("{}")
         self.assertEqual(self.run_sdlc("draft", "0001", "spec").returncode, 0)
         text = (self.d / "spec.md").read_text()
         self.assertIn("## Domain DSL", text)
@@ -1027,6 +1032,31 @@ class Docs(unittest.TestCase):
         self.assertIn("only add", self.text("docs/architecture.md"))
         unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
         self.assertIn(".aiops/0012-dsl-part/", unreleased)
+
+    def test_dsl_hardening_guidance(self):
+        """0013 S5 (AC-4, AC-5): model first in State 4, the hardcoding check in State 5, and no shipped text that
+        still says a bare `domain/` activates the part."""
+        for rel in ("skills/implement/SKILL.md", "agents/implementer.md"):
+            text = self.text(rel)
+            self.assertIn("dsl part is active", text, rel)
+            self.assertIn("make validate-dsl", text, rel)
+            self.assertIn("before application code", text, rel)
+        for rel in ("skills/review/SKILL.md", "agents/code-reviewer.md"):
+            text = self.text(rel)
+            for phrase in ("hardcoded", "controllers", "UI", "MEDIUM", "3 points", "## Domain model"):
+                self.assertIn(phrase, text, (rel, phrase))
+        old = ("`domain/` exists", "domain/ exists", "While this directory exists")
+        for rel in (
+            "skills/spec/SKILL.md", "skills/plan/SKILL.md", "agents/architect.md", "agents/planner.md",
+            "templates/scaffold/domain/README.md", "README.md", "templates/scaffold/.aiops/README.md",
+            "docs/state-machine.md", "docs/architecture.md", "CHANGELOG.md", "lib/sdlc_engine/cli.py",
+            "lib/sdlc_engine/schema.py", "templates/scaffold/Makefile",
+        ):
+            text = self.text(rel)
+            for phrase in old:
+                self.assertNotIn(phrase, text, (rel, phrase))
+        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        self.assertIn(".aiops/0013-dsl-hardening/", unreleased)
 
     def test_setup_skill_asks_for_the_command(self):
         """0007 S18 (R-21): the skill reads the hook's reminder first; with none, it asks for the typed command."""

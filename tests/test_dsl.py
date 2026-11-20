@@ -176,6 +176,68 @@ class ValidateDsl(unittest.TestCase):
             out = self.problems("[" * depth + "]" * depth)
             self.assertIn("domain/m.dsl.json: nested deeper than 64 levels", out, depth)
 
+    def test_non_string_references(self):
+        """0013 S3 (AC-3): a reference of the wrong type is a reported problem, never a traceback."""
+        cases = []
+        cases.append(("kind", self.changed(RULES, kind=["rules"]), "$.kind: expected text (state_machine, rules or workflow)"))
+        for end in ("from", "to"):
+            bad = self.changed(MACHINE)
+            bad["transitions"][0][end] = ["open"]
+            cases.append((end, bad, f"$.transitions[0].{end}: expected a state name"))
+        cases.append(("initial", self.changed(MACHINE, initial={"s": 1}), "$.initial: expected a state name"))
+        cases.append(("final", self.changed(MACHINE, final=[["closed"]]), "$.final[0]: expected a state name"))
+        cases.append(("start", self.changed(WORKFLOW, start=["submit"]), "$.start: expected a step id"))
+        bad = self.changed(WORKFLOW)
+        bad["steps"][0]["next"] = [{"id": "check"}]
+        cases.append(("next", bad, "$.steps[0].next[0]: expected a step id"))
+        for name, model, line in cases:
+            with self.subTest(name):
+                self.put("m.dsl.json", model)
+                r = self.run_it()
+                self.assertNotIn("Traceback", r.stderr)
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn(f"domain/m.dsl.json: {line}", r.stdout)
+
+    def test_symlinked_domain_dir(self):
+        real = self.root / "real"
+        (self.root / "domain").rmdir()
+        real.mkdir()
+        (real / "limits.dsl.json").write_text(json.dumps(RULES))
+        os.symlink(real, self.root / "domain")
+        r = self.run_it()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("domain: a link, not followed (validate the real directory)", r.stdout)
+
+    def test_file_named_domain_is_skipped(self):
+        (self.root / "domain").rmdir()
+        (self.root / "domain").write_text("not a directory\n")
+        r = self.run_it()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("validate-dsl: no domain/ - skipped", r.stdout)
+
+    def test_large_model_is_linear(self):
+        """0013 S4 (AC-3): lookups use sets, so 80,000 states validate well inside a Stop hook (bound: 10 s)."""
+        import time
+
+        states = [f"s{i}" for i in range(80000)]
+        model = {
+            "dsl": 1,
+            "kind": "state_machine",
+            "name": "big",
+            "states": states,
+            "initial": "s0",
+            "final": states[-100:],
+            "transitions": [{"from": states[i], "to": states[i + 1], "event": "next"} for i in range(0, 2000)],
+        }
+        text = json.dumps(model, separators=(",", ":"))
+        self.assertLess(len(text), 1024 * 1024)
+        self.put("big.dsl.json", text)
+        start = time.monotonic()
+        r = self.run_it()
+        elapsed = time.monotonic() - start
+        self.assertEqual(r.returncode, 0, r.stdout[-500:] + r.stderr[-500:])
+        self.assertLess(elapsed, 10, f"{elapsed:.1f} s")
+
     def test_another_directory(self):
         (self.root / "model").mkdir()
         (self.root / "model" / "x.dsl.json").write_text(json.dumps(RULES))
@@ -186,7 +248,8 @@ class ValidateDsl(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("make"), "make not installed")
 class MakeCheck(unittest.TestCase):
-    """0012 S3 (AC-3): the scaffold Makefile's `check` runs validate-dsl, dormant without domain/."""
+    """0012 S3 (AC-3), 0013 S2 (AC-2): the scaffold Makefile's `check` runs validate-dsl when the part's script or a
+    model file exists, and skips otherwise (a repo's own domain/ included)."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -205,7 +268,20 @@ class MakeCheck(unittest.TestCase):
     def test_no_domain_passes(self):
         r = self.check()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("[validate-dsl] no domain/ - skipped", r.stdout)
+        self.assertIn("[validate-dsl] no dsl part - skipped", r.stdout)
+
+    def test_non_dsl_domain_dir_is_skipped(self):
+        (self.root / "domain").mkdir()
+        (self.root / "domain" / "user.py").write_text("class User: ...\n")
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("[validate-dsl] no dsl part - skipped", r.stdout)
+
+    def test_script_without_domain_passes(self):
+        self.with_script()
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("validate-dsl: no domain/ - skipped", r.stdout)  # the validator's own line
 
     def test_valid_domain_passes(self):
         self.with_script()
@@ -225,9 +301,13 @@ class MakeCheck(unittest.TestCase):
 
     def test_domain_without_script_fails_and_says_how(self):
         (self.root / "domain").mkdir()
+        (self.root / "domain" / "limits.dsl.json").write_text(json.dumps(RULES))
         r = self.check()
         self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("sdlc setup --with dsl", r.stdout + r.stderr)
+        self.assertIn(
+            "[validate-dsl] domain/*.dsl.json found but scripts/validate-dsl.py is missing: run sdlc setup --with dsl",
+            r.stdout + r.stderr,
+        )
 
 
 if __name__ == "__main__":

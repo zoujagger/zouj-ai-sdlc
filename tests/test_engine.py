@@ -754,8 +754,13 @@ class ScopeSizing(RepoCase):
 
 
 class DomainDsl(RepoCase):
-    """0012 S4 (AC-4): `## Domain DSL` is required in spec.md while the dsl part is active (install-state names dsl,
-    or domain/ exists) and the spec's gate is closed."""
+    """0012 S4 (AC-4), 0013 S1 (AC-1): `## Domain DSL` is required in spec.md while the dsl part is active
+    (install-state names dsl, or a domain/*.dsl.json file exists; a bare domain/ never counts) and the spec's gate is
+    closed."""
+
+    def model(self):
+        (self.root / "domain").mkdir(exist_ok=True)
+        (self.root / "domain" / "x.dsl.json").write_text("{}")
 
     def spec(self, body=None):
         text = SPEC.format(id="0001")
@@ -783,12 +788,19 @@ class DomainDsl(RepoCase):
         self.assertIn("dsl part is active", errors[0])
         self.assertIn("No domain changes", errors[0])
 
-    def test_active_by_domain_dir(self):
-        (self.root / "domain").mkdir()
+    def test_active_by_model_file(self):
+        self.model()
         self.assertEqual(len(self.errors(self.spec())), 1)
 
-    def test_accepted_bodies(self):
+    def test_bare_domain_dir_is_not_active(self):
         (self.root / "domain").mkdir()
+        self.assertEqual(self.errors(self.spec()), [])  # empty
+        (self.root / "domain" / "user.py").write_text("class User: ...\n")
+        (self.root / "domain" / "README.md").write_text("# our domain layer\n")
+        self.assertEqual(self.errors(self.spec()), [])  # a DDD source folder, not the dsl part
+
+    def test_accepted_bodies(self):
+        self.model()
         for body in (
             "No domain changes",
             "No domain changes: CSS only.",
@@ -798,7 +810,7 @@ class DomainDsl(RepoCase):
             self.assertEqual(self.errors(self.spec(body)), [], body)
 
     def test_rejected_bodies(self):
-        (self.root / "domain").mkdir()
+        self.model()
         for body in ("", "<!-- domain/order.dsl.json -->", "We change the order flow.", "see domain/README.md"):
             errors = self.errors(self.spec(body))
             self.assertEqual(len(errors), 1, body)
@@ -814,7 +826,7 @@ class DomainDsl(RepoCase):
         self.approve("intent")
         self.write("spec", self.spec())
         self.approve("spec")
-        (self.root / "domain").mkdir()
+        self.model()
         self.assertTrue(approvals.gate(self.d, "spec")[0])
         self.assertEqual([e for e in validate(self.d, "spec")[0] if "Domain DSL" in e], [])  # approved: exempt
         text = (self.d / "spec.md").read_text() + "\nedited\n"
