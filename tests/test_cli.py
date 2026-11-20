@@ -255,6 +255,11 @@ class Lifecycle(RepoCase):
         self.assertNotIn("## Domain DSL", (self.d / "spec.md").read_text())  # inactive: the template as it is
         (self.d / "spec.md").unlink()
         (self.root / "domain").mkdir()
+        (self.root / "domain" / "user.py").write_text("class User: ...\n")  # 0013: a bare domain/ isn't the part
+        self.assertEqual(self.run_sdlc("draft", "0001", "spec").returncode, 0)
+        self.assertNotIn("## Domain DSL", (self.d / "spec.md").read_text())
+        (self.d / "spec.md").unlink()
+        (self.root / "domain" / "order.dsl.json").write_text("{}")
         self.assertEqual(self.run_sdlc("draft", "0001", "spec").returncode, 0)
         text = (self.d / "spec.md").read_text()
         self.assertIn("## Domain DSL", text)
