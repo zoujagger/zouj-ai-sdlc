@@ -136,7 +136,7 @@ Code reused:
       `dsl_active`.
   - **Test first:** the active-part tests find no error, and the draft has no section.
   - Covers: AC-4
-- [ ] **S5**: Write the written guidance into the skills, agents and docs.
+- [x] **S5**: Write the written guidance into the skills, agents and docs.
   - **Files:**
     - `tests/test_cli.py` (modify): `Docs::test_dsl_guidance` checks for key phrases:
       - `skills/spec/SKILL.md` and `agents/architect.md`: `## Domain DSL` before Data model and API contracts,
@@ -194,3 +194,4 @@ Code reused:
 | 2026-11-20 | S3 | The red test `Detected::test_wired_makefile_keeps_recipes_with_validate_dsl` was corrected in the green commit: the older Makefile is recorded as written by `0.2.0-beta.1`, not `0.2.0-beta.2` | `0.2.0-beta.2` is the running plugin's own version, so the file read as `current` and the test could never see `stale`. The rebuilt older template was checked byte-equal to `main`'s | S3 green commit |
 | 2026-11-20 | S4 | `domain_dsl` applies only while the spec's gate is closed: an approved, unchanged spec is exempt (spec R-6 required the section of every spec while the part is active). `test_approved_spec_keeps_its_gate` asserts the exemption, and that an edit after approval brings the requirement back | As written, R-6 would turn `sdlc validate --all --ci` red for every earlier approved spec of a repo that adds `dsl` after it has history. This follows 0011's `scope_size` precedent. **Needs the human's confirmation at review** | S4 green commit |
 | 2026-11-20 | S4 | The gate test shared by `scope_size` and `domain_dsl` is extracted as `schema._gate_open` | Two checks now need it (0011 review backlog item 3) | S4 green commit |
+| 2026-11-20 | S5 | `docs/install.md`, `docs/adoption.md` and `TROUBLESHOOTING.md` are unchanged (they don't list the parts), and so is `docs/roadmap.md:72`, a record of what 0.2.0-beta.1 shipped. `docs/architecture.md` gains a threat-model row for removing `domain/` | The plan named them "wherever they list the parts"; none does except the roadmap's history. The new row records the spec's accepted flag | S5 green commit |

@@ -24,7 +24,9 @@ The `sdlc` engine derives each intent's state from these files and git. Run `sdl
   `require_signed_approvals` (CI rejects approval commits that aren't GPG/SSH-signed. Recommended for teams).
 - `state/` (git-ignored): the active intent and the `/fix` test lock.
 - **Parts:** setup installs the core scaffold. The rest is opt-in: `sdlc setup --with review` (Claude reviews pull
-  requests), `maintain` (control bands, scheduled scans), `deploy`, `governance` or `issues`, or `--with all`.
+  requests), `maintain` (control bands, scheduled scans), `deploy`, `governance`, `issues` or `dsl` (a validated
+  domain model in `domain/`, which every later spec must address), or `--with all`, which installs every part but
+  `dsl`.
   `sdlc list-installed` shows what is installed.
 
 ## Unattended execution (state 4)

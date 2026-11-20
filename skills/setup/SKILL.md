@@ -65,6 +65,7 @@ running `sdlc setup --with <part> --yes` (comma-separated, or `all`), which crea
 - `deploy`: the deploy workflow and release notes
 - `governance`: policy examples and dependency updates
 - `issues`: issue forms and automated triage
+- `dsl`: a validated, domain-neutral model of state machines, rules and workflows in `domain/*.dsl.json`, checked by `make validate-dsl`. While it is active, every later spec needs a `## Domain DSL` section, and plans start from the model. `--with all` installs every part but `dsl`: name it (`--with all,dsl`) only when the human asks for domain-first modeling.
 
 Preview it first with `--dry-run`. Nothing removes a part.
 
