@@ -7,6 +7,8 @@ from .machine import SCHEMAS, read
 
 PLACEHOLDER_RE = re.compile(r"^\s*(?:- )?<[^<>\n]{3,}>\s*$", re.M)
 HEX_RE = re.compile(r"^[0-9a-f]{7,40}$")
+WARN_ACS = 5  # more ACs than this: the scope may be an epic (warning)
+MAX_ACS = 8  # more than this while the spec's gate is closed: an error, so it must be split before approval
 
 
 def validate(d, kind, text=None):
@@ -33,11 +35,16 @@ def validate(d, kind, text=None):
         elif PLACEHOLDER_RE.search(secs[s]):
             warnings.append(f"section `## {s}` still contains a template placeholder")
     for check in schema["checks"]:
-        errors += CHECKS[check](d, a, secs)
+        found = CHECKS[check](d, a, secs, text)
+        if isinstance(found, tuple):  # a check may also warn: (errors, warnings)
+            errors += found[0]
+            warnings += found[1]
+        else:
+            errors += found
     return errors, warnings
 
 
-def _has_acs(d, a, secs):
+def _has_acs(d, a, secs, text):
     return (
         []
         if A.ac_ids(secs.get("Acceptance criteria", ""))
@@ -45,11 +52,11 @@ def _has_acs(d, a, secs):
     )
 
 
-def _has_steps(d, a, secs):
+def _has_steps(d, a, secs, text):
     return [] if A.checkboxes(secs.get("Steps", "")) else ["`## Steps` has no checkbox steps (`- [ ] S1 ...`)"]
 
 
-def _covers_spec_acs(d, a, secs):
+def _covers_spec_acs(d, a, secs, text):
     spec = read(d, "spec")
     if spec is None:
         return []
@@ -63,7 +70,7 @@ def _covers_spec_acs(d, a, secs):
     )
 
 
-def _valid_verdict(d, a, secs):
+def _valid_verdict(d, a, secs, text):
     errs = []
     if a.get("verdict") and a.get("verdict") not in SCHEMAS["review"]["verdicts"]:
         errs.append(f"verdict `{a.get('verdict')}` must be PASS or CHANGES_REQUESTED")
@@ -72,9 +79,30 @@ def _valid_verdict(d, a, secs):
     return errs
 
 
+def _scope_size(d, a, secs, text):
+    """Distinct AC ids in `## Acceptance criteria`: above WARN_ACS a warning; above MAX_ACS an error while the gate is
+    closed (judged on `text`, as machine.gate() judges the file), so approved history only warns (0011)."""
+    n = len(A.ac_ids(secs.get("Acceptance criteria", "")))
+    gate_open = a.get("status") == SCHEMAS["spec"]["gate"] and a.get("approved-sha256") == A.approval_hash(
+        "spec", text
+    )
+    if n > MAX_ACS and not gate_open:
+        return [
+            f"Spec exceeds maximum of {MAX_ACS} acceptance criteria; consolidate behavioral outcomes or split into "
+            f"smaller intents. (spec.md has {n}.)"
+        ], []
+    if n > WARN_ACS:
+        return [], [
+            f"`## Acceptance criteria` has {n} criteria (more than {WARN_ACS}): the scope may be too large for one "
+            "intent; consider splitting it into smaller intents"
+        ]
+    return [], []
+
+
 CHECKS = {
     "has_acceptance_criteria": _has_acs,
     "has_steps": _has_steps,
     "covers_spec_acs": _covers_spec_acs,
     "valid_verdict": _valid_verdict,
+    "scope_size": _scope_size,
 }

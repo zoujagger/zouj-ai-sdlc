@@ -662,6 +662,96 @@ class Approvals(RepoCase):
         self.assertEqual(evaluate(self.root, self.d).state, 0)
 
 
+SPEC_ACS = (
+    "- **AC-1**: Given contacts, when exporting, then a CSV is returned.\n"
+    "- **AC-2**: Given another tenant, when exporting, then 403."
+)
+SCOPE_ERROR = (
+    "Spec exceeds maximum of 8 acceptance criteria; consolidate behavioral outcomes or split into smaller intents."
+)
+
+
+class ScopeSizing(RepoCase):
+    """spec.md AC count: a warning above 5, an error above 8 while the spec's gate is closed (0011 S1)."""
+
+    def spec_with(self, n, approved=False, stale=False):
+        acs = "\n".join(f"- **AC-{i}**: Given case {i}, when the user acts, then outcome {i}." for i in range(1, n + 1))
+        text = SPEC.format(id="0001").replace(SPEC_ACS, acs)
+        if approved:
+            digest = A.approval_hash("spec", text + ("\nedited after approval\n" if stale else ""))
+            text = text.replace("status: Draft", f"status: Approved\napproved-sha256: {digest}")
+        return text
+
+    def scope(self, text):
+        self.write("spec", text)
+        errors, warnings = validate(self.d, "spec")
+        return [e for e in errors if "acceptance criteria" in e], [w for w in warnings if "criteria" in w]
+
+    def test_five_or_fewer_is_quiet(self):
+        for n in (2, 5):
+            self.assertEqual(self.scope(self.spec_with(n)), ([], []), n)
+
+    def test_six_to_eight_warn(self):
+        for n in (6, 8):
+            errors, warnings = self.scope(self.spec_with(n))
+            self.assertEqual(errors, [], n)
+            self.assertEqual(len(warnings), 1, warnings)
+            self.assertIn(f"has {n} criteria", warnings[0])
+            self.assertIn("splitting", warnings[0])
+
+    def test_nine_draft_is_an_error(self):
+        errors, warnings = self.scope(self.spec_with(9))
+        self.assertEqual(errors, [f"{SCOPE_ERROR} (spec.md has 9.)"])
+        self.assertEqual(warnings, [])
+
+    def test_nine_stale_is_an_error(self):
+        errors, _ = self.scope(self.spec_with(9, approved=True, stale=True))
+        self.assertEqual(errors, [f"{SCOPE_ERROR} (spec.md has 9.)"])
+
+    def test_nine_approved_only_warns(self):
+        errors, warnings = self.scope(self.spec_with(9, approved=True))
+        self.assertEqual(errors, [])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("has 9 criteria", warnings[0])
+
+    def test_approved_eight_plus_ninth_is_stale(self):
+        self.write("intent", INTENT)
+        self.approve("intent")
+        self.write("spec", self.spec_with(8))
+        self.approve("spec")
+        text = (self.d / "spec.md").read_text()
+        ninth = "- **AC-9**: Given case 9, when the user acts, then outcome 9.\n"
+        self.write("spec", text.replace("\n## Data model", f"{ninth}\n## Data model"))
+        errors, _ = validate(self.d, "spec")
+        self.assertIn(f"{SCOPE_ERROR} (spec.md has 9.)", errors)
+        self.assertEqual(evaluate(self.root, self.d).state, 2)
+
+    def test_approve_refuses_nine(self):
+        self.write("intent", INTENT)
+        self.approve("intent")
+        self.write("spec", self.spec_with(9))
+        ok, msg = approvals.approve(self.root, self.d, "spec", via="test")
+        self.assertFalse(ok)
+        self.assertIn(SCOPE_ERROR, msg)
+
+    def test_counts_distinct_ids_in_the_section(self):
+        text = self.spec_with(5).replace(
+            "- **AC-5**",
+            "- **AC-1** again: see above.\n<!-- AC-6, AC-7, AC-8, AC-9 drafts -->\n- **AC-5**",
+        )
+        text = text.replace("## Requirements\n", "## Requirements\n- R-2 covers AC-6, AC-7, AC-8 and AC-9.\n")
+        self.assertEqual(self.scope(text), ([], []))
+
+    def test_this_repos_specs_have_no_scope_error(self):
+        from helpers import ROOT
+
+        specs = sorted((ROOT / ".aiops").glob("[0-9][0-9][0-9][0-9]-*/spec.md"))
+        self.assertTrue(specs)
+        for spec in specs:
+            errors, _ = validate(spec.parent, "spec")
+            self.assertFalse([e for e in errors if "exceeds maximum" in e], spec)
+
+
 class OpenQuestions(RepoCase):
     """The card counts open questions only where they can still block a gate: in an artifact whose gate isn't open.
     Once the human approved it, its unticked questions were accepted with it (0004, at the human's request)."""

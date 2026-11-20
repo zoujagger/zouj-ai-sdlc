@@ -229,6 +229,24 @@ class Lifecycle(RepoCase):
         self.assertIn("NOT opened", ctx)
         self.assertIn("/bin/sdlc approve 0001 intent`", ctx)  # the exact command for the human's terminal
 
+    def test_validate_scope_size_exit_codes(self):
+        """0011 S1: 6 ACs warn (exit 0), 9 ACs in a Draft spec fail (exit 1)."""
+        from helpers import SPEC
+
+        two = (
+            "- **AC-1**: Given contacts, when exporting, then a CSV is returned.\n"
+            "- **AC-2**: Given another tenant, when exporting, then 403."
+        )
+        for n, code, line in (
+            (6, 0, "! .aiops/0001-csv-export/spec.md: `## Acceptance criteria` has 6 criteria"),
+            (9, 1, "✗ .aiops/0001-csv-export/spec.md: Spec exceeds maximum of 8 acceptance criteria"),
+        ):
+            acs = "\n".join(f"- **AC-{i}**: Given case {i}, when acting, then outcome {i}." for i in range(1, n + 1))
+            self.write("spec", SPEC.replace(two, acs))
+            r = self.run_sdlc("validate", "0001")
+            self.assertEqual(r.returncode, code, r.stdout)
+            self.assertIn(line, r.stdout)
+
     def test_validate_rejects_empty_base(self):
         self.write("intent", INTENT)
         for args in (["--base", ""], ["--base"]):

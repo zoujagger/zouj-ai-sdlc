@@ -43,7 +43,7 @@ A second test takes the real path: `approve` an 8-AC spec, add a ninth AC, and s
 test in S1 so CI guards `.aiops/`; keep the direct fixture and add the approve-then-edit test.
 
 ## Steps
-- [ ] **S1**: Count spec ACs in `sdlc validate`: warn above 5, error above 8 while the gate is closed.
+- [x] **S1**: Count spec ACs in `sdlc validate`: warn above 5, error above 8 while the gate is closed.
   - **Files:**
     - `tests/test_engine.py` (modify): a new class `ScopeSizing(RepoCase)` with a helper `spec_with(n, approved=False,
       stale=False)`. Its tests:
