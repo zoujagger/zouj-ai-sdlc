@@ -1009,7 +1009,8 @@ class Docs(unittest.TestCase):
         self.assertIn("**Scope:**", template)
         self.assertIn("3 to 5", self.text("templates/artifacts/spec.md"))
         self.assertIn("`scope_size`", self.text("docs/state-machine.md"))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # everything newer than 0.2.0-beta.2: `[Unreleased]` while in development, then its release section (0015)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0011-scope-sizing/", unreleased)
 
     def test_dsl_guidance(self):
@@ -1030,7 +1031,8 @@ class Docs(unittest.TestCase):
             self.assertRegex(text, r"`--with all`[^.]*(?:but|leaves out|without)[^.]*`dsl`", rel)
         self.assertIn("`domain_dsl`", self.text("docs/state-machine.md"))
         self.assertIn("only add", self.text("docs/architecture.md"))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # everything newer than 0.2.0-beta.2: `[Unreleased]` while in development, then its release section (0015)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0012-dsl-part/", unreleased)
 
     def test_dsl_hardening_guidance(self):
@@ -1055,7 +1057,8 @@ class Docs(unittest.TestCase):
             text = self.text(rel)
             for phrase in old:
                 self.assertNotIn(phrase, text, (rel, phrase))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # everything newer than 0.2.0-beta.2: `[Unreleased]` while in development, then its release section (0015)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0013-dsl-hardening/", unreleased)
 
     def test_spec_quality_guidance(self):
@@ -1077,7 +1080,8 @@ class Docs(unittest.TestCase):
         for phrase in ("None (no changes)", "mermaid", "[AC-N]", "Queries"):
             self.assertIn(phrase, template, phrase)
         self.assertIn("`mermaid_size`", self.text("docs/state-machine.md"))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # everything newer than 0.2.0-beta.2: `[Unreleased]` while in development, then its release section (0015)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0014-spec-quality/", unreleased)
 
     def test_setup_skill_asks_for_the_command(self):
@@ -1228,11 +1232,20 @@ class Docs(unittest.TestCase):
         import re
 
         version = json.loads(self.text(".claude-plugin/plugin.json"))["version"]
-        self.assertEqual(version, "0.2.0-beta.2")  # 0010: 0009 stack detection + the README funnel
+        self.assertEqual(version, "0.2.0-beta.3")  # 0015: 0011 scope sizing, 0012-0013 dsl, 0014 specs, PR #29
         log = self.text("CHANGELOG.md")
         section = log.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
-        for piece in (".aiops/0009-stack-detection/", "--stack auto", "README"):
+        for piece in (
+            ".aiops/0011-scope-sizing/",
+            ".aiops/0012-dsl-part/",
+            ".aiops/0013-dsl-hardening/",
+            ".aiops/0014-spec-quality/",
+            "PR #29",
+        ):
             self.assertIn(piece, section, piece)
+        beta2 = log.split("## [0.2.0-beta.2]", 1)[1].split("\n## [", 1)[0]  # 0010's release keeps its checks
+        for piece in (".aiops/0009-stack-detection/", "--stack auto", "README"):
+            self.assertIn(piece, beta2, piece)
         beta1 = log.split("## [0.2.0-beta.1]", 1)[1].split("\n## [", 1)[0]  # 0008's release keeps its checks
         for piece in (
             ".aiops/0005-guard-gaps/",
