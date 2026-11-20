@@ -1007,6 +1007,27 @@ class Docs(unittest.TestCase):
         unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
         self.assertIn(".aiops/0011-scope-sizing/", unreleased)
 
+    def test_dsl_guidance(self):
+        """0012 S5 (AC-5): the dsl part's rules ship in the skills, agents and docs."""
+        for rel in ("skills/spec/SKILL.md", "agents/architect.md"):
+            text = self.text(rel)
+            self.assertIn("## Domain DSL", text, rel)
+            self.assertIn("dsl part is active", text, rel)
+            self.assertRegex(text, r"before (?:the )?Data model", rel)
+        for rel in ("skills/plan/SKILL.md", "agents/planner.md"):
+            text = self.text(rel)
+            self.assertIn("dsl part is active", text, rel)
+            self.assertIn("make validate-dsl", text, rel)
+            self.assertRegex(text, r"\bS1\b.*domain/", rel)
+        for rel in ("skills/setup/SKILL.md", "skills/init/SKILL.md", "README.md", "templates/scaffold/.aiops/README.md"):
+            text = self.text(rel)
+            self.assertIn("`dsl`", text, rel)
+            self.assertRegex(text, r"`--with all`[^.]*(?:but|leaves out|without)[^.]*`dsl`", rel)
+        self.assertIn("`domain_dsl`", self.text("docs/state-machine.md"))
+        self.assertIn("only add", self.text("docs/architecture.md"))
+        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        self.assertIn(".aiops/0012-dsl-part/", unreleased)
+
     def test_setup_skill_asks_for_the_command(self):
         """0007 S18 (R-21): the skill reads the hook's reminder first; with none, it asks for the typed command."""
         skill = self.text("skills/setup/SKILL.md")
