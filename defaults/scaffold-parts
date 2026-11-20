@@ -45,3 +45,4 @@ issues .github/workflows/claude-issue-triage.yml
 
 # dsl: a validated, domain-neutral model in domain/*.dsl.json (0012); never through `all` or a fallback
 dsl domain/*
+dsl scripts/validate-dsl.py

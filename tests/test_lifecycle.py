@@ -990,7 +990,7 @@ class Parts(unittest.TestCase):
     def test_core_is_sixteen_files(self):
         core = {rel for rel in self.lc.scaffold_paths() if self.lc.part_of(rel) == "core"}
         self.assertEqual(core, CORE)
-        self.assertEqual(len(self.lc.scaffold_paths()) - len(core), 21)  # the six opt-in parts (0012: dsl)
+        self.assertEqual(len(self.lc.scaffold_paths()) - len(core), 22)  # the six opt-in parts (0012: dsl)
         self.assertEqual(self.lc.part_of("not/in/the/scaffold"), "core")  # unlisted counts as core at run time
 
     def test_parse_parts(self):

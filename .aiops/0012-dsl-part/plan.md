@@ -65,7 +65,7 @@ Code reused:
     - `defaults/scaffold-history.json` (regenerate).
   - **Test first:** `parse_parts("dsl")` returns "unknown part", and setup has no `dsl` to install.
   - Covers: AC-1
-- [ ] **S2**: Ship the stdlib validator `scripts/validate-dsl.py` in the part.
+- [x] **S2**: Ship the stdlib validator `scripts/validate-dsl.py` in the part.
   - **Files:**
     - `tests/test_dsl.py` (create): runs the script with `sys.executable` on temp directories:
       - valid models of all three kinds → exit 0 and `validate-dsl: 3 model(s) ok`;
@@ -189,3 +189,5 @@ Code reused:
 |---|---|---|---|---|
 | 2026-11-20 | S1 | Seven existing tests not named in S1 changed to the new meaning of "every part" (`LEGACY_PARTS`): `test_setup.py::Init::test_init_actions_preview_matches_apply`, `::Parts::test_with_maintain_adds_only_maintain`; `test_cli.py::InitParts::test_with_all`, `::test_edited_config_without_state_gets_every_part`, `::test_template_config_with_full_scaffold_gets_every_part`; `test_lifecycle.py::Compat::test_release_repo_without_state_keeps_every_part`, `::InstallState::test_init_records_every_file` (now `--with all,dsl`) | They asserted that `--with all` and the legacy fallbacks cover every scaffold file, which R-1/R-2 make untrue for `dsl` by design | S1 green commit |
 | 2026-11-20 | S1 | `parts_line` lists only missing legacy parts and names `dsl` as installed by name, rather than listing `dsl` as missing | Otherwise every repo set up with `--with all` would be told `dsl` is "not installed" forever; `dsl` is a choice of method, not a gap. `CoreOnly::test_list_installed_hides_parts_not_installed` keeps passing unchanged | S1 green commit |
+| 2026-11-20 | S2 | `typecheck` compiles the scaffold scripts with `compile()` instead of `compileall` | `compileall` would write `__pycache__/` into `templates/scaffold/scripts/`, and every file there counts as a scaffold file | S2 green commit |
+| 2026-11-20 | S2 | `templates/scaffold/scripts/check-bands.py` (maintain part, not named in S2): `l` renamed to `line` (ruff E741); `Parts::test_core_is_sixteen_files` counts 22 opt-in files | The first ruff run over the scaffold scripts; fixing its findings in S2 was agreed at the plan review. The count follows the new script | S2 green commit |

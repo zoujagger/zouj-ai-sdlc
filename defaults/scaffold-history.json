@@ -281,6 +281,7 @@
   "domain/README.md": "12158e61064d42c78c54876452482e9e5c57620bb5b5ed67031f16897d410eec",
   "governance/managed-settings.example.json": "b13fa57aa6625c29c32a5998a16d55f43fdcbdf39bec052831eebd15a55e0b62",
   "ops/bands.yaml": "d1c287b5d93bdcf36b5e34bc285f11d71553c739fb7bab392b56c935d83c131d",
-  "scripts/check-bands.py": "ac6cf04c6311e38f9d59cbd51e2bba9c337f2c7f181a0f4ba0610453e586200f"
+  "scripts/check-bands.py": "0bd4e60203b1b5d99196e8042187530fd52a0e80aa1b01019ec4bbb6c153fe22",
+  "scripts/validate-dsl.py": "4963b3fc12524d62387acbf0cd235f985a14611c7f8c582a03156cb3d2028404"
  }
 }

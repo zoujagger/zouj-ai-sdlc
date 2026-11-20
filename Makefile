@@ -15,11 +15,12 @@ format: ## Format Python with ruff when installed (no-op otherwise). Not bin/sdl
 lint: ## bash -n + shellcheck (if installed) on hooks; ruff (if installed) on the engine
 	@for f in $(SHELLS); do bash -n "$$f" || exit 1; done
 	@if command -v shellcheck >/dev/null; then shellcheck -S warning $(SHELLS); fi
-	@if command -v ruff >/dev/null; then ruff check -q lib tests bin/sdlc; fi
+	@if command -v ruff >/dev/null; then ruff check -q lib tests bin/sdlc templates/scaffold/scripts; fi
 	@$(PY) -c 'import json,sys; [json.load(open(f)) for f in sys.argv[1:]]' hooks/hooks.json .claude-plugin/*.json schemas/*.json
 
-typecheck: ## Byte-compile the engine (stdlib only, Python >= 3.9)
+typecheck: ## Byte-compile the engine (stdlib only, Python >= 3.9) and the scaffold scripts (no __pycache__ there)
 	@$(PY) -m compileall -q lib bin tests
+	@$(PY) -c 'import sys; [compile(open(f).read(), f, "exec") for f in sys.argv[1:]]' templates/scaffold/scripts/*.py
 
 test: ## Engine, guard and hook tests (stdlib unittest)
 	@$(PY) -m unittest discover -s tests
