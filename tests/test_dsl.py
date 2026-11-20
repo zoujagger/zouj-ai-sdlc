@@ -186,7 +186,8 @@ class ValidateDsl(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("make"), "make not installed")
 class MakeCheck(unittest.TestCase):
-    """0012 S3 (AC-3): the scaffold Makefile's `check` runs validate-dsl, dormant without domain/."""
+    """0012 S3 (AC-3), 0013 S2 (AC-2): the scaffold Makefile's `check` runs validate-dsl when the part's script or a
+    model file exists, and skips otherwise (a repo's own domain/ included)."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -205,7 +206,20 @@ class MakeCheck(unittest.TestCase):
     def test_no_domain_passes(self):
         r = self.check()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("[validate-dsl] no domain/ - skipped", r.stdout)
+        self.assertIn("[validate-dsl] no dsl part - skipped", r.stdout)
+
+    def test_non_dsl_domain_dir_is_skipped(self):
+        (self.root / "domain").mkdir()
+        (self.root / "domain" / "user.py").write_text("class User: ...\n")
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("[validate-dsl] no dsl part - skipped", r.stdout)
+
+    def test_script_without_domain_passes(self):
+        self.with_script()
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("validate-dsl: no domain/ - skipped", r.stdout)  # the validator's own line
 
     def test_valid_domain_passes(self):
         self.with_script()
@@ -225,9 +239,13 @@ class MakeCheck(unittest.TestCase):
 
     def test_domain_without_script_fails_and_says_how(self):
         (self.root / "domain").mkdir()
+        (self.root / "domain" / "limits.dsl.json").write_text(json.dumps(RULES))
         r = self.check()
         self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("sdlc setup --with dsl", r.stdout + r.stderr)
+        self.assertIn(
+            "[validate-dsl] domain/*.dsl.json found but scripts/validate-dsl.py is missing: run sdlc setup --with dsl",
+            r.stdout + r.stderr,
+        )
 
 
 if __name__ == "__main__":
