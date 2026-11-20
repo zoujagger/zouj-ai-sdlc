@@ -33,7 +33,7 @@ Code reused:
   `templates/artifacts/spec.md` isn't part of the scaffold history (checked in 0011), so no regeneration is needed.
 
 ## Steps
-- [ ] **S1**: Fail a draft spec whose ` ```mermaid ` block has more than 12 non-blank lines.
+- [x] **S1**: Fail a draft spec whose ` ```mermaid ` block has more than 12 non-blank lines.
   - **Files:**
     - `tests/test_engine.py` (modify): a new `MermaidSize(RepoCase)` class whose helper `spec_with(block,
       approved=False)` puts the block in `## Architecture`. Its tests:

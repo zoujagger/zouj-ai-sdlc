@@ -8,6 +8,8 @@ from .machine import SCHEMAS, read
 PLACEHOLDER_RE = re.compile(r"^\s*(?:- )?<[^<>\n]{3,}>\s*$", re.M)
 HEX_RE = re.compile(r"^[0-9a-f]{7,40}$")
 DSL_FILE_RE = re.compile(r"\bdomain/[A-Za-z0-9][A-Za-z0-9_.-]*\.dsl\.json\b")
+MERMAID_MAX = 12  # non-blank lines in one ```mermaid block of a draft spec (0014)
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")  # anchored, no nested quantifiers: one linear pass per line
 NO_DOMAIN_RE = re.compile(r"(?m)^\s*(?:[-*]\s+)?No domain changes\b")
 WARN_ACS = 5  # more ACs than this: the scope may be an epic (warning)
 MAX_ACS = 8  # more than this while the spec's gate is closed: an error, so it must be split before approval
@@ -124,6 +126,39 @@ def _domain_dsl(d, a, secs, text):
     return [f"`## Domain DSL` doesn't say what changes in the domain model: {forms}"]
 
 
+def _mermaid_size(d, a, secs, text):
+    """While the spec's gate is closed, every fenced ```mermaid block holds at most MERMAID_MAX non-blank lines (0014
+    R-3). Fences follow CommonMark: up to 3 spaces of indent, closed by the same character at least as long; an
+    unclosed fence runs to the end. HTML comments are ignored. One pass over the lines."""
+    if _gate_open("spec", a, text):
+        return []
+    errors, fence, mermaid, count = [], None, False, 0
+    for line in A.COMMENT_RE.sub("", text).splitlines():
+        m = FENCE_RE.match(line)
+        if fence is None:
+            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+                fence, count = m.group(1), 0
+                words = m.group(2).split()
+                mermaid = bool(words) and words[0] == "mermaid"
+            continue
+        if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) and not m.group(2).strip():
+            if mermaid and count > MERMAID_MAX:
+                errors.append(_mermaid_error(count))
+            fence = None
+        elif line.strip():
+            count += 1
+    if fence is not None and mermaid and count > MERMAID_MAX:
+        errors.append(_mermaid_error(count))
+    return errors
+
+
+def _mermaid_error(n):
+    return (
+        f"a ```mermaid block has {n} lines (more than {MERMAID_MAX}): keep one diagram to the main flow, states or "
+        "tables, and move detail into the prose"
+    )
+
+
 CHECKS = {
     "has_acceptance_criteria": _has_acs,
     "has_steps": _has_steps,
@@ -131,4 +166,5 @@ CHECKS = {
     "valid_verdict": _valid_verdict,
     "scope_size": _scope_size,
     "domain_dsl": _domain_dsl,
+    "mermaid_size": _mermaid_size,
 }
