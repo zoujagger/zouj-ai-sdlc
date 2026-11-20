@@ -77,7 +77,7 @@ Code reused:
     - `CHANGELOG.md` (modify): `[Unreleased]` `### Added`, naming `.aiops/0014-spec-quality/`.
   - **Test first:** `test_spec_quality_guidance` fails on the missing phrases.
   - Covers: AC-2, AC-3, AC-4, AC-5
-- [ ] **S3**: Prove the change.
+- [x] **S3**: Prove the change.
   - **Commands:**
     - `make check`;
     - `make validate`;
@@ -107,3 +107,4 @@ Code reused:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-20 | S3 | Results: `make check` OK (3 skipped) at 10b2d90; `make validate` passed (the existing root `CLAUDE.md` warning only); `sdlc validate --all` 0 errors across 13 intents (no existing spec has a mermaid block); `git diff --name-only main...HEAD` lists only the S1 and S2 files and `.aiops/0014-*` | The verification itself; no deviation from the plan | S3 |
