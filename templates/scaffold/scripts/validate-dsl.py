@@ -124,7 +124,7 @@ def items(model, key, out, what="a list"):
 
 def unique_ids(entries, key, path, label, out):
     """The ids found at entries[i][key], reporting non-text and duplicate ones."""
-    ids = []
+    ids = set()  # a set: linear in the number of entries (0013 R-5)
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
             out.append(f"{path}[{i}]: expected an object")
@@ -135,19 +135,19 @@ def unique_ids(entries, key, path, label, out):
         elif value in ids:
             out.append(f'{path}[{i}].{key}: duplicate {label} "{value}"')
         else:
-            ids.append(value)
+            ids.add(value)
     return ids
 
 
 def state_machine(model, out):
-    states = []
+    states = set()  # a set: linear in the number of states (0013 R-5)
     for i, state in enumerate(items(model, "states", out, "a non-empty list")):
         if not text(state):
             out.append(f"$.states[{i}]: expected non-empty text")
         elif state in states:
             out.append(f'$.states[{i}]: duplicate state "{state}"')
         else:
-            states.append(state)
+            states.add(state)
     if "initial" not in model:
         out.append("$.initial: missing")
     elif not isinstance(model["initial"], str):

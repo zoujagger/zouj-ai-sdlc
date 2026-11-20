@@ -83,7 +83,7 @@ Code reused:
   - **Test first:** the `kind` and `from` subtests fail with a `TypeError` traceback (the two cases the 0012 review
     reproduced). The symlink test fails with exit 0 "skipped".
   - Covers: AC-3
-- [ ] **S4**: Make the validator's lookups linear with sets.
+- [x] **S4**: Make the validator's lookups linear with sets.
   - **Files:**
     - `tests/test_dsl.py` (modify): `test_large_model_is_linear`: a `state_machine` with 80,000 states and a few
       transitions, under 1 MiB. It must finish, exit 0, within 10 s (`time.monotonic`).

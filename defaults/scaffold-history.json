@@ -282,6 +282,6 @@
   "governance/managed-settings.example.json": "b13fa57aa6625c29c32a5998a16d55f43fdcbdf39bec052831eebd15a55e0b62",
   "ops/bands.yaml": "d1c287b5d93bdcf36b5e34bc285f11d71553c739fb7bab392b56c935d83c131d",
   "scripts/check-bands.py": "0bd4e60203b1b5d99196e8042187530fd52a0e80aa1b01019ec4bbb6c153fe22",
-  "scripts/validate-dsl.py": "23154dc61a24201c750f84e8143c550d57e5b5aefee33f02222a17c9d2320ef6"
+  "scripts/validate-dsl.py": "318d9a40b788dd03360e0b61098bf5cdf1710840e6a5e76ce2fdcbb55aea550a"
  }
 }
