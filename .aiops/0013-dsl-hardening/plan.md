@@ -55,7 +55,7 @@ Code reused:
   - **Test first:** `test_bare_domain_dir_is_not_active` and the bare-directory draft case fail: the part is
     active today.
   - Covers: AC-1
-- [ ] **S2**: Run `validate-dsl` in the Makefile when the script or a model file exists.
+- [x] **S2**: Run `validate-dsl` in the Makefile when the script or a model file exists.
   - **Files:**
     - `tests/test_dsl.py` (modify): in `MakeCheck`:
       - `test_no_domain_passes` expects `[validate-dsl] no dsl part - skipped`;
