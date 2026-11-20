@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ## [Unreleased]
 
 ### Added
+- **Sharper specs** (`.aiops/0014-spec-quality/`): the architect and the spec skill write the engineering half for a
+  fast review. Sections with no change (`## Data model`, `## API contracts`, `## Rollout & rollback`) read exactly
+  `None (no changes)`; a multi-step flow, a state transition or a table gets one Mermaid diagram of at most 12 lines;
+  every table, column and endpoint cites its `[AC-N]`; and stored data comes with its query patterns, composite
+  indexes (tenant key first) and N+1 prevention. `sdlc validate` refuses a ```mermaid block over 12 lines in a
+  draft spec.
 - **The opt-in `dsl` part** (`.aiops/0012-dsl-part/`, hardened by `.aiops/0013-dsl-hardening/`), for domain-first
   modeling without tying the plugin to a domain:
   - `sdlc setup --with dsl` adds `domain/README.md` (the format) and `scripts/validate-dsl.py`, a stdlib-only

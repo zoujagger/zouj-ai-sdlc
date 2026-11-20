@@ -7,5 +7,5 @@
   "approval_phrase": "Spec Approved",
   "requires": "intent",
   "sections": ["Summary", "Requirements", "Acceptance criteria", "Data model", "API contracts", "Security & data-leak flags", "Architecture", "Rollout & rollback", "Open questions"],
-  "checks": ["has_acceptance_criteria", "scope_size", "domain_dsl"]
+  "checks": ["has_acceptance_criteria", "scope_size", "domain_dsl", "mermaid_size"]
 }

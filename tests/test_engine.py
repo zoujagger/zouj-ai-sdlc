@@ -753,6 +753,67 @@ class ScopeSizing(RepoCase):
             self.assertFalse([e for e in errors if "exceeds maximum" in e], spec)
 
 
+class MermaidSize(RepoCase):
+    """0014 S1 (AC-1): a ```mermaid block of more than 12 non-blank lines fails a spec whose gate is closed."""
+
+    MSG = (
+        "a ```mermaid block has {n} lines (more than 12): keep one diagram to the main flow, states or tables, "
+        "and move detail into the prose"
+    )
+
+    def block(self, n, fence="```", info="mermaid", close=True, blanks=0):
+        lines = [f"{fence}{info}", "flowchart LR"] + [f"  s{i} --> s{i + 1}" for i in range(n - 1)]
+        lines[2:2] = [""] * blanks
+        return "\n".join(lines + ([fence[:3] if fence.startswith("`") else fence] if close else []))
+
+    def spec_with(self, body, approved=False, stale=False):
+        text = SPEC.format(id="0001").replace("Reuse the list query.", body)
+        if approved:
+            digest = A.approval_hash("spec", text + ("\nedited after approval\n" if stale else ""))
+            text = text.replace("status: Draft", f"status: Approved\napproved-sha256: {digest}")
+        return text
+
+    def errors(self, text):
+        self.write("spec", text)
+        return [e for e in validate(self.d, "spec")[0] if "mermaid" in e]
+
+    def test_short_blocks_pass(self):
+        for body in (
+            self.block(12),
+            self.block(12, blanks=5),
+            "```python\n" + "\n".join(f"x{i} = {i}" for i in range(20)) + "\n```",
+            "Reuse the list query.",
+        ):
+            self.assertEqual(self.errors(self.spec_with(body)), [], body[:30])
+
+    def test_long_block_fails(self):
+        self.assertEqual(self.errors(self.spec_with(self.block(13))), [self.MSG.format(n=13)])
+
+    def test_fences(self):
+        self.assertEqual(len(self.errors(self.spec_with(self.block(13, fence="~~~~")))), 1)
+        inner = "~~~mermaid\nflowchart LR\n```\n" + "\n".join(f"  a{i} --> a{i + 1}" for i in range(11)) + "\n~~~"
+        self.assertEqual(self.errors(self.spec_with(inner)), [self.MSG.format(n=13)])  # ``` doesn't close ~~~
+        self.assertEqual(len(self.errors(self.spec_with("   " + self.block(13)))), 1)  # up to 3 spaces of indent
+        self.assertEqual(len(self.errors(self.spec_with(self.block(13, info="mermaid title=x")))), 1)
+        self.assertEqual(self.errors(self.spec_with(self.block(13, info="mermaidish"))), [])
+
+    def test_unclosed_fence_counts_to_the_end(self):
+        errors = self.errors(self.spec_with(self.block(13, close=False)))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("lines (more than 12)", errors[0])
+
+    def test_two_long_blocks_two_errors(self):
+        body = self.block(13) + "\n\n" + self.block(14)
+        self.assertEqual(self.errors(self.spec_with(body)), [self.MSG.format(n=13), self.MSG.format(n=14)])
+
+    def test_block_in_a_comment_is_ignored(self):
+        self.assertEqual(self.errors(self.spec_with("<!--\n" + self.block(20) + "\n-->")), [])
+
+    def test_approved_spec_is_exempt(self):
+        self.assertEqual(self.errors(self.spec_with(self.block(13), approved=True)), [])
+        self.assertEqual(len(self.errors(self.spec_with(self.block(13), approved=True, stale=True))), 1)
+
+
 class DomainDsl(RepoCase):
     """0012 S4 (AC-4), 0013 S1 (AC-1): `## Domain DSL` is required in spec.md while the dsl part is active
     (install-state names dsl, or a domain/*.dsl.json file exists; a bare domain/ never counts) and the spec's gate is
