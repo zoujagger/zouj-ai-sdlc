@@ -215,6 +215,29 @@ class ValidateDsl(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("validate-dsl: no domain/ - skipped", r.stdout)
 
+    def test_large_model_is_linear(self):
+        """0013 S4 (AC-3): lookups use sets, so 80,000 states validate well inside a Stop hook (bound: 10 s)."""
+        import time
+
+        states = [f"s{i}" for i in range(80000)]
+        model = {
+            "dsl": 1,
+            "kind": "state_machine",
+            "name": "big",
+            "states": states,
+            "initial": "s0",
+            "final": states[-100:],
+            "transitions": [{"from": states[i], "to": states[i + 1], "event": "next"} for i in range(0, 2000)],
+        }
+        text = json.dumps(model, separators=(",", ":"))
+        self.assertLess(len(text), 1024 * 1024)
+        self.put("big.dsl.json", text)
+        start = time.monotonic()
+        r = self.run_it()
+        elapsed = time.monotonic() - start
+        self.assertEqual(r.returncode, 0, r.stdout[-500:] + r.stderr[-500:])
+        self.assertLess(elapsed, 10, f"{elapsed:.1f} s")
+
     def test_another_directory(self):
         (self.root / "model").mkdir()
         (self.root / "model" / "x.dsl.json").write_text(json.dumps(RULES))
