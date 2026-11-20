@@ -176,6 +176,45 @@ class ValidateDsl(unittest.TestCase):
             out = self.problems("[" * depth + "]" * depth)
             self.assertIn("domain/m.dsl.json: nested deeper than 64 levels", out, depth)
 
+    def test_non_string_references(self):
+        """0013 S3 (AC-3): a reference of the wrong type is a reported problem, never a traceback."""
+        cases = []
+        cases.append(("kind", self.changed(RULES, kind=["rules"]), "$.kind: expected text (state_machine, rules or workflow)"))
+        for end in ("from", "to"):
+            bad = self.changed(MACHINE)
+            bad["transitions"][0][end] = ["open"]
+            cases.append((end, bad, f"$.transitions[0].{end}: expected a state name"))
+        cases.append(("initial", self.changed(MACHINE, initial={"s": 1}), "$.initial: expected a state name"))
+        cases.append(("final", self.changed(MACHINE, final=[["closed"]]), "$.final[0]: expected a state name"))
+        cases.append(("start", self.changed(WORKFLOW, start=["submit"]), "$.start: expected a step id"))
+        bad = self.changed(WORKFLOW)
+        bad["steps"][0]["next"] = [{"id": "check"}]
+        cases.append(("next", bad, "$.steps[0].next[0]: expected a step id"))
+        for name, model, line in cases:
+            with self.subTest(name):
+                self.put("m.dsl.json", model)
+                r = self.run_it()
+                self.assertNotIn("Traceback", r.stderr)
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn(f"domain/m.dsl.json: {line}", r.stdout)
+
+    def test_symlinked_domain_dir(self):
+        real = self.root / "real"
+        (self.root / "domain").rmdir()
+        real.mkdir()
+        (real / "limits.dsl.json").write_text(json.dumps(RULES))
+        os.symlink(real, self.root / "domain")
+        r = self.run_it()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("domain: a link, not followed (validate the real directory)", r.stdout)
+
+    def test_file_named_domain_is_skipped(self):
+        (self.root / "domain").rmdir()
+        (self.root / "domain").write_text("not a directory\n")
+        r = self.run_it()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("validate-dsl: no domain/ - skipped", r.stdout)
+
     def test_another_directory(self):
         (self.root / "model").mkdir()
         (self.root / "model" / "x.dsl.json").write_text(json.dumps(RULES))
