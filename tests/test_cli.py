@@ -1009,7 +1009,8 @@ class Docs(unittest.TestCase):
         self.assertIn("**Scope:**", template)
         self.assertIn("3 to 5", self.text("templates/artifacts/spec.md"))
         self.assertIn("`scope_size`", self.text("docs/state-machine.md"))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # everything newer than 0.2.0-beta.2: `[Unreleased]` while in development, then its release section (0015)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0011-scope-sizing/", unreleased)
 
     def test_dsl_guidance(self):
@@ -1030,7 +1031,8 @@ class Docs(unittest.TestCase):
             self.assertRegex(text, r"`--with all`[^.]*(?:but|leaves out|without)[^.]*`dsl`", rel)
         self.assertIn("`domain_dsl`", self.text("docs/state-machine.md"))
         self.assertIn("only add", self.text("docs/architecture.md"))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # everything newer than 0.2.0-beta.2: `[Unreleased]` while in development, then its release section (0015)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0012-dsl-part/", unreleased)
 
     def test_dsl_hardening_guidance(self):
@@ -1055,7 +1057,8 @@ class Docs(unittest.TestCase):
             text = self.text(rel)
             for phrase in old:
                 self.assertNotIn(phrase, text, (rel, phrase))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # everything newer than 0.2.0-beta.2: `[Unreleased]` while in development, then its release section (0015)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0013-dsl-hardening/", unreleased)
 
     def test_spec_quality_guidance(self):
@@ -1077,7 +1080,8 @@ class Docs(unittest.TestCase):
         for phrase in ("None (no changes)", "mermaid", "[AC-N]", "Queries"):
             self.assertIn(phrase, template, phrase)
         self.assertIn("`mermaid_size`", self.text("docs/state-machine.md"))
-        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # everything newer than 0.2.0-beta.2: `[Unreleased]` while in development, then its release section (0015)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0014-spec-quality/", unreleased)
 
     def test_setup_skill_asks_for_the_command(self):

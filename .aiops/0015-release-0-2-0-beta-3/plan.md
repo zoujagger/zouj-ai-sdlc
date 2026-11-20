@@ -98,3 +98,4 @@ Existing tests reused:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-20 | S1 | Four docs tests not named in S1 changed: `Docs::test_scope_sizing_guidance`, `::test_dsl_guidance`, `::test_dsl_hardening_guidance` and `::test_spec_quality_guidance` now look for their CHANGELOG entry in everything newer than `[0.2.0-beta.2]` instead of `[Unreleased]` only. **The release commit 32f354f went in with `make check` red** (these 4 failures): the check's exit code was hidden by a `\| tail` pipe; the fix is in the next commit | Each asserted its entry was under `[Unreleased]`, which holds only until the release moves it, the same trap as 0011's S2 deviation, in reverse. The wider slice holds before and after a release, as 0009's docs test already does | S1 fix commit |
