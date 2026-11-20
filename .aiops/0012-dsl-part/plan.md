@@ -151,7 +151,7 @@ Code reused:
       parts.
   - **Test first:** `Docs::test_dsl_guidance` fails on the missing phrases.
   - Covers: AC-5
-- [ ] **S6**: Prove the change.
+- [x] **S6**: Prove the change.
   - **Commands:**
     - `make check`;
     - `make validate`;
@@ -195,3 +195,4 @@ Code reused:
 | 2026-11-20 | S4 | `domain_dsl` applies only while the spec's gate is closed: an approved, unchanged spec is exempt (spec R-6 required the section of every spec while the part is active). `test_approved_spec_keeps_its_gate` asserts the exemption, and that an edit after approval brings the requirement back | As written, R-6 would turn `sdlc validate --all --ci` red for every earlier approved spec of a repo that adds `dsl` after it has history. This follows 0011's `scope_size` precedent. **Needs the human's confirmation at review** | S4 green commit |
 | 2026-11-20 | S4 | The gate test shared by `scope_size` and `domain_dsl` is extracted as `schema._gate_open` | Two checks now need it (0011 review backlog item 3) | S4 green commit |
 | 2026-11-20 | S5 | `docs/install.md`, `docs/adoption.md` and `TROUBLESHOOTING.md` are unchanged (they don't list the parts), and so is `docs/roadmap.md:72`, a record of what 0.2.0-beta.1 shipped. `docs/architecture.md` gains a threat-model row for removing `domain/` | The plan named them "wherever they list the parts"; none does except the roadmap's history. The new row records the spec's accepted flag | S5 green commit |
+| 2026-11-20 | S6 | Results: `make check` 559 OK (3 skipped, at 81d7604); `make validate` passed (the existing root `CLAUDE.md` warning only); `sdlc validate --all` 0 errors across 11 intents; `scaffold-history.py --check` up to date; `git diff --name-only main...HEAD` lists only S1-S5 files, `templates/scaffold/scripts/check-bands.py` (S2 deviation) and `.aiops/0012-*`. **The manual scratch-repo run was not done**: both attempts (`sdlc setup --with dsl` in a scratch repo, then `make check` on a hand-made model there) were denied by the session's permission settings | Its two halves are covered by automated tests that run the real artifacts: `test_dsl.py::MakeCheck` (the template Makefile with valid, invalid and missing models) and `test_setup.py::Apply::test_with_dsl_installs_the_part` (the human's `setup --with dsl --yes`) | S6 |
