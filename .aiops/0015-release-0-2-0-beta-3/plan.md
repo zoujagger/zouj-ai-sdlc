@@ -59,7 +59,7 @@ Existing tests reused:
     - `README.md`: the status line, both `marketplace add …@v0.2.0-beta.3` lines and the settings `"ref"`.
   - **Test first:** both version tests fail on beta.2 (`'0.2.0-beta.2' != '0.2.0-beta.3'`).
   - Covers: AC-1, AC-2, AC-3, AC-4
-- [ ] **S2**: Prove the release commit.
+- [x] **S2**: Prove the release commit.
   - **Commands:**
     - `make check`;
     - `make validate` (`claude plugin validate .`);
@@ -99,3 +99,4 @@ Existing tests reused:
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-20 | S1 | Four docs tests not named in S1 changed: `Docs::test_scope_sizing_guidance`, `::test_dsl_guidance`, `::test_dsl_hardening_guidance` and `::test_spec_quality_guidance` now look for their CHANGELOG entry in everything newer than `[0.2.0-beta.2]` instead of `[Unreleased]` only. **The release commit 32f354f went in with `make check` red** (these 4 failures): the check's exit code was hidden by a `\| tail` pipe; the fix is in the next commit | Each asserted its entry was under `[Unreleased]`, which holds only until the release moves it, the same trap as 0011's S2 deviation, in reverse. The wider slice holds before and after a release, as 0009's docs test already does | S1 fix commit |
+| 2026-11-20 | S2 | Results at c84ae3b: `make check` 575 OK (3 skipped, exit 0 checked with `pipefail`); `make validate` passed (the existing root `CLAUDE.md` warning only); `sdlc validate --all` 0 errors across 14 intents; `scaffold-history.py --check` up to date; `git diff --name-only main...HEAD` lists only S1's files and `.aiops/0015-*`. One-off checks against main: every released history entry (0.1.0 … 0.2.0-beta.2) equal, `0.2.0-beta.3` == main's `unreleased`, no `unreleased` key; the beta.3 `### Added` body byte-equal to main's `[Unreleased]` (2,874 bytes); `[Unreleased]` empty | The verification itself | S2 |
