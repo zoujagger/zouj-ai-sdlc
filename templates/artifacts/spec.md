@@ -26,10 +26,14 @@ created: YYYY-MM-DD
 - **AC-1**: Given <context>, when <action>, then <observable outcome>.
 
 ## Data model
+<!-- Exactly `None (no changes)` when nothing changes. Otherwise end each table, column or migration line with its
+     [AC-N]; when stored data is added or read, close with Queries: pattern → composite index (tenant key first
+     where multi-tenant) → N+1 prevention → [AC-N]. -->
 <DB schema changes as DDL or a table: entities, columns, types, constraints, indexes. Migration is
 reversible? Data classification per column (public / internal / personal / secret).>
 
 ## API contracts
+<!-- Exactly `None (no changes)` when nothing changes. Otherwise end each endpoint or event with its [AC-N]. -->
 <Endpoints/events: method, path, request and response schemas, status codes, errors, auth, versioning.>
 
 ## Security & data-leak flags
@@ -37,9 +41,12 @@ reversible? Data classification per column (public / internal / personal / secre
 - ⚠️ <e.g. tenant isolation on GET /contacts/:id: authz check by tenant_id> (owner)
 
 ## Architecture
+<!-- Never `None (no changes)`. A multi-step flow, a state transition or a DB table: open with one mermaid diagram
+     (sequenceDiagram, flowchart or erDiagram), at most 12 lines; `sdlc validate` refuses a longer one. -->
 <Components, data flow, cited code (path:line), alternatives considered and why not, ADRs needed.>
 
 ## Rollout & rollback
+<!-- Exactly `None (no changes)` when nothing ships differently. -->
 <Feature flag, migration order, the one rollback command, metrics to watch.>
 
 ## Open questions

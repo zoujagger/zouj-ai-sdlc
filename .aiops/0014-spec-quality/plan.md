@@ -55,7 +55,7 @@ Code reused:
   - **Test first:** `test_long_block_fails`, `test_fences`, the unclosed and two-block tests, and the stale half of
     `test_approved_spec_is_exempt` fail, because no check exists.
   - Covers: AC-1
-- [ ] **S2**: Write the N/A, diagram, traceability and query-hygiene guidance.
+- [x] **S2**: Write the N/A, diagram, traceability and query-hygiene guidance.
   - **Files:**
     - `tests/test_cli.py` (modify): `Docs::test_spec_quality_guidance` checks that:
       - `agents/architect.md` and `skills/spec/SKILL.md` contain `None (no changes)` with the three section names,
