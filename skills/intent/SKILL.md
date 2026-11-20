@@ -20,7 +20,12 @@ You are in a **read-only** state. Only `.aiops/` and docs can be written.
    - what's explicitly out of scope
 
    If an answer is still unknown, record it under **Open questions**. **Never invent answers.**
-4. **Create.** Run `sdlc new <kebab-slug> --title "<Title>"`, then `git switch -c feat/NNNN-<slug>` (the branch makes the intent active). Delegate the writing to the **product-analyst** subagent with the interview answers.
+
+   **Scope check (before step 4).** If the answers cover several separate user workflows, or would need more than **5** high-level outcomes (or more than 5 observable acceptance criteria in the spec), stop. Ask the human (AskUserQuestion) whether to split the work into smaller intents that run one after another, and propose the split. Create only the first intent of an agreed split; record the others under **Out of scope** with "next intent". If the human keeps it whole, continue: the analyst flags it (step 4).
+4. **Create.** Run `sdlc new <kebab-slug> --title "<Title>"`, then `git switch -c feat/NNNN-<slug>` (the branch makes the intent active). Delegate the writing to the **product-analyst** subagent with the interview answers and these caps:
+   - **3 to 5** high-level, observable outcomes in `## Desired outcome` (top-level bullets; technical detail waits for the spec);
+   - a spec that will need **3 to 5** user-observable acceptance criteria (never more than 7: `sdlc validate` warns above 5 and refuses a Draft spec above 8);
+   - if the scope still can't fit in 5, a `> ⚠️ **Scope:** …` callout at the top of intent.md recommending a split before approval.
 5. **Validate.** Run `sdlc validate NNNN` and fix every error.
 6. **Stop at the gate.** Show a short summary of the intent and its open questions, then say exactly:
    > Review `.aiops/NNNN-slug/intent.md`. Reply with corrections, or type **`Intent Approved NNNN`** (or, if signing needs your passphrase, run the printed `/usr/bin/python3 -I <plugin>/bin/sdlc approve NNNN intent` command in your terminal) to move to SPECIFICATION.
@@ -31,3 +36,4 @@ You are in a **read-only** state. Only `.aiops/` and docs can be written.
 |---|---|
 | Starting the spec "to save time" | The spec is blocked until the gate opens. Wait. |
 | Filling an unknown with a plausible guess | Add it to Open questions with who can answer. |
+| Packing an epic into one intent ("it's all one feature") | Run the scope check: more than 5 outcomes or several workflows means asking the human to split. |

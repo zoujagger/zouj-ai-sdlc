@@ -11,13 +11,15 @@ created: YYYY-MM-DD
 # Intent: <Title>
 
 <!-- State 1 BRAINSTORMING. Written from a targeted clarification interview. Unknowns go in Open questions,
-     never invented. approved-* fields are stamped by the human approval; agents never write them. -->
+     never invented. approved-* fields are stamped by the human approval; agents never write them.
+     Scope: 3 to 5 outcomes. If the need can't fit, split it into smaller intents, or put this callout under the
+     title: > ⚠️ **Scope:** this intent covers <n> outcomes/workflows; consider splitting it before approval. -->
 
 ## Problem
 <What is wrong or missing today? Evidence: tickets, metrics, quotes.>
 
 ## Desired outcome
-<What is observably true when this is done? Outcomes, not solutions.>
+<What is observably true when this is done? Outcomes, not solutions: 3 to 5 top-level bullets.>
 
 ## Users & systems affected
 - Users: <personas / teams>
