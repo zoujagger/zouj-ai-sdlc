@@ -17,8 +17,8 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 ## The five states
 | Command | State | Ends when |
 |---|---|---|
-| `/zouj-ai-sdlc:intent "<need>"` | 1 BRAINSTORMING → `intent.md` | ✋ `Intent Approved NNNN` |
-| `/zouj-ai-sdlc:spec [id]` | 2 SPECIFICATION → `spec.md` | ✋ `Spec Approved NNNN` |
+| `/zouj-ai-sdlc:intent "<need>"` | 1 BRAINSTORMING → `intent.md` (3-5 outcomes; a scope check offers a split) | ✋ `Intent Approved NNNN` |
+| `/zouj-ai-sdlc:spec [id]` | 2 SPECIFICATION → `spec.md` (3-5 ACs, `[AC-N]` on tables and endpoints, `None (no changes)` for untouched sections) | ✋ `Spec Approved NNNN` |
 | `/zouj-ai-sdlc:plan [id]` | 3 PLAN (code read-only) → `plan.md` | ✋ `Plan Approved NNNN` |
 | `/zouj-ai-sdlc:implement [id] [step]` | 4 EXECUTION, autonomous TDD | every step ticked, `make check` green |
 | `/zouj-ai-sdlc:parallel <id> <steps>` | 4, independent steps in git worktrees | as above |
@@ -50,7 +50,7 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 ## Engine commands (terminal)
 | Command | What it does |
 |---|---|
-| `sdlc setup [--profile P] [--stack S] [--with PARTS] [--dry-run] [--yes]` | The guided setup, as above. `--stack` (default `auto`) detects the stack and, when you run it yourself, wires a new or untouched stub Makefile from the repo's own commands (run by Claude it only lists them); `--stack <name>` forces one, `--stack none` keeps the stubs. `--with` adds opt-in parts: `review`, `maintain`, `deploy`, `governance`, `issues` (comma-separated, or `all`). It never removes one |
+| `sdlc setup [--profile P] [--stack S] [--with PARTS] [--dry-run] [--yes]` | The guided setup, as above. `--stack` (default `auto`) detects the stack and, when you run it yourself, wires a new or untouched stub Makefile from the repo's own commands (run by Claude it only lists them); `--stack <name>` forces one, `--stack none` keeps the stubs. `--with` adds opt-in parts: `review`, `maintain`, `deploy`, `governance`, `issues`, `dsl` (comma-separated, or `all`, which leaves out `dsl`). It never removes one |
 | `sdlc init [--stack S] [--with PARTS]` | The scaffold alone: the core files, plus the parts you name. Never overwrites a file |
 | `sdlc where` | Prints the `sdlc` command for your own terminal (absolute python and plugin paths), then the human-only subcommands. Writes nothing |
 | `sdlc status [--json]` · `sdlc next` | State and next step |
@@ -62,4 +62,4 @@ opens a gate (✋). The engine itself is `sdlc` (see `sdlc --help`).
 | `sdlc why <id>` | Explains a block (`BLOCKED [G-LOCK-01] …`): the reason, the stage it protects, the safe alternative, whether an allowance is possible |
 | `sdlc feedback` | Issue links and a doctor summary to paste (sends nothing) |
 | `sdlc approve <id> intent\|spec\|plan` | ✋ Human only, in your own terminal (refused inside Claude Code): paste the line `sdlc where` prints, then `approve …` |
-| `sdlc validate [--all] [--ci --base REF]` | Schema and approval audit (what CI runs) |
+| `sdlc validate [--all] [--ci --base REF]` | Schema and approval audit (what CI runs). In a draft spec it also warns above 5 ACs, refuses above 8 or a ```mermaid block over 12 lines, and, with the `dsl` part, requires `## Domain DSL` |

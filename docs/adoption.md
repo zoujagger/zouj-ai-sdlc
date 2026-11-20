@@ -28,7 +28,7 @@ line to create the repo, then a few prompts, and you delete the directory afterw
 
 ## The workflows the scaffold adds
 Setup installs the core scaffold, and the rest arrives by part when you ask for it
-(`sdlc setup --with <part>[,<part>…]`, or `--with all`):
+(`sdlc setup --with <part>[,<part>…]`, or `--with all`, every part but `dsl`):
 
 | Part | Workflows | Needs | Add it at |
 |---|---|---|---|
@@ -38,9 +38,10 @@ Setup installs the core scaffold, and the rest arrives by part when you ask for 
 | `governance` | none: policy examples, branch-protection notes, `docs/adr/`, Dependabot | nothing | step 2 |
 | `deploy` | `deploy.yml`, `claude-release-notes.yml` | `make deploy` wired, GitHub Environments `staging` and `production` | when you deploy from CI |
 | `maintain` | `claude-maintain.yml` (every 30 minutes), `claude-scheduled-scan.yml` (weekly) | the secret, and real metric queries in `ops/bands.yaml` | step 3 |
+| `dsl` | none: `validate-dsl` runs inside `make check` | a team that wants domain-first specs; every later spec needs `## Domain DSL` | when you model the domain |
 
 `--with` only adds, and `sdlc list-installed` ends with the parts you don't have. A repo set up before
-0.2.0-beta.1 has every part. To hold a workflow back there without deleting it, disable it on GitHub:
+0.2.0-beta.1 has every part except `dsl`, which is only ever installed by name. To hold a workflow back there without deleting it, disable it on GitHub:
 `gh workflow disable claude-maintain.yml`. A deleted file of an installed part shows as `missing` in
 `sdlc list-installed`, and `sdlc repair` would restore it.
 
