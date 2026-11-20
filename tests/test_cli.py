@@ -247,6 +247,22 @@ class Lifecycle(RepoCase):
             self.assertEqual(r.returncode, code, r.stdout)
             self.assertIn(line, r.stdout)
 
+    def test_draft_spec_adds_domain_dsl_when_active(self):
+        """0012 S4 (AC-4): while the dsl part is active, the spec draft has `## Domain DSL` before `## Data model`."""
+        self.write("intent", INTENT)
+        self.assertEqual(self.run_sdlc("approve", "1", "intent").returncode, 0)
+        self.assertEqual(self.run_sdlc("draft", "0001", "spec").returncode, 0)
+        self.assertNotIn("## Domain DSL", (self.d / "spec.md").read_text())  # inactive: the template as it is
+        (self.d / "spec.md").unlink()
+        (self.root / "domain").mkdir()
+        self.assertEqual(self.run_sdlc("draft", "0001", "spec").returncode, 0)
+        text = (self.d / "spec.md").read_text()
+        self.assertIn("## Domain DSL", text)
+        self.assertLess(text.index("## Domain DSL"), text.index("## Data model"))
+        self.assertLess(text.index("## API contracts"), text.index("## Security"))  # the rest keeps its order
+        r = self.run_sdlc("validate", "0001")
+        self.assertIn("Domain DSL", r.stdout)  # the placeholder doesn't satisfy the check
+
     def test_validate_rejects_empty_base(self):
         self.write("intent", INTENT)
         for args in (["--base", ""], ["--base"]):
