@@ -1058,6 +1058,28 @@ class Docs(unittest.TestCase):
         unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
         self.assertIn(".aiops/0013-dsl-hardening/", unreleased)
 
+    def test_spec_quality_guidance(self):
+        """0014 S2 (AC-2 to AC-5): N/A brevity, the diagram, AC traceability and query hygiene ship in the architect,
+        the spec skill and the spec template."""
+        for rel in ("agents/architect.md", "skills/spec/SKILL.md"):
+            text = self.text(rel)
+            self.assertIn("`None (no changes)`", text, rel)  # AC-2
+            for section in ("`## Data model`", "`## API contracts`", "`## Rollout & rollback`"):
+                self.assertIn(section, text, (rel, section))
+            self.assertRegex(text, r"Security[^.]*Architecture[^.]*never|never[^.]*Security[^.]*Architecture", rel)
+            for phrase in ("sequenceDiagram", "flowchart", "erDiagram", "12 lines"):  # AC-3
+                self.assertIn(phrase, text, (rel, phrase))
+            self.assertIn("[AC-N]", text, rel)  # AC-4
+            self.assertRegex(text, r"(?i)open question", rel)
+            for phrase in ("Queries", "composite index", "tenant key", "N+1"):  # AC-5
+                self.assertIn(phrase, text, (rel, phrase))
+        template = self.text("templates/artifacts/spec.md")
+        for phrase in ("None (no changes)", "mermaid", "[AC-N]", "Queries"):
+            self.assertIn(phrase, template, phrase)
+        self.assertIn("`mermaid_size`", self.text("docs/state-machine.md"))
+        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        self.assertIn(".aiops/0014-spec-quality/", unreleased)
+
     def test_setup_skill_asks_for_the_command(self):
         """0007 S18 (R-21): the skill reads the hook's reminder first; with none, it asks for the typed command."""
         skill = self.text("skills/setup/SKILL.md")
