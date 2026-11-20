@@ -112,7 +112,7 @@ Code reused:
     - `defaults/scaffold-history.json` (regenerate, for the two scaffold READMEs).
   - **Test first:** `test_dsl_hardening_guidance` fails on the missing phrases and on the old wording.
   - Covers: AC-4, AC-5
-- [ ] **S6**: Prove the change.
+- [x] **S6**: Prove the change.
   - **Commands:**
     - `make check`;
     - `make validate`;
@@ -146,3 +146,4 @@ Code reused:
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-20 | S5 | `README.md` and `templates/scaffold/.aiops/README.md` are unchanged, though S5 names them | Neither describes activation by `domain/`; both are still in the old-wording scan of `Docs::test_dsl_hardening_guidance`, so a later regression is caught | S5 green commit |
+| 2026-11-20 | S6 | Results: `make check` OK (3 skipped) at ae8dcae; `make validate` passed (the existing root `CLAUDE.md` warning only); `sdlc validate --all` 0 errors across 12 intents; `scaffold-history.py --check` up to date; `git diff --name-only main...HEAD` lists only S1-S5 files and `.aiops/0013-*`. S4's timing test: 24.7 s red, 0.14 s green | The verification itself | S6 |
