@@ -833,9 +833,47 @@ class Compat(Adoption):
         from sdlc_engine import lifecycle
 
         self.scaffold_as_released("0.2.0-alpha.2")
-        self.assertEqual(lifecycle.installed_parts(self.root, None), sorted(lifecycle.PARTS))
-        self.assertEqual(lifecycle.adopt(self.root)["parts"], sorted(lifecycle.PARTS))
+        self.assertEqual(lifecycle.installed_parts(self.root, None), sorted(lifecycle.LEGACY_PARTS))
+        self.assertEqual(lifecycle.adopt(self.root)["parts"], sorted(lifecycle.LEGACY_PARTS))
         self.assertNotIn("Not installed", self.run_sdlc("list-installed").stdout)
+
+
+class DslPart(RepoCase):
+    """0012 S1 (AC-1): `dsl` is installed only when named, never through the "every part" fallbacks."""
+
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.root / ".aiops")
+        from sdlc_engine import lifecycle
+
+        self.lc = lifecycle
+        self.assertEqual(self.run_sdlc("init", "--with", "all").returncode, 0)
+
+    def drop_parts_key(self):
+        st = json.loads((self.root / STATE).read_text())
+        del st["parts"]  # as 0.2.0-alpha.3 wrote it
+        st["plugin_version"] = "0.1.0"  # real work for upgrade
+        (self.root / STATE).write_text(json.dumps(st))
+
+    def test_legacy_state_without_parts_has_no_dsl(self):
+        self.drop_parts_key()
+        self.assertEqual(self.lc.installed_parts(self.root, self.lc.load(self.root)), sorted(self.lc.LEGACY_PARTS))
+
+    def test_edited_config_without_state_has_no_dsl(self):
+        (self.root / STATE).unlink()
+        (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any", "mine": true}\n')
+        self.assertEqual(self.lc.installed_parts(self.root, None), sorted(self.lc.LEGACY_PARTS))
+
+    def test_upgrade_and_repair_plan_no_dsl_file(self):
+        self.drop_parts_key()
+        for cmd in ("repair", "upgrade"):
+            dry = self.run_sdlc(cmd, "--dry-run")
+            self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+            self.assertNotIn("domain/", dry.stdout, cmd)
+
+    def test_init_with_all_installs_no_dsl(self):
+        self.assertFalse((self.root / "domain").exists())
+        self.assertNotIn("dsl", json.loads((self.root / STATE).read_text())["parts"])
 
 
 class CoreOnly(RepoCase):
@@ -952,12 +990,15 @@ class Parts(unittest.TestCase):
     def test_core_is_sixteen_files(self):
         core = {rel for rel in self.lc.scaffold_paths() if self.lc.part_of(rel) == "core"}
         self.assertEqual(core, CORE)
-        self.assertEqual(len(self.lc.scaffold_paths()) - len(core), 20)  # the five opt-in parts
+        self.assertEqual(len(self.lc.scaffold_paths()) - len(core), 21)  # the six opt-in parts (0012: dsl)
         self.assertEqual(self.lc.part_of("not/in/the/scaffold"), "core")  # unlisted counts as core at run time
 
     def test_parse_parts(self):
         self.assertEqual(self.lc.parse_parts("maintain,review"), (["maintain", "review"], None))
-        self.assertEqual(self.lc.parse_parts("all"), (sorted(self.lc.PARTS), None))
+        self.assertEqual(self.lc.parse_parts("all"), (sorted(self.lc.LEGACY_PARTS), None))  # 0012: `all` leaves dsl out
+        self.assertEqual(self.lc.parse_parts("all,dsl"), (sorted(self.lc.PARTS), None))
+        self.assertEqual(self.lc.parse_parts("dsl"), (["dsl"], None))
+        self.assertEqual(set(self.lc.PARTS) - set(self.lc.LEGACY_PARTS), {"dsl"})
         self.assertEqual(self.lc.parse_parts("deploy,deploy"), (["deploy"], None))
         for bad in ("bogus", "core", "", "review,", "review,bogus"):
             parts, why = self.lc.parse_parts(bad)

@@ -201,6 +201,26 @@ class Apply(SetupCase):
         env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d)}
         return subprocess.run([sys.executable, SDLC, *args], cwd=d, input="", capture_output=True, text=True, env=env)
 
+    def test_with_dsl_installs_the_part(self):
+        """0012 S1 (AC-1): the human's `setup --with dsl --yes` records the part and writes only missing files."""
+        d = self.fresh_repo("dsl")
+        self.assertEqual(self.sdlc_in(d, "setup", "--profile", "solo", "--yes").returncode, 0)
+        before = {p: p.read_bytes() for p in d.rglob("*") if p.is_file() and ".git" not in p.parts}
+        r = self.sdlc_in(d, "setup", "--with", "dsl", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        st = json.loads((d / ".aiops" / "install-state.json").read_text())
+        self.assertIn("dsl", st["parts"])
+        self.assertTrue((d / "domain" / "README.md").is_file())
+        changed = [p for p, data in before.items() if p.exists() and p.read_bytes() != data]
+        self.assertEqual([p.relative_to(d).as_posix() for p in changed if p.name != "install-state.json"], [])
+
+    def test_with_all_leaves_dsl_out(self):
+        d = self.fresh_repo("all")
+        r = self.sdlc_in(d, "setup", "--profile", "solo", "--with", "all", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse((d / "domain").exists())
+        self.assertNotIn("dsl", json.loads((d / ".aiops" / "install-state.json").read_text())["parts"])
+
     def test_fresh_repo_each_profile(self):
         expected = {"solo": (False, "any"), "team": (True, "human"), "strict": (True, "sk")}
         for profile, (signed, policy) in expected.items():
