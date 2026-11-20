@@ -21,7 +21,8 @@ class Init(RepoCase):
 
     def test_init_actions_preview_matches_apply(self):
         (self.root / "Makefile").write_text("mine:\n\techo keep\n")
-        actions = cli.init_actions(self.root)
+        from sdlc_engine.lifecycle import LEGACY_PARTS as legacy  # what `--with all` installs (0012)
+        actions = cli.init_actions(self.root, parts=legacy)
         created = {rel for act, rel in actions if act == "create"}
         kept = {rel for act, rel in actions if act == "keep"}
         self.assertIn("Makefile", kept)
@@ -31,7 +32,7 @@ class Init(RepoCase):
         for rel in created | kept:
             self.assertTrue((self.root / rel).exists(), rel)
         self.assertEqual((self.root / "Makefile").read_text(), "mine:\n\techo keep\n")
-        again = cli.init_actions(self.root)
+        again = cli.init_actions(self.root, parts=legacy)
         self.assertEqual({act for act, _ in again}, {"keep"})  # a rerun plans no creation
         rerun = self.run_sdlc("init", "--with", "all")
         self.assertIn("Kept existing", rerun.stdout)
@@ -200,6 +201,38 @@ class Apply(SetupCase):
     def sdlc_in(self, d, *args):
         env = {**self.env, "PATH": str(self.bin_with()), "CLAUDE_PROJECT_DIR": str(d)}
         return subprocess.run([sys.executable, SDLC, *args], cwd=d, input="", capture_output=True, text=True, env=env)
+
+    def test_with_dsl_installs_the_part(self):
+        """0012 S1 (AC-1): the human's `setup --with dsl --yes` records the part and writes only missing files."""
+        d = self.fresh_repo("dsl")
+        self.assertEqual(self.sdlc_in(d, "setup", "--profile", "solo", "--yes").returncode, 0)
+        before = {p: p.read_bytes() for p in d.rglob("*") if p.is_file() and ".git" not in p.parts}
+        r = self.sdlc_in(d, "setup", "--with", "dsl", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        st = json.loads((d / ".aiops" / "install-state.json").read_text())
+        self.assertIn("dsl", st["parts"])
+        self.assertTrue((d / "domain" / "README.md").is_file())
+        self.assertTrue((d / "scripts" / "validate-dsl.py").is_file())  # S2
+        changed = [p for p, data in before.items() if p.exists() and p.read_bytes() != data]
+        self.assertEqual([p.relative_to(d).as_posix() for p in changed if p.name != "install-state.json"], [])
+
+    def test_with_dsl_on_an_edited_makefile_prints_the_step(self):
+        """0012 S3: a Makefile the human edited is never changed; the target and the check line become a step."""
+        d = self.fresh_repo("dslmake")
+        (d / "Makefile").write_text("check:\n\techo mine\n")
+        r = self.sdlc_in(d, "setup", "--profile", "solo", "--with", "dsl", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((d / "Makefile").read_text(), "check:\n\techo mine\n")
+        self.assertIn("validate-dsl:", r.stdout)
+        self.assertIn("python3 scripts/validate-dsl.py", r.stdout)
+        self.assertIn("add validate-dsl to `check`", r.stdout)
+
+    def test_with_all_leaves_dsl_out(self):
+        d = self.fresh_repo("all")
+        r = self.sdlc_in(d, "setup", "--profile", "solo", "--with", "all", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse((d / "domain").exists())
+        self.assertNotIn("dsl", json.loads((d / ".aiops" / "install-state.json").read_text())["parts"])
 
     def test_fresh_repo_each_profile(self):
         expected = {"solo": (False, "any"), "team": (True, "human"), "strict": (True, "sk")}
@@ -1017,8 +1050,8 @@ class Parts(SetupCase):
         self.assertEqual(self.parts(), ["maintain"])
         self.assertNotRegex(r.stdout, r"(?m)^  \+ ")  # no file to create in the plan
         self.ok("--profile", "solo", "--with", "all", "--yes")
-        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())
-        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+        self.assertTrue(set(self.lc.scaffold_paths(self.lc.LEGACY_PARTS)) <= self.files())
+        self.assertEqual(self.parts(), sorted(self.lc.LEGACY_PARTS))  # `all` leaves dsl out (0012)
 
     def test_bogus_part_refused(self):
         for args in (("--with", "bogus"), ("--with", "maintain,bogus"), ("--with",)):

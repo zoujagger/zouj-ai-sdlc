@@ -10,7 +10,7 @@
 ENV ?= staging
 
 .DEFAULT_GOAL := help
-.PHONY: help format lint typecheck test build check deploy rollback
+.PHONY: help format lint typecheck test build check deploy rollback validate-dsl
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -30,7 +30,12 @@ test: ## Run the test suite
 build: ## Build artifacts
 	@echo "[build] not configured - edit Makefile"
 
-check: lint typecheck test ## lint + typecheck + test (the Stop hook requires this green)
+validate-dsl: ## Validate the domain model in domain/*.dsl.json (the opt-in dsl part; skipped without domain/)
+	@if [ ! -d domain ]; then echo "[validate-dsl] no domain/ - skipped"; \
+	elif [ -f scripts/validate-dsl.py ]; then python3 scripts/validate-dsl.py domain; \
+	else echo "[validate-dsl] domain/ exists but scripts/validate-dsl.py is missing: run sdlc setup --with dsl"; exit 1; fi
+
+check: lint typecheck test validate-dsl ## lint + typecheck + test (the Stop hook requires this green)
 
 deploy: ## Deploy to ENV=staging|prod (prod: humans only, enforced by guard-deploy + GitHub Environment)
 	@echo "[deploy] ENV=$(ENV) not configured - edit Makefile"

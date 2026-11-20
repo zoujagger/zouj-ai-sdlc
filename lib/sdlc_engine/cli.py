@@ -59,7 +59,7 @@ Lifecycle (any user or agent)
   lock                       /fix: lock test files after the human approved the failing test
   init [--stack python|node|go] [--with PARTS] [--force]   scaffold this repo: the core files (.aiops/, Makefile
                              contract, CI audit, REVIEW.md), plus opt-in PARTS (review, maintain, deploy,
-                             governance, issues, comma-separated, or all)
+                             governance, issues, dsl; comma-separated, or all: every part but dsl)
   setup [--profile solo|team|strict] [--stack S] [--with PARTS] [--dry-run] [--yes]   guided, rerunnable setup
   feedback                   issue links and a doctor summary to paste (sends nothing)
   list-installed             what the plugin installed here: current, stale, modified, missing, unmanaged
@@ -195,6 +195,15 @@ def cmd_next(root, args):
     return 0
 
 
+DOMAIN_DSL_SECTION = """## Domain DSL
+<!-- The dsl part is active (domain/ exists or install-state names dsl), so this section is required. Model first:
+     name the domain/<name>.dsl.json files this change adds or edits and what they declare (state machines, rules,
+     workflows); the Data model and API contracts below follow from them. A purely technical or UI change writes
+     `No domain changes` and the reason. The format is in domain/README.md. -->
+<The domain model files this change adds or edits, and what they declare>
+"""
+
+
 def _render(kind, ident, title):
     text = (TEMPLATES / "artifacts" / f"{kind}.md").read_text()
     return (
@@ -243,7 +252,12 @@ def cmd_draft(root, args):
         out(f"cannot draft {kind}.md: {req}.md is not approved ({why}).", sys.stderr)
         return 1
     title = A.parse((d / "intent.md").read_text()).get("title") or d.name[5:]
-    (d / f"{kind}.md").write_text(_render(kind, d.name[:4], title))
+    text = _render(kind, d.name[:4], title)
+    from .lifecycle import dsl_active
+
+    if kind == "spec" and dsl_active(root):  # 0012 R-7: the domain model comes before the Data model
+        text = text.replace("\n## Data model\n", "\n" + DOMAIN_DSL_SECTION + "\n## Data model\n", 1)
+    (d / f"{kind}.md").write_text(text)
     out(f"Created .aiops/{d.name}/{kind}.md from the template.")
     return 0
 

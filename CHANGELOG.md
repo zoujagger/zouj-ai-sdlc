@@ -6,6 +6,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ## [Unreleased]
 
 ### Added
+- **The opt-in `dsl` part** (`.aiops/0012-dsl-part/`), for domain-first modeling without tying the plugin to a domain:
+  - `sdlc setup --with dsl` adds `domain/README.md` (the format) and `scripts/validate-dsl.py`, a stdlib-only
+    validator for state machines, rule sets and workflows in `domain/*.dsl.json`. Problems are reported as
+    `<file>: <json path>: <problem>`.
+  - The core Makefile's `check` now runs `validate-dsl`, which is skipped while there's no `domain/`. A Makefile
+    you've edited isn't changed: setup prints the target to add.
+  - While the part is active (`domain/` exists, or install-state names `dsl`), `sdlc validate` requires a
+    `## Domain DSL` section in every spec whose gate is closed, naming the model files it changes or saying
+    `No domain changes`; `sdlc draft` adds it. The spec and plan skills model the domain before the Data model, and
+    plan Step 1 updates `domain/` and runs `make validate-dsl`.
+  - `--with all` installs every part but `dsl`; ask for it by name (`--with all,dsl`). Repos set up before this
+    release never get it from `upgrade` or `repair`.
 - **Scope sizing** (`.aiops/0011-scope-sizing/`):
   - `sdlc validate` counts the AC ids in `spec.md`: more than 5 is a warning that suggests splitting the intent,
     and more than 8 is an error while the spec's gate is closed, so `approve` refuses an oversized Draft spec.

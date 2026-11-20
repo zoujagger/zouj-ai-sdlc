@@ -86,8 +86,10 @@ and type `/zouj-ai-sdlc:setup solo`. Commit the scaffold with the command the re
   yourself wires it. Run by Claude, or as the typed `/zouj-ai-sdlc:setup`, they list the commands and the terminal
   command that wires them, so the repo's scripts never run before you've read them. Override the guess with
   `--stack <name>`, or keep the stubs with `--stack none`. A Makefile you've edited is never changed.
-- **Opt-in parts:** setup installs the core only. Add `review`, `maintain`, `deploy`, `governance` or `issues` with
-  `sdlc setup --with <part>`.
+- **Opt-in parts:** setup installs the core only. Add `review`, `maintain`, `deploy`, `governance`, `issues` or `dsl`
+  with `sdlc setup --with <part>`. `dsl` keeps a validated, domain-neutral model of state machines, rules and
+  workflows in `domain/`, and every later spec must say what it changes there; `--with all` installs every part
+  but `dsl`.
 - **Your own terminal:** `sdlc` is on PATH only inside Claude Code. `sdlc where` prints the command to run there.
 - **Without `.aiops/`:** the gates are dormant, but the safety guards are always on.
 

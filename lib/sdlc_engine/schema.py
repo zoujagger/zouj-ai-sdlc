@@ -7,6 +7,8 @@ from .machine import SCHEMAS, read
 
 PLACEHOLDER_RE = re.compile(r"^\s*(?:- )?<[^<>\n]{3,}>\s*$", re.M)
 HEX_RE = re.compile(r"^[0-9a-f]{7,40}$")
+DSL_FILE_RE = re.compile(r"\bdomain/[A-Za-z0-9][A-Za-z0-9_.-]*\.dsl\.json\b")
+NO_DOMAIN_RE = re.compile(r"(?m)^\s*(?:[-*]\s+)?No domain changes\b")
 WARN_ACS = 5  # more ACs than this: the scope may be an epic (warning)
 MAX_ACS = 8  # more than this while the spec's gate is closed: an error, so it must be split before approval
 
@@ -83,10 +85,7 @@ def _scope_size(d, a, secs, text):
     """Distinct AC ids in `## Acceptance criteria`: above WARN_ACS a warning; above MAX_ACS an error while the gate is
     closed (judged on `text`, as machine.gate() judges the file), so approved history only warns (0011)."""
     n = len(A.ac_ids(secs.get("Acceptance criteria", "")))
-    gate_open = a.get("status") == SCHEMAS["spec"]["gate"] and a.get("approved-sha256") == A.approval_hash(
-        "spec", text
-    )
-    if n > MAX_ACS and not gate_open:
+    if n > MAX_ACS and not _gate_open("spec", a, text):
         return [
             f"Spec exceeds maximum of {MAX_ACS} acceptance criteria; consolidate behavioral outcomes or split into "
             f"smaller intents. (spec.md has {n}.)"
@@ -99,10 +98,37 @@ def _scope_size(d, a, secs, text):
     return [], []
 
 
+def _gate_open(kind, a, text):
+    """The gate test of machine.gate() on the text being validated (it may not be on disk yet)."""
+    return a.get("status") == SCHEMAS[kind]["gate"] and a.get("approved-sha256") == A.approval_hash(kind, text)
+
+
+def _domain_dsl(d, a, secs, text):
+    """While the dsl part is active and the spec's gate is closed, `## Domain DSL` names the domain/*.dsl.json files
+    the change adds or edits, or says `No domain changes` (0012 R-6). Approved, unchanged specs are exempt, so turning
+    the part on in a repo with history adds no error to it."""
+    from .lifecycle import dsl_active
+
+    if not dsl_active(d.parent.parent) or _gate_open("spec", a, text):
+        return []
+    forms = (
+        "name the domain/<name>.dsl.json files this change adds or edits (model first: the Data model and API "
+        "contracts follow from it), or write `No domain changes` with a reason for a purely technical or UI change"
+    )
+    if "Domain DSL" not in secs:
+        return [f"`## Domain DSL` is missing; it is required while the dsl part is active (domain/ exists or "
+                f"install-state names dsl): {forms}"]
+    body = A.COMMENT_RE.sub("", secs["Domain DSL"])
+    if NO_DOMAIN_RE.search(body) or DSL_FILE_RE.search(body):
+        return []
+    return [f"`## Domain DSL` doesn't say what changes in the domain model: {forms}"]
+
+
 CHECKS = {
     "has_acceptance_criteria": _has_acs,
     "has_steps": _has_steps,
     "covers_spec_acs": _covers_spec_acs,
     "valid_verdict": _valid_verdict,
     "scope_size": _scope_size,
+    "domain_dsl": _domain_dsl,
 }

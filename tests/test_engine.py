@@ -1,5 +1,6 @@
 """State engine: parsing, derived states, approvals, staleness, CI audit."""
 
+import json
 import unittest
 
 from helpers import INTENT, PLAN, REVIEW, SPEC, RepoCase, git
@@ -750,6 +751,74 @@ class ScopeSizing(RepoCase):
         for spec in specs:
             errors, _ = validate(spec.parent, "spec")
             self.assertFalse([e for e in errors if "exceeds maximum" in e], spec)
+
+
+class DomainDsl(RepoCase):
+    """0012 S4 (AC-4): `## Domain DSL` is required in spec.md while the dsl part is active (install-state names dsl,
+    or domain/ exists) and the spec's gate is closed."""
+
+    def spec(self, body=None):
+        text = SPEC.format(id="0001")
+        if body is not None:
+            text = text.replace("## Data model", f"## Domain DSL\n{body}\n\n## Data model")
+        return text
+
+    def errors(self, text):
+        self.write("spec", text)
+        return [e for e in validate(self.d, "spec")[0] if "Domain DSL" in e]
+
+    def activate_by_state(self, parts=("dsl",)):
+        state = {"schema": 1, "files": {}}
+        if parts is not None:
+            state["parts"] = list(parts)
+        (self.root / ".aiops" / "install-state.json").write_text(json.dumps(state))
+
+    def test_inactive_needs_no_section(self):
+        self.assertEqual(self.errors(self.spec()), [])
+
+    def test_active_by_install_state(self):
+        self.activate_by_state()
+        errors = self.errors(self.spec())
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("dsl part is active", errors[0])
+        self.assertIn("No domain changes", errors[0])
+
+    def test_active_by_domain_dir(self):
+        (self.root / "domain").mkdir()
+        self.assertEqual(len(self.errors(self.spec())), 1)
+
+    def test_accepted_bodies(self):
+        (self.root / "domain").mkdir()
+        for body in (
+            "No domain changes",
+            "No domain changes: CSS only.",
+            "- No domain changes (a logging change)",
+            "Adds the `shipped` state to domain/order.dsl.json and rule R4 to domain/limits.dsl.json.",
+        ):
+            self.assertEqual(self.errors(self.spec(body)), [], body)
+
+    def test_rejected_bodies(self):
+        (self.root / "domain").mkdir()
+        for body in ("", "<!-- domain/order.dsl.json -->", "We change the order flow.", "see domain/README.md"):
+            errors = self.errors(self.spec(body))
+            self.assertEqual(len(errors), 1, body)
+            self.assertIn("domain/<name>.dsl.json", errors[0])
+            self.assertIn("No domain changes", errors[0])
+
+    def test_legacy_state_is_not_active(self):
+        self.activate_by_state(parts=None)  # no `parts` key: every legacy part, never dsl
+        self.assertEqual(self.errors(self.spec()), [])
+
+    def test_approved_spec_keeps_its_gate(self):
+        self.write("intent", INTENT)
+        self.approve("intent")
+        self.write("spec", self.spec())
+        self.approve("spec")
+        (self.root / "domain").mkdir()
+        self.assertTrue(approvals.gate(self.d, "spec")[0])
+        self.assertEqual([e for e in validate(self.d, "spec")[0] if "Domain DSL" in e], [])  # approved: exempt
+        text = (self.d / "spec.md").read_text() + "\nedited\n"
+        self.assertEqual(len(self.errors(text)), 1)  # edited after approval: the gate is closed again
 
 
 class OpenQuestions(RepoCase):

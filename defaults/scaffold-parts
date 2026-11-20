@@ -1,6 +1,6 @@
 # Which part of the scaffold each file under templates/scaffold/ belongs to: `<part> <glob>` (bash glob syntax, `*`
 # crosses `/`, relative to the repo root). `core` is always installed; the others are opt-in:
-#   sdlc setup --with review,maintain,deploy,governance,issues   (or --with all)
+#   sdlc setup --with review,maintain,deploy,governance,issues,dsl   (`--with all` is every part but dsl)
 # Every scaffold file must match exactly one line (tests/test_lifecycle.py::Parts). A path that matches no line
 # counts as core at run time, so a new file is never silently left out.
 
@@ -42,3 +42,7 @@ governance .github/dependabot.yml
 # issues: issue forms and automated triage
 issues .github/ISSUE_TEMPLATE/*
 issues .github/workflows/claude-issue-triage.yml
+
+# dsl: a validated, domain-neutral model in domain/*.dsl.json (0012); never through `all` or a fallback
+dsl domain/*
+dsl scripts/validate-dsl.py

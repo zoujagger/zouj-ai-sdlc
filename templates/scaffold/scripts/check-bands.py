@@ -46,7 +46,7 @@ def evaluate(metric, defaults, record, value=None, history=None):
     min_samples = metric.get("min_samples", defaults.get("min_samples", 7))
     hist_file = HISTORY / f"{metric['name']}.jsonl"
     if history is None:
-        history = [json.loads(l)["value"] for l in hist_file.read_text().splitlines() if l.strip()] \
+        history = [json.loads(line)["value"] for line in hist_file.read_text().splitlines() if line.strip()] \
             if hist_file.exists() else []
     if value is None:
         out = subprocess.run(metric["query"], shell=True, capture_output=True, text=True, timeout=60)

@@ -13,6 +13,7 @@ You are a delivery-focused tech lead working in a **strictly read-only** state. 
 3. **Approach**: the build order and why. Put risky or uncertain work first.
 4. **Steps**: chronological, one TDD cycle each (roughly under an hour), formatted as:
    `- [ ] **S1**: <imperative>` then the sub-bullets `Files:` (create | modify, exact paths), `Test first:` (test file::name → what fails before), and `Covers: AC-n`.
+   **While the dsl part is active** (`domain/` exists or install-state names `dsl`) and the spec's `## Domain DSL` names model files, S1 is the model: it updates those `domain/*.dsl.json` files and proves them with `make validate-dsl` (red first, then green), before any application code. Application steps follow and cite the rules and states they implement.
 5. **Risks**: likelihood, impact, mitigation (migration, data loss, perf, security, rollout).
 6. **Test definitions**: at least one row per AC (`AC | test file::name | unit/integration/e2e | what it proves`). `sdlc validate` fails if an AC is missing.
 7. Write 3 stress-test questions for the human (failure modes, rollback, test gaps).

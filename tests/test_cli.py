@@ -247,6 +247,22 @@ class Lifecycle(RepoCase):
             self.assertEqual(r.returncode, code, r.stdout)
             self.assertIn(line, r.stdout)
 
+    def test_draft_spec_adds_domain_dsl_when_active(self):
+        """0012 S4 (AC-4): while the dsl part is active, the spec draft has `## Domain DSL` before `## Data model`."""
+        self.write("intent", INTENT)
+        self.assertEqual(self.run_sdlc("approve", "1", "intent").returncode, 0)
+        self.assertEqual(self.run_sdlc("draft", "0001", "spec").returncode, 0)
+        self.assertNotIn("## Domain DSL", (self.d / "spec.md").read_text())  # inactive: the template as it is
+        (self.d / "spec.md").unlink()
+        (self.root / "domain").mkdir()
+        self.assertEqual(self.run_sdlc("draft", "0001", "spec").returncode, 0)
+        text = (self.d / "spec.md").read_text()
+        self.assertIn("## Domain DSL", text)
+        self.assertLess(text.index("## Domain DSL"), text.index("## Data model"))
+        self.assertLess(text.index("## API contracts"), text.index("## Security"))  # the rest keeps its order
+        r = self.run_sdlc("validate", "0001")
+        self.assertIn("Domain DSL", r.stdout)  # the placeholder doesn't satisfy the check
+
     def test_validate_rejects_empty_base(self):
         self.write("intent", INTENT)
         for args in (["--base", ""], ["--base"]):
@@ -482,9 +498,11 @@ class InitParts(RepoCase):
         self.assertEqual(self.parts(), ["deploy", "maintain", "review"])  # --with only adds
 
     def test_with_all(self):
-        self.init("--with", "all")
-        self.assertEqual(self.files() - self.base, set(self.lc.scaffold_paths()) | {STATE, ".gitignore"})
-        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+        self.init("--with", "all")  # every part but dsl (0012)
+        self.assertEqual(
+            self.files() - self.base, set(self.lc.scaffold_paths(self.lc.LEGACY_PARTS)) | {STATE, ".gitignore"}
+        )
+        self.assertEqual(self.parts(), sorted(self.lc.LEGACY_PARTS))
 
     def test_unknown_part_refused_before_writing(self):
         for value in ("bogus", "maintain,bogus", "core"):
@@ -508,8 +526,8 @@ class InitParts(RepoCase):
         (self.root / ".aiops").mkdir()  # initialized before install-state
         (self.root / ".aiops" / "config.json").write_text('{"approval_key_policy": "any"}')
         self.init()
-        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())
-        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+        self.assertTrue(set(self.lc.scaffold_paths(self.lc.LEGACY_PARTS)) <= self.files())
+        self.assertEqual(self.parts(), sorted(self.lc.LEGACY_PARTS))  # never dsl (0012)
 
     def test_template_config_with_full_scaffold_gets_every_part(self):
         self.init("--with", "all")
@@ -517,8 +535,8 @@ class InitParts(RepoCase):
         (self.root / "ops" / "bands.yaml").unlink()
         (self.root / ".github" / "workflows" / "deploy.yml").unlink()
         self.init()
-        self.assertTrue(set(self.lc.scaffold_paths()) <= self.files())  # both restored: every part counts
-        self.assertEqual(self.parts(), sorted(self.lc.PARTS))
+        self.assertTrue(set(self.lc.scaffold_paths(self.lc.LEGACY_PARTS)) <= self.files())  # both restored
+        self.assertEqual(self.parts(), sorted(self.lc.LEGACY_PARTS))  # every part but dsl (0012)
 
     def test_rerun_after_partial_core_setup_stays_core(self):
         self.init()
@@ -988,6 +1006,27 @@ class Docs(unittest.TestCase):
         self.assertIn("`scope_size`", self.text("docs/state-machine.md"))
         unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
         self.assertIn(".aiops/0011-scope-sizing/", unreleased)
+
+    def test_dsl_guidance(self):
+        """0012 S5 (AC-5): the dsl part's rules ship in the skills, agents and docs."""
+        for rel in ("skills/spec/SKILL.md", "agents/architect.md"):
+            text = self.text(rel)
+            self.assertIn("## Domain DSL", text, rel)
+            self.assertIn("dsl part is active", text, rel)
+            self.assertRegex(text, r"before (?:the )?Data model", rel)
+        for rel in ("skills/plan/SKILL.md", "agents/planner.md"):
+            text = self.text(rel)
+            self.assertIn("dsl part is active", text, rel)
+            self.assertIn("make validate-dsl", text, rel)
+            self.assertRegex(text, r"\bS1\b.*domain/", rel)
+        for rel in ("skills/setup/SKILL.md", "skills/init/SKILL.md", "README.md", "templates/scaffold/.aiops/README.md"):
+            text = self.text(rel)
+            self.assertIn("`dsl`", text, rel)
+            self.assertRegex(text, r"`--with all`[^.]*(?:but|leaves out|without)[^.]*`dsl`", rel)
+        self.assertIn("`domain_dsl`", self.text("docs/state-machine.md"))
+        self.assertIn("only add", self.text("docs/architecture.md"))
+        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        self.assertIn(".aiops/0012-dsl-part/", unreleased)
 
     def test_setup_skill_asks_for_the_command(self):
         """0007 S18 (R-21): the skill reads the hook's reminder first; with none, it asks for the typed command."""
