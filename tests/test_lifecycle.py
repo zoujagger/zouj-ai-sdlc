@@ -453,7 +453,7 @@ class Detected(RepoCase):
         old_wired = cli.wire(old, self.RECIPES)[0].encode()
         (self.root / "Makefile").write_bytes(old_wired)
         st = self.state()
-        st["files"]["Makefile"].update(sha256=hashlib.sha256(old_wired).hexdigest(), version="0.2.0-beta.2")
+        st["files"]["Makefile"].update(sha256=hashlib.sha256(old_wired).hexdigest(), version="0.2.0-beta.1")
         self.save(st)
         self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "stale")
         r = self.run_sdlc("upgrade", "--yes")

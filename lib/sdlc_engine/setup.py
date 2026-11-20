@@ -645,6 +645,30 @@ def human_steps(root, profile, pending, review=()):
         print(f"  {i}. {step}")
 
 
+def makefile_dsl_step(root):
+    """The step for a Makefile that setup doesn't change (the human's own) while the dsl part is installed and the
+    Makefile has no validate-dsl target (0012 R-5): the template's target and the `check` change, to copy. "" if none."""
+    from . import lifecycle
+
+    st = lifecycle.load(root)
+    parts = st.get("parts") if isinstance(st, dict) else None
+    mk = root / "Makefile"
+    if not (isinstance(parts, list) and "dsl" in parts) or mk.is_symlink() or not mk.is_file():
+        return ""
+    try:
+        if re.search(r"(?m)^validate-dsl\s*:", mk.read_text(errors="replace")):
+            return ""
+    except OSError:
+        return ""
+    template = cli.rendered_template("Makefile").decode()
+    block = "\n" + template.split("\nvalidate-dsl:", 1)[1].split("\n\n", 1)[0]
+    target = ("validate-dsl:" + block).replace("\n", "\n       ")
+    return (
+        "Add the dsl part's check to your Makefile (setup doesn't change a Makefile you edited): this target, and "
+        "add validate-dsl to `check` (check: lint typecheck test validate-dsl):\n       " + target
+    )
+
+
 def steps_for_human(root, profile, pending, review=(), install=True):
     """The human steps as a list. `install=False` leaves out installing the plugin (it is already running: the
     prompt hook's reply)."""
@@ -721,6 +745,9 @@ def steps_for_human(root, profile, pending, review=(), install=True):
             "hold something setup doesn't write; an unexpected key in allowed-signers would let CI trust it):"
             "\n       " + "\n       ".join(review)
         )
+    dsl_step = makefile_dsl_step(root)
+    if dsl_step:
+        steps.append(dsl_step)
     files = sorted(set(uncommitted_scaffold(root)) - set(review))
     if files:  # exactly these paths: never `git add -A`, never the rest of the index
         paths = " ".join(shlex.quote(f) for f in files)

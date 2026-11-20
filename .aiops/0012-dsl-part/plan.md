@@ -97,7 +97,7 @@ Code reused:
     - `defaults/scaffold-history.json` (regenerate).
   - **Test first:** `tests/test_dsl.py` fails: the script doesn't exist.
   - Covers: AC-1, AC-2
-- [ ] **S3**: Run `validate-dsl` from `make check` in the core Makefile template.
+- [x] **S3**: Run `validate-dsl` from `make check` in the core Makefile template.
   - **Files:**
     - `tests/test_dsl.py` (modify): a `MakeCheck` class, skipped without `make`. In a temp dir with the rendered
       template Makefile:
@@ -191,3 +191,4 @@ Code reused:
 | 2026-11-20 | S1 | `parts_line` lists only missing legacy parts and names `dsl` as installed by name, rather than listing `dsl` as missing | Otherwise every repo set up with `--with all` would be told `dsl` is "not installed" forever; `dsl` is a choice of method, not a gap. `CoreOnly::test_list_installed_hides_parts_not_installed` keeps passing unchanged | S1 green commit |
 | 2026-11-20 | S2 | `typecheck` compiles the scaffold scripts with `compile()` instead of `compileall` | `compileall` would write `__pycache__/` into `templates/scaffold/scripts/`, and every file there counts as a scaffold file | S2 green commit |
 | 2026-11-20 | S2 | `templates/scaffold/scripts/check-bands.py` (maintain part, not named in S2): `l` renamed to `line` (ruff E741); `Parts::test_core_is_sixteen_files` counts 22 opt-in files | The first ruff run over the scaffold scripts; fixing its findings in S2 was agreed at the plan review. The count follows the new script | S2 green commit |
+| 2026-11-20 | S3 | The red test `Detected::test_wired_makefile_keeps_recipes_with_validate_dsl` was corrected in the green commit: the older Makefile is recorded as written by `0.2.0-beta.1`, not `0.2.0-beta.2` | `0.2.0-beta.2` is the running plugin's own version, so the file read as `current` and the test could never see `stale`. The rebuilt older template was checked byte-equal to `main`'s | S3 green commit |
