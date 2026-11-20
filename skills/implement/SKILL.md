@@ -14,6 +14,7 @@ Arguments: `$ARGUMENTS` (default: the active intent, first open step).
    1. Mark the step `- [~]` and dispatch a fresh **implementer** subagent with only: the step text, its ACs, its Test definitions row, and the plan's Approach.
    2. When it returns, check the evidence: the red output is quoted, `make check` is green, the step is `[x]`, there's a commit with `Red:`/`Green:` lines, and any deviations are logged.
    3. If the evidence is missing, send the implementer back. If `make check` fails, iterate. Keep going until it's green.
+   4. **Model first (the `dsl` part).** If the dsl part is active (a `domain/*.dsl.json` file exists, or install-state names `dsl`) and the spec's `## Domain DSL` names model files, the model comes before application code: no step that changes application code starts until those `domain/*.dsl.json` changes are made and `make validate-dsl` is green. Plan S1 normally does this. If application code needs a rule, state or transition the model doesn't declare, add it to the model first (and log a deviation); never hardcode it in a controller, handler or UI component.
 4. **Escalate only when stuck.** Ask the human only for an unresolvable engine error (toolchain broken, environment missing, contradictory spec) or when the Steps must change (that voids the approval, so ask for `Plan Approved NNNN` again).
 5. **Finish.** When every step is `[x]` and `make check` is green, run `sdlc status` (it shows state 5), then continue straight to `/zouj-ai-sdlc:review`.
 

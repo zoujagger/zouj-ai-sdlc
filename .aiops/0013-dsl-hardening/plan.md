@@ -93,7 +93,7 @@ Code reused:
   - **Test first:** the timing test fails today. The 0012 review measured 1.2 s for 20,000 states, which projects
     to about 19 s for 80,000.
   - Covers: AC-3
-- [ ] **S5**: Write the implement and review guidance and correct the activation wording in the docs.
+- [x] **S5**: Write the implement and review guidance and correct the activation wording in the docs.
   - **Files:**
     - `tests/test_cli.py` (modify): `Docs::test_dsl_hardening_guidance` checks:
       - `skills/implement/SKILL.md` and `agents/implementer.md`: "dsl part is active", `make validate-dsl`, and
@@ -145,3 +145,4 @@ Code reused:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-20 | S5 | `README.md` and `templates/scaffold/.aiops/README.md` are unchanged, though S5 names them | Neither describes activation by `domain/`; both are still in the old-wording scan of `Docs::test_dsl_hardening_guidance`, so a later regression is caught | S5 green commit |
