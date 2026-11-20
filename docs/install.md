@@ -50,7 +50,7 @@ Setup and `init` install the core scaffold:
 - the two workflows the gates need (`aiops-gates.yml`, `ci.yml`).
 
 Nothing in it runs on a schedule or needs a secret. Add the rest by part, now or later, with
-`sdlc setup --with <part>[,<part>…]` (or `--with all`):
+`sdlc setup --with <part>[,<part>…]` (or `--with all`, every part but `dsl`):
 
 | Part | Adds | Needs |
 |---|---|---|
@@ -59,6 +59,7 @@ Nothing in it runs on a schedule or needs a secret. Add the rest by part, now or
 | `deploy` | the deploy workflow and release notes | `make deploy` wired, GitHub Environments |
 | `governance` | policy examples, branch-protection notes, the ADR folder, Dependabot | nothing |
 | `issues` | issue forms and automated triage | the secret, for triage |
+| `dsl` | a validated domain model (`domain/*.dsl.json`, `scripts/validate-dsl.py`, run by `make check`); specs then need `## Domain DSL` ([docs/sdlc.md](sdlc.md#keeping-the-work-reviewable)) | nothing; name it explicitly (`--with all` leaves it out) |
 
 `--with` only adds. A rerun without it keeps the parts you have, and the setup preview names the ones left out.
 

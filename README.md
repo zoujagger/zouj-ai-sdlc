@@ -113,14 +113,20 @@ Everything else (the terminal-only install, the parts table, configuration): [do
 ## How it works
 | State | You run | The agent produces | Leaves the state when |
 |---|---|---|---|
-| 1 BRAINSTORMING | `/zouj-ai-sdlc:intent "<need>"` | a targeted clarification interview → `.aiops/NNNN-slug/intent.md` | you type **`Intent Approved NNNN`** |
-| 2 SPECIFICATION | `/zouj-ai-sdlc:spec` | `spec.md`: requirements, ACs, **DB schema, API contracts, security and data-leak flags** | you type **`Spec Approved NNNN`** |
+| 1 BRAINSTORMING | `/zouj-ai-sdlc:intent "<need>"` | a targeted clarification interview → `.aiops/NNNN-slug/intent.md` (3 to 5 outcomes; it asks you to split anything bigger) | you type **`Intent Approved NNNN`** |
+| 2 SPECIFICATION | `/zouj-ai-sdlc:spec` | `spec.md`: requirements, 3 to 5 ACs, **DB schema, API contracts, security and data-leak flags**, each table and endpoint tagged `[AC-N]` | you type **`Spec Approved NNNN`** |
 | 3 PLAN | `/zouj-ai-sdlc:plan` | `plan.md`: chronological file-by-file steps, risks, test definitions. **Code is read-only** | you type **`Plan Approved NNNN`** |
 | 4 EXECUTION | `/zouj-ai-sdlc:implement` | per step: proof test → see it fail → code → green, on `feat/NNNN-slug`, no questions asked | every step ticked, `make check` green |
 | 5 PRE-REVIEW | `/zouj-ai-sdlc:review` | fresh-context verifier, code-reviewer and security-reviewer → `review.md` (score /100) + `pr.md` | **you** merge (the agent can't) |
 
 `sdlc status` (or `/zouj-ai-sdlc:status`) always shows the state, who it's waiting on, and the exact next step.
 The state is **derived** from the artifacts and git, never stored.
+
+**Small, reviewable specs.** `sdlc validate` warns when a spec has more than 5 ACs and refuses a draft with more than
+8, so an epic gets split before it reaches you. Sections with nothing to change read `None (no changes)`, a flow or a
+new table gets one Mermaid diagram (12 lines at most, checked), and stored data comes with its query patterns,
+indexes and N+1 prevention. With the `dsl` part, the spec starts from the domain model (`## Domain DSL`) and the
+review flags rules hardcoded outside it. Details: [docs/sdlc.md](docs/sdlc.md#keeping-the-work-reviewable).
 
 ## How it differs from prompt-only workflows
 Skill and prompt workflows describe a good process and hope the model follows it. Here the process is enforced:

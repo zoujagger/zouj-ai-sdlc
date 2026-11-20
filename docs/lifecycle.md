@@ -26,7 +26,8 @@ Repos set up by 0.2.0-alpha.1 or alpha.2 have no install-state. The first `upgra
 - Run by Claude, these commands never write a human-owned file (workflows, `.claude/settings.json`,
   `.aiops/config*`, CODEOWNERS) or code under the read-only lock: they print your terminal command instead.
 - A file of a part you didn't install is never `new` or `missing`, and `upgrade` and `repair` never create it.
-- Install-state written before 0.2.0-beta.1 names no parts and reads as every part, as before.
+- Install-state written before 0.2.0-beta.1 names no parts and reads as every part except `dsl`, as before: `upgrade`
+  and `repair` never add `dsl`.
 
 ## Blocked by mistake?
 Every block names its rule (`BLOCKED [G-ENV-03] by guard-bash: …`), and `sdlc why <id>` explains it.
