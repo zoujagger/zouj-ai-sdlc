@@ -212,6 +212,7 @@ class Apply(SetupCase):
         st = json.loads((d / ".aiops" / "install-state.json").read_text())
         self.assertIn("dsl", st["parts"])
         self.assertTrue((d / "domain" / "README.md").is_file())
+        self.assertTrue((d / "scripts" / "validate-dsl.py").is_file())  # S2
         changed = [p for p, data in before.items() if p.exists() and p.read_bytes() != data]
         self.assertEqual([p.relative_to(d).as_posix() for p in changed if p.name != "install-state.json"], [])
 
