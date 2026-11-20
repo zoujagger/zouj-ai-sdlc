@@ -20,7 +20,9 @@ created: YYYY-MM-DD
 - Non-functional: performance · reliability · observability · accessibility
 
 ## Acceptance criteria
-<!-- Testable, with ids. Every AC must appear in plan.md Test definitions and in review.md. -->
+<!-- Testable, with ids. Every AC must appear in plan.md Test definitions and in review.md.
+     3 to 5 user-observable ACs (never more than 7): `sdlc validate` warns above 5 and refuses a Draft spec above 8.
+     Technical detail (codes, validation, logging, schemas) goes in Requirements, Data model, API contracts. -->
 - **AC-1**: Given <context>, when <action>, then <observable outcome>.
 
 ## Data model

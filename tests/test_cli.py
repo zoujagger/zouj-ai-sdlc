@@ -967,6 +967,28 @@ class Docs(unittest.TestCase):
         self.assertNotIn("defaultMode", json.dumps(settings))  # the plugin sets no permission mode
         self.assertNotIn("allow", settings["permissions"])
 
+    def test_scope_sizing_guidance(self):
+        """0011 S2 (AC-5): the scope check before intent.md, the 3-5 caps, and the epic callout ship in the text."""
+        intent = self.text("skills/intent/SKILL.md")
+        step3, step4 = intent.split("\n3. ", 1)[1], intent.split("\n4. ", 1)[1]
+        self.assertIn("Scope check", step3.split("\n4. ", 1)[0])  # before step 4 creates anything
+        self.assertIn("split", step3.split("\n4. ", 1)[0])
+        self.assertIn("3 to 5", step4.split("\n5. ", 1)[0])
+        spec = self.text("skills/spec/SKILL.md")
+        self.assertIn("3 to 5", spec)
+        self.assertRegex(spec, r"more than 5.*warn|warn.*more than 5")
+        self.assertIn("more than 8", spec)
+        analyst = self.text("agents/product-analyst.md")
+        for phrase in ("Intent cap", "Strict cap", "never more than 7", "user-observable", "**Scope:**"):
+            self.assertIn(phrase, analyst)
+        template = self.text("templates/artifacts/intent.md")
+        self.assertIn("3 to 5", template)
+        self.assertIn("**Scope:**", template)
+        self.assertIn("3 to 5", self.text("templates/artifacts/spec.md"))
+        self.assertIn("`scope_size`", self.text("docs/state-machine.md"))
+        unreleased = self.text("CHANGELOG.md").split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        self.assertIn(".aiops/0011-scope-sizing/", unreleased)
+
     def test_setup_skill_asks_for_the_command(self):
         """0007 S18 (R-21): the skill reads the hook's reminder first; with none, it asks for the typed command."""
         skill = self.text("skills/setup/SKILL.md")
@@ -1134,7 +1156,8 @@ class Docs(unittest.TestCase):
             self.assertIn(piece, beta1, piece)
         unreleased = log.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
         self.assertNotIn("Planned as", unreleased)  # nothing is left waiting there
-        self.assertNotIn("### ", unreleased)  # 0010: everything moved into the release
+        # 0010 also asserted no `### ` here, which held only at its release commit: between releases `[Unreleased]`
+        # collects the next entries (0011), and the section checks above prove what moved into the release.
         self.assertIn(f"[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{version}...HEAD", log)
         readme = self.text("README.md")
         self.assertEqual(set(re.findall(r"0\.2\.0-(?:alpha|beta|rc)\.\d+", readme.split("\n## Lifecycle", 1)[0])), {version})

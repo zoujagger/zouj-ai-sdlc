@@ -67,3 +67,4 @@ the upstream artifact (`requires`), and the cross-checks:
 | `has_steps` | plan `## Steps` contains checkboxes |
 | `covers_spec_acs` | plan and review reference every spec AC id |
 | `valid_verdict` | review `verdict` is PASS or CHANGES_REQUESTED, and `commit` is a sha |
+| `scope_size` | spec `## Acceptance criteria`: more than 5 distinct AC ids warns; more than 8 is an error while the spec's gate is closed (approved specs only warn) |

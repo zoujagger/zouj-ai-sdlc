@@ -74,7 +74,7 @@ test in S1 so CI guards `.aiops/`; keep the direct fixture and add the approve-t
   - **Test first:** the new tests fail. The 6-AC test finds no warning, and the 9-AC Draft test finds no error.
     `test_five_or_fewer_is_quiet` and the repo test pass from the start: they guard against false positives.
   - Covers: AC-1, AC-2, AC-3, AC-4
-- [ ] **S2**: Write the sizing advice into the skills, the agent, the templates and the docs.
+- [x] **S2**: Write the sizing advice into the skills, the agent, the templates and the docs.
   - **Files:**
     - `tests/test_cli.py` (modify): `Docs::test_scope_sizing_guidance` asserts that:
       - `skills/intent/SKILL.md` has "Scope check" in step 3, before step 4's `sdlc new`, and "3 to 5" outcomes in
@@ -131,3 +131,4 @@ test in S1 so CI guards `.aiops/`; keep the direct fixture and add the approve-t
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-20 | S2 | `tests/test_cli.py::Docs::test_changelog_has_the_release` (not named in S2) no longer asserts that `[Unreleased]` holds no `### ` heading | 0010 added that assertion for its own release commit; any later CHANGELOG entry, including S2's, fails it. The checks on the beta.2 section still prove what moved into the release | S2 |

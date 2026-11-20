@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Added
+- **Scope sizing** (`.aiops/0011-scope-sizing/`):
+  - `sdlc validate` counts the AC ids in `spec.md`: more than 5 is a warning that suggests splitting the intent,
+    and more than 8 is an error while the spec's gate is closed, so `approve` refuses an oversized Draft spec.
+    Approved specs only warn.
+  - The `intent` skill runs a scope check before creating `intent.md`, and asks you whether to split work that
+    covers several workflows or more than 5 outcomes. The `spec` skill and `product-analyst` aim for 3 to 5
+    user-observable ACs (never more than 7), and flag an oversized intent with a **Scope:** callout.
+
 ## [0.2.0-beta.2] - 2026-11-18
 
 > **Beta.** The workflow, the gates and the file formats are settling, but may still change between betas; the
