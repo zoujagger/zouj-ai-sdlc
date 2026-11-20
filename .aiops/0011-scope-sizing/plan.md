@@ -98,7 +98,7 @@ test in S1 so CI guards `.aiops/`; keep the direct fixture and add the approve-t
     - `CHANGELOG.md` (modify): `[Unreleased]` → `### Added` entry naming `.aiops/0011-scope-sizing/`.
   - **Test first:** `test_scope_sizing_guidance` fails on the missing phrases.
   - Covers: AC-5
-- [ ] **S3**: Prove the change.
+- [x] **S3**: Prove the change.
   - **Commands:**
     - `make check`;
     - `make validate`;
@@ -132,3 +132,4 @@ test in S1 so CI guards `.aiops/`; keep the direct fixture and add the approve-t
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-20 | S2 | `tests/test_cli.py::Docs::test_changelog_has_the_release` (not named in S2) no longer asserts that `[Unreleased]` holds no `### ` heading | 0010 added that assertion for its own release commit; any later CHANGELOG entry, including S2's, fails it. The checks on the beta.2 section still prove what moved into the release | S2 |
+| 2026-11-20 | S3 | Results: `make check` 524 OK (3 skipped, at 26968c4); `make validate` passed (one warning, root `CLAUDE.md` not loaded as context, unchanged by this branch); `sdlc validate --all` 0 errors, the scope warning on 0001-0010; `git diff --name-only main...HEAD` lists only S1/S2 files and `.aiops/0011-*`. Eval `intent-first`, 3 runs per arm (`evals/results/2026-11-20T14-33-23-195Z`): with the plugin 1.00 / 0.67 / 1.00 = **0.89**, without 1.00, Δ -0.11, $1.70 | The one miss is with-run 2: `sdlc new` failed with `OSError: [Errno 30] Read-only file system` in the eval sandbox, so no intent.md was written; the agent stopped and reported it rather than working around it. No run stopped at the new scope check (the CSV export fits in 5 outcomes), so the plan's wording risk didn't occur. Runs 1 and 3 were held by the Stop hook (`make check`: "NO TESTS RAN" in the fixture), as on main | S3 |
