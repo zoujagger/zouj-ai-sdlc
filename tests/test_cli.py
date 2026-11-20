@@ -1228,11 +1228,20 @@ class Docs(unittest.TestCase):
         import re
 
         version = json.loads(self.text(".claude-plugin/plugin.json"))["version"]
-        self.assertEqual(version, "0.2.0-beta.2")  # 0010: 0009 stack detection + the README funnel
+        self.assertEqual(version, "0.2.0-beta.3")  # 0015: 0011 scope sizing, 0012-0013 dsl, 0014 specs, PR #29
         log = self.text("CHANGELOG.md")
         section = log.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
-        for piece in (".aiops/0009-stack-detection/", "--stack auto", "README"):
+        for piece in (
+            ".aiops/0011-scope-sizing/",
+            ".aiops/0012-dsl-part/",
+            ".aiops/0013-dsl-hardening/",
+            ".aiops/0014-spec-quality/",
+            "PR #29",
+        ):
             self.assertIn(piece, section, piece)
+        beta2 = log.split("## [0.2.0-beta.2]", 1)[1].split("\n## [", 1)[0]  # 0010's release keeps its checks
+        for piece in (".aiops/0009-stack-detection/", "--stack auto", "README"):
+            self.assertIn(piece, beta2, piece)
         beta1 = log.split("## [0.2.0-beta.1]", 1)[1].split("\n## [", 1)[0]  # 0008's release keeps its checks
         for piece in (
             ".aiops/0005-guard-gaps/",

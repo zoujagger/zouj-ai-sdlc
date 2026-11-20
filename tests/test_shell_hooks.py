@@ -600,7 +600,7 @@ class ShellHooks(RepoCase):
         import re
 
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
-        self.assertEqual(version, "0.2.0-beta.2")  # 0009 stack detection + the README funnel (0010)
+        self.assertEqual(version, "0.2.0-beta.3")  # 0011-0014 and the docs audit (0015)
         log = (ROOT / "CHANGELOG.md").read_text()
         released = re.findall(r"^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]", log, re.M)
         self.assertEqual(released[0], version, "the newest CHANGELOG release must match plugin.json")
