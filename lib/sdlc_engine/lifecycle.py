@@ -108,6 +108,17 @@ LEGACY_PARTS = ("review", "maintain", "deploy", "governance", "issues")
 PARTS_FILE = PLUGIN_ROOT / "defaults" / "scaffold-parts"
 
 
+def dsl_active(root):
+    """True when the dsl part is active in root (0012 R-6): install-state's `parts` list names `dsl`, or `domain/` is a
+    directory (CI ignores install-state but sees domain/). Only an explicit entry counts: the legacy "every part"
+    fallbacks never mean dsl. It can only add the spec's `## Domain DSL` requirement, never lift a check."""
+    if (root / "domain").is_dir():
+        return True
+    st = load(root)
+    parts = st.get("parts") if st else None
+    return isinstance(parts, list) and "dsl" in parts
+
+
 def part_rules():
     """[(part, glob)] from defaults/scaffold-parts: the part each scaffold file belongs to."""
     out = []

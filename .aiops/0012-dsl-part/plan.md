@@ -115,7 +115,7 @@ Code reused:
     - `defaults/scaffold-history.json` (regenerate).
   - **Test first:** `make check` with an invalid `domain/` passes today, because the template has no such target.
   - Covers: AC-3
-- [ ] **S4**: Require `## Domain DSL` in spec.md while the part is active, and put it in the spec draft.
+- [x] **S4**: Require `## Domain DSL` in spec.md while the part is active, and put it in the spec draft.
   - **Files:**
     - `tests/test_engine.py` (modify): a `DomainDsl(RepoCase)` class:
       - `test_inactive_needs_no_section`;
@@ -192,3 +192,5 @@ Code reused:
 | 2026-11-20 | S2 | `typecheck` compiles the scaffold scripts with `compile()` instead of `compileall` | `compileall` would write `__pycache__/` into `templates/scaffold/scripts/`, and every file there counts as a scaffold file | S2 green commit |
 | 2026-11-20 | S2 | `templates/scaffold/scripts/check-bands.py` (maintain part, not named in S2): `l` renamed to `line` (ruff E741); `Parts::test_core_is_sixteen_files` counts 22 opt-in files | The first ruff run over the scaffold scripts; fixing its findings in S2 was agreed at the plan review. The count follows the new script | S2 green commit |
 | 2026-11-20 | S3 | The red test `Detected::test_wired_makefile_keeps_recipes_with_validate_dsl` was corrected in the green commit: the older Makefile is recorded as written by `0.2.0-beta.1`, not `0.2.0-beta.2` | `0.2.0-beta.2` is the running plugin's own version, so the file read as `current` and the test could never see `stale`. The rebuilt older template was checked byte-equal to `main`'s | S3 green commit |
+| 2026-11-20 | S4 | `domain_dsl` applies only while the spec's gate is closed: an approved, unchanged spec is exempt (spec R-6 required the section of every spec while the part is active). `test_approved_spec_keeps_its_gate` asserts the exemption, and that an edit after approval brings the requirement back | As written, R-6 would turn `sdlc validate --all --ci` red for every earlier approved spec of a repo that adds `dsl` after it has history. This follows 0011's `scope_size` precedent. **Needs the human's confirmation at review** | S4 green commit |
+| 2026-11-20 | S4 | The gate test shared by `scope_size` and `domain_dsl` is extracted as `schema._gate_open` | Two checks now need it (0011 review backlog item 3) | S4 green commit |
