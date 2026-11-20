@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -181,6 +182,52 @@ class ValidateDsl(unittest.TestCase):
         r = self.run_it("model")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("validate-dsl: 1 model(s) ok", r.stdout)
+
+
+@unittest.skipUnless(shutil.which("make"), "make not installed")
+class MakeCheck(unittest.TestCase):
+    """0012 S3 (AC-3): the scaffold Makefile's `check` runs validate-dsl, dormant without domain/."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        shutil.copy(ROOT / "templates" / "scaffold" / "Makefile", self.root / "Makefile")
+
+    def with_script(self):
+        (self.root / "scripts").mkdir()
+        shutil.copy(SCRIPT, self.root / "scripts" / "validate-dsl.py")
+
+    def check(self):
+        env = {**os.environ, "PYTHON": sys.executable}
+        return subprocess.run(["make", "check"], cwd=self.root, capture_output=True, text=True, env=env, timeout=60)
+
+    def test_no_domain_passes(self):
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("[validate-dsl] no domain/ - skipped", r.stdout)
+
+    def test_valid_domain_passes(self):
+        self.with_script()
+        (self.root / "domain").mkdir()
+        (self.root / "domain" / "limits.dsl.json").write_text(json.dumps(RULES))
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("validate-dsl: 1 model(s) ok", r.stdout)
+
+    def test_invalid_domain_fails(self):
+        self.with_script()
+        (self.root / "domain").mkdir()
+        (self.root / "domain" / "limits.dsl.json").write_text(json.dumps({**RULES, "rules": []}))
+        r = self.check()
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("$.rules: expected a non-empty list", r.stdout)
+
+    def test_domain_without_script_fails_and_says_how(self):
+        (self.root / "domain").mkdir()
+        r = self.check()
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("sdlc setup --with dsl", r.stdout + r.stderr)
 
 
 if __name__ == "__main__":

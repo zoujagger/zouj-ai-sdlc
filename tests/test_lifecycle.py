@@ -437,6 +437,33 @@ class Detected(RepoCase):
         self.run_sdlc("repair", "--yes")
         self.assertFalse((self.root / "Makefile").exists())  # never restored from a recipe that fails the check
 
+    def test_wired_makefile_keeps_recipes_with_validate_dsl(self):
+        """0012 S3 (AC-3): a Makefile wired from the template before validate-dsl is upgraded to the new template with
+        its recipes, and gains the target."""
+        import hashlib
+
+        from sdlc_engine import cli
+
+        new = cli.rendered_template("Makefile").decode()
+        self.assertIn("\nvalidate-dsl: ", new)
+        self.assertIn("check: lint typecheck test validate-dsl ", new)
+        old = new.replace(" validate-dsl ##", " ##").replace(" check deploy rollback validate-dsl", " check deploy rollback")
+        old = old.split("\nvalidate-dsl: ", 1)[0] + "\n" + old.split("\nvalidate-dsl: ", 1)[1].split("\n\n", 1)[1]
+        self.assertNotIn("validate-dsl", old)
+        old_wired = cli.wire(old, self.RECIPES)[0].encode()
+        (self.root / "Makefile").write_bytes(old_wired)
+        st = self.state()
+        st["files"]["Makefile"].update(sha256=hashlib.sha256(old_wired).hexdigest(), version="0.2.0-beta.2")
+        self.save(st)
+        self.assertEqual(self.rows(self.run_sdlc("list-installed").stdout)["Makefile"], "stale")
+        r = self.run_sdlc("upgrade", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        after = (self.root / "Makefile").read_bytes()
+        self.assertEqual(after, self.wired)
+        for cmd in self.RECIPES.values():
+            self.assertIn(cmd.encode(), after)
+        self.assertIn(b"check: lint typecheck test validate-dsl", after)
+
     def test_beta1_state_unchanged(self):
         shutil.rmtree(self.root / ".aiops")
         (self.root / "Makefile").unlink()

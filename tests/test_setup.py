@@ -216,6 +216,17 @@ class Apply(SetupCase):
         changed = [p for p, data in before.items() if p.exists() and p.read_bytes() != data]
         self.assertEqual([p.relative_to(d).as_posix() for p in changed if p.name != "install-state.json"], [])
 
+    def test_with_dsl_on_an_edited_makefile_prints_the_step(self):
+        """0012 S3: a Makefile the human edited is never changed; the target and the check line become a step."""
+        d = self.fresh_repo("dslmake")
+        (d / "Makefile").write_text("check:\n\techo mine\n")
+        r = self.sdlc_in(d, "setup", "--profile", "solo", "--with", "dsl", "--yes")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((d / "Makefile").read_text(), "check:\n\techo mine\n")
+        self.assertIn("validate-dsl:", r.stdout)
+        self.assertIn("python3 scripts/validate-dsl.py", r.stdout)
+        self.assertIn("add validate-dsl to `check`", r.stdout)
+
     def test_with_all_leaves_dsl_out(self):
         d = self.fresh_repo("all")
         r = self.sdlc_in(d, "setup", "--profile", "solo", "--with", "all", "--yes")
