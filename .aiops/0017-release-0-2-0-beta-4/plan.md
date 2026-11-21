@@ -45,7 +45,7 @@ tests already search everything newer than their release, so they hold after the
       entry equal to beta.3's (R-3).
   - **Test first:** both tests fail on the version (`0.2.0-beta.3` != `0.2.0-beta.4`).
   - Covers: AC-1, AC-2, AC-3, AC-4
-- [ ] **S2**: Prove the change.
+- [x] **S2**: Prove the change.
   - **Commands:**
     - `make check`;
     - `make validate`;
@@ -77,3 +77,4 @@ tests already search everything newer than their release, so they hold after the
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-21 | S2 | Results: `make check` OK (576 tests, 3 skipped) on the S1 content (1433876); `make validate` passed with the two existing warnings (root `CLAUDE.md`, no plugin icon); `scaffold-history.py --check` up to date; the `0.2.0-beta.4` history entry equals beta.3's, the released entries equal main's, no `unreleased` key; the CHANGELOG diff adds only the heading, banner, lead line and links (the 0016 entry is unchanged); `git diff --name-only main...HEAD` lists only S1's files and `.aiops/0017-*` | The verification itself; no deviation from the plan | 1433876 |
