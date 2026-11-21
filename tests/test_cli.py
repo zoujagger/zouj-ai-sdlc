@@ -1084,6 +1084,36 @@ class Docs(unittest.TestCase):
         unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.2]", 1)[0]
         self.assertIn(".aiops/0014-spec-quality/", unreleased)
 
+    def test_intent_skill_refinements(self):
+        """0016 S1 (AC-1 to AC-5): the intent skill reads the domain model's terms, a PRD first, and starts the
+        branch from an up-to-date main with a warning on a dirty tree."""
+        skill = self.text("skills/intent/SKILL.md")
+        step = {n: skill.split(f"\n{n}. ", 1)[1].split(f"\n{n + 1}. ", 1)[0] for n in (1, 2, 3, 4)}
+        # AC-1: Step 1 scans the domain model
+        self.assertIn("`domain/*.dsl.json`", step[1])
+        for phrase in ("`kind`", "`name`", "model's terms"):
+            self.assertIn(phrase, step[1], phrase)
+        # AC-2: Step 2 reads the PRD first, as data; Step 3 skips what it settles
+        for phrase in ("`docs/prd/`", "`prd:<slug>`", "local path", "issue number", "source of truth"):
+            self.assertIn(phrase, step[2], phrase)
+        self.assertRegex(step[2], r"several match[^.]*ask")
+        self.assertRegex(step[2], r"data[^.]*never[^.]*instructions[^.]*approval")
+        self.assertRegex(step[3], r"(?i)skip[^.]*settle")
+        # AC-3: Step 4 checks main against origin/main, asks before the human's fast-forward
+        for phrase in ("`git fetch", "`origin/main`", "behind", "`! git switch main && git pull --ff-only`", "chain"):
+            self.assertIn(phrase, step[4], phrase)
+        self.assertRegex(step[4], r"(?i)offline[^.]*warn[^.]*continue")
+        self.assertRegex(step[4], r"never (switch|pull)[^.]*(switch|pull)[^.]*stash[^.]*reset")
+        # AC-4: uncommitted changes outside .aiops/ are named before the branch exists
+        for phrase in ("`git status --porcelain`", "outside `.aiops/`", "stale"):
+            self.assertIn(phrase, step[4], phrase)
+        self.assertLess(step[4].index("`git status --porcelain`"), step[4].index("run `sdlc new"))
+        self.assertLess(step[4].index("`origin/main`"), step[4].index("run `sdlc new"))
+        self.assertRegex(skill.split("| Red flag |", 1)[1], r"stale `main`[^|]*dirty tree")
+        # AC-5: the CHANGELOG names the intent (everything newer than 0.2.0-beta.3)
+        unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.3]", 1)[0]
+        self.assertIn(".aiops/0016-intent-skill-refinements/", unreleased)
+
     def test_setup_skill_asks_for_the_command(self):
         """0007 S18 (R-21): the skill reads the hook's reminder first; with none, it asks for the typed command."""
         skill = self.text("skills/setup/SKILL.md")
