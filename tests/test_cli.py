@@ -1262,9 +1262,11 @@ class Docs(unittest.TestCase):
         import re
 
         version = json.loads(self.text(".claude-plugin/plugin.json"))["version"]
-        self.assertEqual(version, "0.2.0-beta.3")  # 0015: 0011 scope sizing, 0012-0013 dsl, 0014 specs, PR #29
+        self.assertEqual(version, "0.2.0-beta.4")  # 0017: 0016 the intent skill
         log = self.text("CHANGELOG.md")
         section = log.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
+        self.assertIn(".aiops/0016-intent-skill-refinements/", section)
+        beta3 = log.split("## [0.2.0-beta.3]", 1)[1].split("\n## [", 1)[0]  # 0015's release keeps its checks
         for piece in (
             ".aiops/0011-scope-sizing/",
             ".aiops/0012-dsl-part/",
@@ -1272,7 +1274,7 @@ class Docs(unittest.TestCase):
             ".aiops/0014-spec-quality/",
             "PR #29",
         ):
-            self.assertIn(piece, section, piece)
+            self.assertIn(piece, beta3, piece)
         beta2 = log.split("## [0.2.0-beta.2]", 1)[1].split("\n## [", 1)[0]  # 0010's release keeps its checks
         for piece in (".aiops/0009-stack-detection/", "--stack auto", "README"):
             self.assertIn(piece, beta2, piece)
