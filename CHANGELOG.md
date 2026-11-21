@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Changed
+- **The intent skill starts from what's already known** (`.aiops/0016-intent-skill-refinements/`). Step 1 scans
+  the `domain/*.dsl.json` model's names so the intent uses its terms. Step 2 reads a PRD or ticket first
+  (`prd:<slug>`, a local path under `docs/prd/`, or a `docs/prd/` file matching the slug or issue number) as the
+  source of truth, and Step 3 skips what it settles. Step 4 checks, before `sdlc new`, that the branch starts from
+  an up-to-date `main` (it asks before a fast-forward and leaves it to the human) and warns about uncommitted
+  changes outside `.aiops/` that would make the future review stale.
+
 ## [0.2.0-beta.3] - 2026-11-20
 
 > **Beta.** The workflow, the gates and the file formats are settling, but may still change between betas; the

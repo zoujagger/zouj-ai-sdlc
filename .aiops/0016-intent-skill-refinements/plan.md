@@ -37,7 +37,7 @@ Code reused:
   `transitions[].event`, `rules[].id`, and the workflow's steps).
 
 ## Steps
-- [ ] **S1**: Write the domain-vocabulary, PRD-source and clean-branch guidance into the intent skill.
+- [x] **S1**: Write the domain-vocabulary, PRD-source and clean-branch guidance into the intent skill.
   - **Files:**
     - `tests/test_cli.py` (modify): `Docs::test_intent_skill_refinements` slices the skill by step and checks:
       - Step 1 names `domain/*.dsl.json` and the model's names and terms (AC-1);
@@ -90,3 +90,4 @@ Code reused:
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-21 | S1 | After the red commit (4556d3a), two test fixes: Step 3's `skip…settle` regex became case-insensitive (the sentence starts with "Skip"), and the order checks find `run `sdlc new`` instead of the first `sdlc new` (Step 4's heading names it) | Both were test bugs, not missing guidance; the assertions are unchanged in substance | S1 |

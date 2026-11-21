@@ -1098,7 +1098,7 @@ class Docs(unittest.TestCase):
             self.assertIn(phrase, step[2], phrase)
         self.assertRegex(step[2], r"several match[^.]*ask")
         self.assertRegex(step[2], r"data[^.]*never[^.]*instructions[^.]*approval")
-        self.assertRegex(step[3], r"skip[^.]*settle")
+        self.assertRegex(step[3], r"(?i)skip[^.]*settle")
         # AC-3: Step 4 checks main against origin/main, asks before the human's fast-forward
         for phrase in ("`git fetch", "`origin/main`", "behind", "`! git switch main && git pull --ff-only`", "chain"):
             self.assertIn(phrase, step[4], phrase)
@@ -1107,8 +1107,8 @@ class Docs(unittest.TestCase):
         # AC-4: uncommitted changes outside .aiops/ are named before the branch exists
         for phrase in ("`git status --porcelain`", "outside `.aiops/`", "stale"):
             self.assertIn(phrase, step[4], phrase)
-        self.assertLess(step[4].index("`git status --porcelain`"), step[4].index("`sdlc new"))
-        self.assertLess(step[4].index("`origin/main`"), step[4].index("`sdlc new"))
+        self.assertLess(step[4].index("`git status --porcelain`"), step[4].index("run `sdlc new"))
+        self.assertLess(step[4].index("`origin/main`"), step[4].index("run `sdlc new"))
         self.assertRegex(skill.split("| Red flag |", 1)[1], r"stale `main`[^|]*dirty tree")
         # AC-5: the CHANGELOG names the intent (everything newer than 0.2.0-beta.3)
         unreleased = self.text("CHANGELOG.md").split("\n## [0.2.0-beta.3]", 1)[0]
