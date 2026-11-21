@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.2.0-beta.4] - 2026-11-21
+
+> **Beta.** The workflow, the gates and the file formats are settling, but may still change between betas; the
+> CHANGELOG names every change.
+
+Ships `.aiops/0016-intent-skill-refinements/` (the intent skill starts from what's already known). The playbook
+workflow, the gates, the guards and what CI audits are unchanged.
+
 ### Changed
 - **The intent skill starts from what's already known** (`.aiops/0016-intent-skill-refinements/`). Step 1 scans
   the `domain/*.dsl.json` model's names so the intent uses its terms. Step 2 reads a PRD or ticket first
@@ -600,7 +608,8 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.3...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.4...HEAD
+[0.2.0-beta.4]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.3...v0.2.0-beta.4
 [0.2.0-beta.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [0.2.0-beta.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-alpha.3...v0.2.0-beta.1

@@ -31,7 +31,7 @@ section of `CHANGELOG.md` for the banner wording; `test_changelog_has_the_releas
 tests already search everything newer than their release, so they hold after the release.
 
 ## Steps
-- [ ] **S1**: Bump the release to 0.2.0-beta.4.
+- [x] **S1**: Bump the release to 0.2.0-beta.4.
   - **Files:**
     - `tests/test_shell_hooks.py` (modify): `test_version_matches_changelog` expects `0.2.0-beta.4` (AC-1).
     - `tests/test_cli.py` (modify): `test_changelog_has_the_release` expects `0.2.0-beta.4`; the newest section

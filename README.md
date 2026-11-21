@@ -1,6 +1,6 @@
 # zouj-ai-sdlc
 
-> **Status: beta (0.2.0-beta.3).** The workflow, gates and guards are settling but may still change between betas;
+> **Status: beta (0.2.0-beta.4).** The workflow, gates and guards are settling but may still change between betas;
 > don't rely on it for production governance yet. Feedback welcome.
 
 **Coding agents skip steps.** They write code before anyone agreed on what to build, approve their own plans, and
@@ -52,10 +52,10 @@ Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only), Claude Code ≥ 2.
 
 **A. Guided (recommended).** In Claude Code:
 ```text
-/plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.3
+/plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.4
 /plugin install zouj-ai-sdlc@zouj
 ```
-(From a terminal: `claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.3`, then
+(From a terminal: `claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.4`, then
 `claude plugin install zouj-ai-sdlc@zouj`.)
 
 Then, in your repo, type `/zouj-ai-sdlc:setup solo` (or `team`, `strict`) as your whole prompt. It writes the core
@@ -98,7 +98,7 @@ the plugin to everyone who opens the repo:
 ```json
 {
   "extraKnownMarketplaces": {
-    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0-beta.3" } }
+    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0-beta.4" } }
   },
   "enabledPlugins": { "zouj-ai-sdlc@zouj": true }
 }
