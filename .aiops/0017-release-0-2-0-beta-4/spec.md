@@ -6,16 +6,17 @@ risk: low              # low | medium | high (high: involve the tech lead before
 intent: ./intent.md
 created: 2026-11-21
 approved-by: zoujagger <ulrichjagger@gmail.com>
-approved-at: 2026-11-21T12:08:10Z
+approved-at: 2026-11-21T12:17:04Z
 approved-via: cli
-approved-sha256: 770f1350be2fb3dbf373cebf8008388e3d800a36c86061d15365873f8af953db
+approved-sha256: cefa456788ecd123f9aab44d0c5431df6af8a833abbfc7f6675e158f3e35e5ae
 ---
 
 # Spec: Release 0.2.0-beta.4
 
 <!-- State 2 SPECIFICATION. Business goals from the approved intent.md, translated into engineering
      requirements. Modeled on 0015's spec. The intent's one question (the release date) was accepted with its
-     approval as proposed: the day the PR opens, corrected before the merge if it lands later. -->
+     approval as proposed: the day the PR opens, corrected before the merge if it lands later. Re-drafted after the
+     first spec approval: its AC-5 (the tag exists) could only hold after the merge, so it moved to Rollout. -->
 
 ## Summary
 Intent 0016 (PR #31) is on main but in no release since `v0.2.0-beta.3`. This change bumps the current version to
@@ -71,8 +72,6 @@ Constraints).
 - **AC-4**: Given the change, then `defaults/scaffold-history.json` has a `0.2.0-beta.4` entry equal to the beta.3
   entry and byte-identical released entries; only R-1 to R-5's files and `.aiops/0017-*` changed, and `make check`,
   `claude plugin validate .` and `scaffold-history.py --check` pass.
-- **AC-5**: Given the merged PR, then `v0.2.0-beta.4` points at the merge commit and a GitHub pre-release of that name
-  exists with the CHANGELOG section as notes.
 
 ## Data model
 None (no changes)
@@ -96,7 +95,9 @@ None (no changes)
 - **Not taken:** tagging main as it is (the tree would say beta.3: the human chose this intent instead).
 
 ## Rollout & rollback
-- **Rollout:** one PR; after the human merges it, R-7 (tag, push, pre-release).
+- **Rollout:** one PR; after the human merges it, R-7 (tag, push, pre-release). R-7 has no AC: it can only be
+  true after the merge, while the review must find every AC met before it. Its check is `git rev-parse
+  v0.2.0-beta.4^{commit}` equal to the merge commit and `gh release view v0.2.0-beta.4` showing a pre-release.
 - **Upgrades:** repos on beta.3 move with `sdlc upgrade`; only the pinned ref changes.
 - **Rollback:** revert the PR, and delete the tag and the release if they were published.
 
