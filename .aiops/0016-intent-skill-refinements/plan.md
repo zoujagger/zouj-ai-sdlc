@@ -58,7 +58,7 @@ Code reused:
     - `CHANGELOG.md` (modify): `[Unreleased]` `### Changed`, naming `.aiops/0016-intent-skill-refinements/`.
   - **Test first:** `test_intent_skill_refinements` fails on the missing phrases.
   - Covers: AC-1, AC-2, AC-3, AC-4, AC-5
-- [ ] **S2**: Prove the change.
+- [x] **S2**: Prove the change.
   - **Commands:**
     - `make check` (includes `test_scope_sizing_guidance` and the `test_shell_hooks.py` checks that read the
       intent skill);
@@ -91,3 +91,4 @@ Code reused:
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
 | 2026-11-21 | S1 | After the red commit (4556d3a), two test fixes: Step 3's `skip…settle` regex became case-insensitive (the sentence starts with "Skip"), and the order checks find `run `sdlc new`` instead of the first `sdlc new` (Step 4's heading names it) | Both were test bugs, not missing guidance; the assertions are unchanged in substance | S1 |
+| 2026-11-21 | S2 | Results: `make check` OK (576 tests, 3 skipped) on the S1 content (56737fd); `make validate` passed with two warnings unrelated to this change (the root `CLAUDE.md`, and the plugin has no icon); `sdlc validate --all` 0 errors across 15 intents; `git diff --name-only main...HEAD` lists only `CHANGELOG.md`, `skills/intent/SKILL.md`, `tests/test_cli.py` and `.aiops/0016-*` | The verification itself; no deviation from the plan | S2 |
