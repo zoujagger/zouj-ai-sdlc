@@ -14,6 +14,9 @@ Exempt from the flow: typos and docs-only changes (`*.md`, `docs/`).
 - `make check`: bash syntax, shellcheck and ruff (if installed), JSON validity, byte-compile, and the unit and hook tests.
 - `make validate`: `claude plugin validate .`.
 - `make evals`: behavioural evals (`claude plugin eval`). Run them when you change skills, agents, hooks or schemas.
+- `python3 scripts/scaffold-history.py [--check]`: regenerates (or checks) `defaults/scaffold-history.json`, the hash
+  of every scaffold file in every release, which `sdlc upgrade`/`repair` use to adopt older repos. Run it when you
+  change `templates/scaffold/` or `templates/stacks/`, and at each release.
 
 ## Using AI responsibly
 You're accountable for every line you merge. Never bypass a hook: it says why it blocked you and what to do.
