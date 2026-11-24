@@ -3,6 +3,12 @@
 > **Status: beta (0.2.0-beta.4).** The workflow, gates and guards are settling but may still change between betas;
 > don't rely on it for production governance yet. Feedback welcome.
 
+<p align="center"><img src="docs/demo/demo.gif" alt="Claude blocked before a plan, a human approves each gate, Claude runs TDD" width="900"></p>
+
+**Demo:** Claude is blocked from writing code before a plan exists. The human opens each gate by typing `Intent Approved 0001`,
+`Spec Approved 0001` and `Plan Approved 0001`, and Claude then runs TDD to a green `make check` and a review (the
+recording script is in [docs/demo](docs/demo/)).
+
 **Coding agents skip steps.** They write code before anyone agreed on what to build, approve their own plans, and
 call work done when the tests are red. Instructions in a prompt ask them not to; nothing stops them.
 
@@ -10,12 +16,6 @@ zouj-ai-sdlc is a [Claude Code](https://code.claude.com) plugin that runs your s
 machine over Markdown artifacts versioned in Git**, modeled on Anthropic's *AI-Native SDLC Playbook*. Work starts
 from an intent, every state commits an artifact the next one reads, and **humans decide at every gate**. Hooks
 enforce those gates instead of relying on the model's good behaviour.
-
-<!-- Demo GIF: record it with docs/demo/demo.tape (see docs/demo/README.md), then replace this comment with:
-<p align="center"><img src="docs/demo/demo.gif" alt="Claude blocked before a plan, a human approves, Claude runs TDD" width="900"></p>
--->
-**Demo:** Claude is blocked from writing code before a plan exists, the human types `Plan Approved 0001`, and Claude
-runs TDD to a green `make check` (the recording script is in [docs/demo](docs/demo/)).
 
 ```mermaid
 flowchart TD

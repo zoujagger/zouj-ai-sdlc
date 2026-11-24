@@ -1,0 +1,45 @@
+# Contract targets: the ONLY build interface the zouj-ai-sdlc hooks and CI call.
+# Replace each placeholder recipe with your stack's real command, e.g.:
+#   lint:      npm run lint      | ruff check .        | golangci-lint run
+#   typecheck: npx tsc --noEmit  | mypy .              | go vet ./...
+#   test:      npm test          | pytest -q          | go test ./...
+# A target still printing "not configured" counts as a pass. `sdlc doctor` flags unwired targets.
+# `sdlc setup --stack auto --yes`, run in your own terminal, wires these from the detected stack: Java/Spring Boot,
+# Node, React, Angular, Python, Go (`--stack <name>` forces one). Claude only lists them: they run the repo's scripts.
+
+ENV ?= staging
+
+.DEFAULT_GOAL := help
+.PHONY: help format lint typecheck test build check deploy rollback validate-dsl
+
+help: ## Show available targets
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+format: ## Auto-format the codebase (runs after every edit via hook; keep fast)
+	ruff format .
+
+lint: ## Run static analysis (runs after every edit via hook; keep fast)
+	ruff check .
+
+typecheck: ## Run type checking
+	@if [ -n "$$(git ls-files --cached --others --exclude-standard '*.py')" ]; then mypy .; else echo "[typecheck] no Python files yet"; fi
+
+test: ## Run the test suite
+	pytest -q || [ $$? -eq 5 ]  # 5 = no tests collected yet
+
+build: ## Build artifacts
+	@echo "[build] not configured - edit Makefile"
+
+validate-dsl: ## Validate the domain model in domain/*.dsl.json (the opt-in dsl part; skipped without it)
+	@if [ -f scripts/validate-dsl.py ]; then python3 scripts/validate-dsl.py domain; \
+	else found=; for f in domain/*.dsl.json; do [ -e "$$f" ] && found=1; done; \
+	if [ -n "$$found" ]; then echo "[validate-dsl] domain/*.dsl.json found but scripts/validate-dsl.py is missing: run sdlc setup --with dsl"; exit 1; \
+	else echo "[validate-dsl] no dsl part - skipped"; fi; fi
+
+check: lint typecheck test validate-dsl ## lint + typecheck + test (the Stop hook requires this green)
+
+deploy: ## Deploy to ENV=staging|prod (prod: humans only, enforced by guard-deploy + GitHub Environment)
+	@echo "[deploy] ENV=$(ENV) not configured - edit Makefile"
+
+rollback: ## Roll back ENV=staging|prod in ONE command (pre-approved runbook; test it in staging)
+	@echo "[rollback] ENV=$(ENV) not configured - edit Makefile"
