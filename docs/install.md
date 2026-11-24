@@ -1,6 +1,6 @@
 # Install and configure
 
-The short version is in the [README](../README.md#install). This page has the details: the setup command, the
+The short version is in the [README](../README.md#quick-start). This page has the details: the setup command, the
 install paths, the scaffold parts, the profiles and the per-repo configuration.
 
 Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only), Claude Code ≥ 2.1. `gh` and `jq` are optional. Check your

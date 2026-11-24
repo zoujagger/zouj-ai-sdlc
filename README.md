@@ -6,8 +6,7 @@
 <p align="center"><img src="docs/demo/demo.gif" alt="Claude blocked before a plan, a human approves each gate, Claude runs TDD" width="900"></p>
 
 **Demo:** Claude is blocked from writing code before a plan exists. The human opens each gate by typing `Intent Approved 0001`,
-`Spec Approved 0001` and `Plan Approved 0001`, and Claude then runs TDD to a green `make check` and a review (the
-recording script is in [docs/demo](docs/demo/)).
+`Spec Approved 0001` and `Plan Approved 0001`, and Claude then runs TDD to a green `make check` and a review.
 
 **Coding agents skip steps.** They write code before anyone agreed on what to build, approve their own plans, and
 call work done when the tests are red. Instructions in a prompt ask them not to; nothing stops them.
@@ -32,7 +31,7 @@ Start from what you're doing. Every route runs the same playbook workflow, with 
 
 | You want to… | Run | Playbook stage |
 |---|---|---|
-| Try the workflow first | a throwaway repo: see **Just looking?** under Install | (any, risk-free) |
+| Try the workflow first | a throwaway repo: see **Just looking?** under Quick start | (any, risk-free) |
 | Set up this repo | type `/zouj-ai-sdlc:setup solo` (or `team`, `strict`) | (once per repo, before the loop) |
 | Build a feature or change | `/zouj-ai-sdlc:intent "<need>"` → spec → plan → implement | Plan → Design → Build |
 | Fix a bug | `/zouj-ai-sdlc:fix "<bug>"` (failing test first) | Test |
@@ -47,21 +46,67 @@ Start from what you're doing. Every route runs the same playbook workflow, with 
 All commands: [COMMANDS-QUICK-REF.md](COMMANDS-QUICK-REF.md). Stuck? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) or
 `sdlc feedback`.
 
-## Install
+## Quick start
 Requirements: `git`, `make`, `python3` ≥ 3.9 (stdlib only), Claude Code ≥ 2.1.
 
-**A. Guided (recommended).** In Claude Code:
-```text
-/plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.4
-/plugin install zouj-ai-sdlc@zouj
-```
-(From a terminal: `claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.4`, then
-`claude plugin install zouj-ai-sdlc@zouj`.)
+Install the plugin once (A or B), then configure each repo that should use it.
 
-Then, in your repo, type `/zouj-ai-sdlc:setup solo` (or `team`, `strict`) as your whole prompt. It writes the core
-scaffold (missing files only), sets the repo's first profile and commits `.aiops/config.json` alone. Claude can't do
-this step for you. Type `/zouj-ai-sdlc:setup` alone to preview first. Changing a profile later is a run in your own
-terminal: `sdlc setup --profile solo|team|strict`.
+**A. Marketplace (recommended).** Installs a pinned release; Claude Code keeps it in its plugin cache.
+1. Start Claude Code anywhere and add the marketplace at a release tag:
+   ```text
+   /plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.4
+   ```
+2. Install the plugin from it:
+   ```text
+   /plugin install zouj-ai-sdlc@zouj
+   ```
+   From a terminal instead:
+   ```bash
+   claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.4
+   claude plugin install zouj-ai-sdlc@zouj
+   ```
+3. Restart Claude Code and check it's enabled: `/plugin list` shows `zouj-ai-sdlc@zouj`.
+
+**B. From a clone of the repository.** For trying a branch, contributing, or a machine without marketplace access.
+1. Clone it and check out a release tag:
+   ```bash
+   git clone https://github.com/zoujagger/zouj-ai-sdlc.git ~/src/zouj-ai-sdlc
+   git -C ~/src/zouj-ai-sdlc checkout v0.2.0-beta.4
+   ```
+2. Either load it for one session, from your project:
+   ```bash
+   cd ~/code/my-app
+   claude --plugin-dir ~/src/zouj-ai-sdlc
+   ```
+   or install it for good, using the clone as a local marketplace (in Claude Code):
+   ```text
+   /plugin marketplace add ~/src/zouj-ai-sdlc
+   /plugin install zouj-ai-sdlc@zouj
+   ```
+3. To move to a newer release later: `git -C ~/src/zouj-ai-sdlc fetch --tags && git -C ~/src/zouj-ai-sdlc checkout
+   <tag>`, then `/plugin marketplace update zouj` if you installed it from the local marketplace.
+
+**Configure a repo** (with either install). In a git repo with at least one commit, start `claude`, then:
+1. Optional: type `/zouj-ai-sdlc:setup` alone to check the prerequisites and preview every change.
+2. Type the setup command as your whole prompt, with a profile (`solo`, `team` or `strict`, table below):
+   ```text
+   /zouj-ai-sdlc:setup solo
+   ```
+   It writes the core scaffold (missing files only), sets the repo's first profile and commits `.aiops/config.json`
+   alone. Claude can't do this step for you.
+3. Review the files the reply lists, then commit them with the command it gives, for example:
+   ```text
+   ! git add -A && git commit -m "chore: adopt zouj-ai-sdlc (profile solo)"
+   ```
+4. Wire the Makefile contract if the reply lists commands for your stack. Run this in your own terminal (`sdlc where`
+   prints the full path for `<plugin>/bin/sdlc`):
+   ```bash
+   /usr/bin/python3 -I <plugin>/bin/sdlc setup --stack auto --yes
+   ```
+5. Check and start: `/zouj-ai-sdlc:status` shows the state card, then
+   `/zouj-ai-sdlc:intent "add a health endpoint"` starts your first intent.
+
+Changing a profile later is a run in your own terminal: `sdlc setup --profile solo|team|strict`.
 
 **Just looking?** Try it in a throwaway repo:
 `mkdir /tmp/sdlc-try && cd /tmp/sdlc-try && git init -q && git commit -q --allow-empty -m init`, start `claude` there
@@ -93,7 +138,7 @@ and type `/zouj-ai-sdlc:setup solo`. Commit the scaffold with the command the re
 - **Your own terminal:** `sdlc` is on PATH only inside Claude Code. `sdlc where` prints the command to run there.
 - **Without `.aiops/`:** the gates are dormant, but the safety guards are always on.
 
-**B. For a team, declaratively.** Commit this to `.claude/settings.json` (setup writes it), and Claude Code offers
+**C. For a team, declaratively.** Commit this to `.claude/settings.json` (setup writes it), and Claude Code offers
 the plugin to everyone who opens the repo:
 ```json
 {

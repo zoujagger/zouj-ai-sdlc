@@ -1172,7 +1172,7 @@ class Docs(unittest.TestCase):
         self.assertIn('claude -p "/zouj-ai-sdlc:setup solo"', arch)  # the accepted gap, under its new name
         self.assertIn("dormant", arch)
         readme = self.text("README.md")
-        install = readme.split("\n## Install", 1)[1].split("\n## ", 1)[0]
+        install = readme.split("\n## Quick start", 1)[1].split("\n## ", 1)[0]
         self.assertNotIn("Where is `<plugin>`?", install)  # `sdlc where` answers it
         for part in ("review", "maintain", "deploy", "governance", "issues"):
             self.assertIn(f"`{part}`", install, part)
