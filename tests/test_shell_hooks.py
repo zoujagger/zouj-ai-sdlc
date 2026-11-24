@@ -478,10 +478,10 @@ class ShellHooks(RepoCase):
         self.assertNotIn("bin/sdlc setup --profile", looking)
         self.assertNotIn("--force", (ROOT / "templates" / "scaffold" / "Makefile").read_text())
         # a profile that is set still changes only in the human's terminal: the docs say so
-        install_a = readme.split("**A. Guided", 1)[1].split("\n\n**B.", 1)[0]
+        install_a = readme.split("## Quick start", 1)[1].split("\n## ", 1)[0]
         quick = (ROOT / "COMMANDS-QUICK-REF.md").read_text()
         skill = (ROOT / "skills" / "setup" / "SKILL.md").read_text()
-        for name, text in (("README path A", install_a), ("quick reference", quick), ("setup skill", skill)):
+        for name, text in (("README quick start", install_a), ("quick reference", quick), ("setup skill", skill)):
             self.assertIn("own terminal", text, name)
             self.assertIn("setup --profile", text, name)
         changelog = (ROOT / "CHANGELOG.md").read_text()
@@ -559,11 +559,13 @@ class ShellHooks(RepoCase):
         ):
             self.assertIn(cmd, start, cmd)
         self.assertIn("Playbook stage", start)
-        install = readme.split("## Install", 1)[1].split("\n## ", 1)[0]
+        install = readme.split("## Quick start", 1)[1].split("\n## ", 1)[0]
         for piece in (
             "/zouj-ai-sdlc:setup",
             "/plugin marketplace add zoujagger/zouj-ai-sdlc",
             "/plugin install zouj-ai-sdlc@zouj",
+            "git clone https://github.com/zoujagger/zouj-ai-sdlc.git",
+            "--plugin-dir",
             '"extraKnownMarketplaces"',
             "**Just looking?**",
             "Official sources",
