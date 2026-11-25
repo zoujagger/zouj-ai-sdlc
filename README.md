@@ -209,7 +209,18 @@ Docs: [install](docs/install.md) · [approver setup](docs/approver-setup.md) · 
 This repo dogfoods itself:
 see [`.aiops/0001-zouj-ai-sdlc-plugin/`](.aiops/0001-zouj-ai-sdlc-plugin/).
 
-## License
+## License and copyright
+Copyright (c) 2026 Ulrich-Jagger Z.O. This copyright covers the plugin's own code and documentation, not any
+third-party component.
+
 From 0.2.0, zouj-ai-sdlc is distributed under the GNU Affero General Public License v3.0 or later
 (AGPL-3.0-or-later): see [LICENSE](LICENSE). Releases up to and including 0.2.0-beta.4 were published under the MIT
 License and remain available under those terms.
+
+- **No bundled third-party code.** The engine uses only the Python standard library; tools the plugin calls (`git`,
+  `make`, `python3`, `gh`, Claude Code) are installed separately under their own licenses.
+- **References, not copies.** The workflow is modeled on Anthropic's *AI-Native SDLC Playbook*, and the skills
+  follow the Superpowers style; neither one's text is included here. Claude and Anthropic are trademarks of
+  Anthropic, PBC; this project isn't affiliated with or endorsed by Anthropic.
+- **Scaffolded files** that `sdlc init` and `sdlc setup` write into a project come from `templates/` and carry no
+  license or copyright header.

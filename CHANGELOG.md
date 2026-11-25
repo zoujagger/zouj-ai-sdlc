@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Added
+- **Copyright notice:** the README's `## License and copyright` section names the copyright holder (Ulrich-Jagger
+  Z.O), states that no third-party code is bundled, that the AI-Native SDLC Playbook and the Superpowers style are
+  referenced, not copied, and that scaffolded files carry no license header.
+
 ## [0.2.0] - 2026-11-25
 
 The first release after the 0.2.0 alphas and betas. The playbook workflow, the gates, the guards and what CI audits
