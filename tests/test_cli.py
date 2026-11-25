@@ -1260,6 +1260,30 @@ class Docs(unittest.TestCase):
         ]
         self.assertEqual(found, [], found)
 
+    def test_framework_positioning(self):
+        """0019 AC-1/AC-2: the project is stated as an AI-native software engineering framework implemented as a Claude
+        Code plugin, with no overclaiming, and the README's engineering practices have a reference section."""
+        phrase = "AI-native software engineering framework"
+        manifest = json.loads(self.text(".claude-plugin/plugin.json"))["description"]
+        market = json.loads(self.text(".claude-plugin/marketplace.json"))["plugins"][0]["description"]
+        for text in (manifest, market):
+            self.assertIn(phrase, text)
+            for word in ("orchestration", "guarantee", "sandbox"):
+                self.assertNotIn(word, text.lower(), word)
+        self.assertIn("an AI-native software engineering framework implemented as a Claude Code plugin", self.text("CLAUDE.md"))
+        practices = self.text("docs/sdlc.md").split("\n## Engineering practices\n", 1)[1].split("\n## ", 1)[0]
+        for piece in (
+            "Specification-driven development",
+            "TDD workflows",
+            "Small planned steps",
+            "Continuous validation",
+            "Fresh-context review",
+            "A human at every gate",
+            "enforcement.md",
+        ):
+            self.assertIn(piece, practices, piece)
+        self.assertIn("docs/sdlc.md#engineering-practices", self.text("README.md"))
+
     def test_changelog_has_the_release(self):
         """0007 AC-19: the release section names both intents, and every pin in the shipped docs matches plugin.json."""
         import re
