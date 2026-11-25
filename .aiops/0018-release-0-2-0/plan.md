@@ -31,7 +31,7 @@ and `test_version_matches_changelog` (`tests/test_shell_hooks.py:601`). The 0011
 search everything newer than their release, so they hold after the release.
 
 ## Steps
-- [ ] **S1**: Bump the release to 0.2.0 under AGPL-3.0-or-later.
+- [x] **S1**: Bump the release to 0.2.0 under AGPL-3.0-or-later.
   - **Files:**
     - `tests/test_shell_hooks.py` (modify): `test_version_matches_changelog` expects `0.2.0` (AC-1).
     - `tests/test_cli.py` (modify): `test_changelog_has_the_release` expects `0.2.0`, `plugin.json` `license`
@@ -49,7 +49,7 @@ search everything newer than their release, so they hold after the release.
       equal to beta.4's (R-3).
   - **Test first:** both version tests fail (`0.2.0-beta.4` != `0.2.0`), and the license and README checks fail.
   - Covers: AC-1, AC-2, AC-3, AC-4
-- [ ] **S2**: Prove the change.
+- [x] **S2**: Prove the change.
   - **Commands:**
     - `make check`;
     - `make validate`;
@@ -80,3 +80,4 @@ search everything newer than their release, so they hold after the release.
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-25 | S2 | Results: `make check` OK (576 tests, 3 skipped) on d070606; `make validate` passed with the one existing warning (root `CLAUDE.md`); `scaffold-history.py --check` up to date; the `0.2.0` history entry equals beta.4's, the released entries equal main's, no `unreleased` key; `git diff --name-only main...HEAD` lists only S1's files and `.aiops/0018-*`. S1's red commit (e07a287) failed on the version (`0.2.0-beta.4` != `0.2.0`) and the beta banner | The verification itself; no deviation from the plan | d070606 |
