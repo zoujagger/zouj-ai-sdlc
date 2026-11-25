@@ -9,6 +9,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 - **Copyright notice:** the README's `## License and copyright` section names the copyright holder (Ulrich-Jagger
   Z.O), states that no third-party code is bundled, that the AI-Native SDLC Playbook and the Superpowers style are
   referenced, not copied, and that scaffolded files carry no license header.
+- **Licensing of contributions** (`CONTRIBUTING.md`): contributions are licensed under AGPL-3.0-or-later, and
+  contributors keep their copyright; including a contribution in a differently licensed commercial edition needs
+  the contributor's separate written agreement. A draft Individual CLA (`docs/legal/CLA.md`, not in force, pending
+  review by a French IP lawyer) and the DCO/ICLA/CCLA analysis behind it (`docs/legal/contribution-licensing.md`).
 
 ## [0.2.0] - 2026-11-25
 

@@ -23,3 +23,22 @@ You're accountable for every line you merge. Never bypass a hook: it says why it
 
 ## Commit style
 [Conventional Commits](https://www.conventionalcommits.org/), with footer `Refs: .aiops/NNNN-slug`.
+
+## Licensing of contributions
+- **Your contribution is licensed under AGPL-3.0-or-later.** By submitting a contribution (a pull request, patch or
+  other material intended for inclusion), you license it under the GNU Affero General Public License v3.0 or later,
+  the project's license (see [LICENSE](LICENSE)). Only submit work you have the right to license that way: if your
+  employer may own it, get their permission first. Mark any third-party material and name its source and license.
+- **You keep your copyright.** Contributing doesn't transfer ownership of your work to the maintainer or anyone
+  else. A transfer would only happen through a separate written assignment that you sign.
+- **A commercial edition needs your separate agreement.** The project may later also be offered under commercial
+  (proprietary) terms. The AGPL alone doesn't allow the maintainer to include your contribution in a differently
+  licensed edition: before doing so, the maintainer must obtain additional rights from you, in writing (for
+  example a contributor license agreement). Without them, your contribution stays in the AGPL edition only.
+- **Contributor License Agreement: planned, not in force.** A draft Individual CLA (a license, not an assignment;
+  you keep your copyright) is in [`docs/legal/CLA.md`](docs/legal/CLA.md), with the reasoning in
+  [`docs/legal/contribution-licensing.md`](docs/legal/contribution-licensing.md). It is under legal review and
+  **must not be signed yet**. If it is adopted, it will be announced here and in the CHANGELOG, and it will apply
+  only to contributions made after you accept it: you'd accept it once, by a comment on your first pull request,
+  before that contribution is merged. It will never apply to earlier contributions without your explicit written
+  consent.
