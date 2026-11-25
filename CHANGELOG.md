@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-25
+
+The first release after the 0.2.0 alphas and betas. The playbook workflow, the gates, the guards and what CI audits
+are unchanged since 0.2.0-beta.4; this release changes the license and the README (`.aiops/0018-release-0-2-0/`).
+
+### Changed
+- **License: AGPL-3.0-or-later.** From 0.2.0, zouj-ai-sdlc is distributed under the GNU Affero General Public
+  License v3.0 or later (`LICENSE`, PR #36; `plugin.json` declares `AGPL-3.0-or-later`). Releases up to and including
+  0.2.0-beta.4 were published under the MIT License and remain available under those terms. The files `sdlc init`
+  writes into your repo carry no license header.
+
+### Added
+- **README demo and Quick start** (PRs #33-#35): a demo GIF at the top (Claude blocked before a plan, a human opening
+  each gate, Claude running TDD), and a step-by-step Quick start with the marketplace and clone installs and the
+  team settings snippet.
+
 ## [0.2.0-beta.4] - 2026-11-21
 
 > **Beta.** The workflow, the gates and the file formats are settling, but may still change between betas; the
@@ -608,7 +624,8 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.4...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.4...v0.2.0
 [0.2.0-beta.4]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.3...v0.2.0-beta.4
 [0.2.0-beta.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [0.2.0-beta.2]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.1...v0.2.0-beta.2

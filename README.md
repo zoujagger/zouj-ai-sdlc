@@ -1,7 +1,7 @@
 # zouj-ai-sdlc
 
-> **Status: beta (0.2.0-beta.4).** The workflow, gates and guards are settling but may still change between betas;
-> don't rely on it for production governance yet. Feedback welcome.
+> **Status: 0.2.0.** The gates, the guards and the artifact formats are stable within 0.2.x; the
+> [CHANGELOG](CHANGELOG.md) names every change. Feedback welcome.
 
 <p align="center"><img src="docs/demo/demo.gif" alt="Claude blocked before a plan, a human approves each gate, Claude runs TDD" width="900"></p>
 
@@ -54,7 +54,7 @@ Install the plugin once (A or B), then configure each repo that should use it.
 **A. Marketplace (recommended).** Installs a pinned release; Claude Code keeps it in its plugin cache.
 1. Start Claude Code anywhere and add the marketplace at a release tag:
    ```text
-   /plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.4
+   /plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0
    ```
 2. Install the plugin from it:
    ```text
@@ -62,7 +62,7 @@ Install the plugin once (A or B), then configure each repo that should use it.
    ```
    From a terminal instead:
    ```bash
-   claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0-beta.4
+   claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0
    claude plugin install zouj-ai-sdlc@zouj
    ```
 3. Restart Claude Code and check it's enabled: `/plugin list` shows `zouj-ai-sdlc@zouj`.
@@ -71,7 +71,7 @@ Install the plugin once (A or B), then configure each repo that should use it.
 1. Clone it and check out a release tag:
    ```bash
    git clone https://github.com/zoujagger/zouj-ai-sdlc.git ~/src/zouj-ai-sdlc
-   git -C ~/src/zouj-ai-sdlc checkout v0.2.0-beta.4
+   git -C ~/src/zouj-ai-sdlc checkout v0.2.0
    ```
 2. Either load it for one session, from your project:
    ```bash
@@ -143,7 +143,7 @@ the plugin to everyone who opens the repo:
 ```json
 {
   "extraKnownMarketplaces": {
-    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0-beta.4" } }
+    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0" } }
   },
   "enabledPlugins": { "zouj-ai-sdlc@zouj": true }
 }
@@ -208,3 +208,8 @@ Docs: [install](docs/install.md) · [approver setup](docs/approver-setup.md) · 
 [roadmap](docs/roadmap.md) · [worked example](docs/examples/0001-csv-export/).
 This repo dogfoods itself:
 see [`.aiops/0001-zouj-ai-sdlc-plugin/`](.aiops/0001-zouj-ai-sdlc-plugin/).
+
+## License
+From 0.2.0, zouj-ai-sdlc is distributed under the GNU Affero General Public License v3.0 or later
+(AGPL-3.0-or-later): see [LICENSE](LICENSE). Releases up to and including 0.2.0-beta.4 were published under the MIT
+License and remain available under those terms.
