@@ -24,6 +24,29 @@ onto the plugin's five enforced states plus optional Deploy and Maintain skills 
 - Every production incident becomes a regression eval (`evals/`).
 - Parallelism: at most 2-3 sessions in separate worktrees (`sdlc-worktree`).
 
+## Engineering practices
+The README names these practices. Each one rests on a mechanism in the plugin; where the mechanism has a limit, it
+is stated.
+
+- **Specification-driven development.** Work goes intent → spec (with acceptance criteria) → plan before any code;
+  code is read-only in states 1-3, and the plan and the review must cover every spec AC (`covers_spec_acs`).
+- **TDD workflows.** `/zouj-ai-sdlc:implement` runs one plan step per implementer subagent: proof test, see it
+  fail, minimal code, refactor while green. In this repo, guard and engine changes are test-first, and
+  `/zouj-ai-sdlc:fix` locks the failing test the human approved.
+- **Small planned steps.** `plan.md` lists file-by-file `## Steps`, each one TDD cycle; changing the Steps re-closes
+  the plan gate. Scope sizing keeps specs to 3-5 acceptance criteria ([below](#keeping-the-work-reviewable)).
+- **Continuous validation.** The post-edit hook validates every artifact against `schemas/`; the Stop hook requires
+  `make check` green before work counts as done; CI (`aiops-gates`) audits every open gate.
+- **Fresh-context review.** `/zouj-ai-sdlc:review` runs the verifier, code-reviewer and security-reviewer in fresh
+  contexts, given only the intent folder and the base branch. Nothing checks how a `review.md` was produced, so
+  the human reviewing the pull request still decides.
+- **A human at every gate.** Only a human opens a gate (the typed phrase, or `sdlc approve` in their terminal) and
+  merges.
+
+**Limits.** Local hooks are a deterrent, not a sandbox ([what is enforced](enforcement.md)); the signed-approval CI
+audit is the hard guarantee for the gates. The practices borrow from XP (test-first, refactoring, small steps)
+without claiming all of it.
+
 ## Keeping the work reviewable
 - **Scope (intent 0011).** The intent interview runs a scope check: work that covers several workflows or more than 5
   outcomes is offered as a split into smaller intents before `intent.md` exists. Intents aim for 3 to 5 outcomes and

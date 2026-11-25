@@ -1,7 +1,8 @@
 # CLAUDE.md
 
-This repo is the **zouj-ai-sdlc** Claude Code plugin, and it dogfoods itself: changes go through
-`.aiops/NNNN-slug/{intent,spec,plan,review}.md` (`bin/sdlc status`). Docs: @docs/state-machine.md · @docs/architecture.md
+This repo is **zouj-ai-sdlc**, an AI-native software engineering framework implemented as a Claude Code plugin, and it
+dogfoods itself: changes go through `.aiops/NNNN-slug/{intent,spec,plan,review}.md` (`bin/sdlc status`).
+Docs: @docs/state-machine.md · @docs/architecture.md
 
 ## Layout
 `.claude-plugin/` manifests · `skills/` · `agents/` · `hooks/` (hooks.json + bash guards) · `bin/sdlc` → `lib/sdlc_engine/`

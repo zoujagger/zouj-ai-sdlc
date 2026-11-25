@@ -11,10 +11,31 @@
 **Coding agents skip steps.** They write code before anyone agreed on what to build, approve their own plans, and
 call work done when the tests are red. Instructions in a prompt ask them not to; nothing stops them.
 
-zouj-ai-sdlc is a [Claude Code](https://code.claude.com) plugin that runs your software lifecycle as a **state
-machine over Markdown artifacts versioned in Git**, modeled on Anthropic's *AI-Native SDLC Playbook*. Work starts
-from an intent, every state commits an artifact the next one reads, and **humans decide at every gate**. Hooks
-enforce those gates instead of relying on the model's good behaviour.
+zouj-ai-sdlc is an AI-native software engineering framework, currently implemented as a
+[Claude Code](https://code.claude.com) plugin, that brings structure, discipline, and verifiable controls to
+AI-assisted software development.
+
+It orchestrates the software development lifecycle through a deterministic state machine backed by Markdown
+artifacts versioned in Git. Each stage builds on validated outputs from the previous one, while human approval gates
+control critical transitions. Hooks enforce workflow constraints and provide guardrails that help agents follow the
+defined engineering process, rather than relying solely on prompt instructions or model compliance.
+
+Combining Specification Driven Development (SDD), TDD workflows, small planned steps, continuous validation, and
+fresh-context review, zouj-ai-sdlc aims to make AI-assisted software development more predictable, traceable, and
+auditable.
+
+- **Category:** an AI-native software engineering framework.
+- **Current implementation:** a Claude Code plugin (skills, agents and hooks) around the `sdlc` engine (Python,
+  stdlib only). Claude Code is the only execution environment supported today.
+- **Core mechanism:** a deterministic state machine whose state is derived on every call from Markdown artifacts and
+  Git, never stored.
+- **Engineering practices:** specification-driven development; a test-first step for each planned change (proof
+  test, see it fail, code, green); `sdlc validate` on every artifact edit and `make check` before work counts as
+  done; a review skill that runs fresh-context reviewer agents; and a human in the loop at every gate
+  ([details](docs/sdlc.md#engineering-practices)).
+- **Workflow model:** Anthropic's *AI-Native SDLC Playbook* ([playbook mapping](docs/sdlc.md)).
+- **Objective:** more predictable, traceable and auditable AI-assisted development; the local hooks are a deterrent,
+  not a sandbox, and the signed-approval CI audit is the hard guarantee ([what is enforced](docs/enforcement.md)).
 
 ```mermaid
 flowchart TD
