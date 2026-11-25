@@ -1,6 +1,6 @@
 # zouj-ai-sdlc
 
-> **Status: 0.2.0.** The gates, the guards and the artifact formats are stable within 0.2.x; the
+> **Status: 0.2.1.** The gates, the guards and the artifact formats are stable within 0.2.x; the
 > [CHANGELOG](CHANGELOG.md) names every change. Feedback welcome.
 
 <p align="center"><img src="docs/demo/demo.gif" alt="Claude blocked before a plan, a human approves each gate, Claude runs TDD" width="900"></p>
@@ -75,7 +75,7 @@ Install the plugin once (A or B), then configure each repo that should use it.
 **A. Marketplace (recommended).** Installs a pinned release; Claude Code keeps it in its plugin cache.
 1. Start Claude Code anywhere and add the marketplace at a release tag:
    ```text
-   /plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0
+   /plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.1
    ```
 2. Install the plugin from it:
    ```text
@@ -83,7 +83,7 @@ Install the plugin once (A or B), then configure each repo that should use it.
    ```
    From a terminal instead:
    ```bash
-   claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.0
+   claude plugin marketplace add zoujagger/zouj-ai-sdlc@v0.2.1
    claude plugin install zouj-ai-sdlc@zouj
    ```
 3. Restart Claude Code and check it's enabled: `/plugin list` shows `zouj-ai-sdlc@zouj`.
@@ -92,7 +92,7 @@ Install the plugin once (A or B), then configure each repo that should use it.
 1. Clone it and check out a release tag:
    ```bash
    git clone https://github.com/zoujagger/zouj-ai-sdlc.git ~/src/zouj-ai-sdlc
-   git -C ~/src/zouj-ai-sdlc checkout v0.2.0
+   git -C ~/src/zouj-ai-sdlc checkout v0.2.1
    ```
 2. Either load it for one session, from your project:
    ```bash
@@ -164,7 +164,7 @@ the plugin to everyone who opens the repo:
 ```json
 {
   "extraKnownMarketplaces": {
-    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.0" } }
+    "zouj": { "source": { "source": "github", "repo": "zoujagger/zouj-ai-sdlc", "ref": "v0.2.1" } }
   },
   "enabledPlugins": { "zouj-ai-sdlc@zouj": true }
 }
