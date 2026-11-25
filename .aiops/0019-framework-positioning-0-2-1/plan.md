@@ -30,7 +30,7 @@ Code reused: `test_changelog_has_the_release` (`tests/test_cli.py:1263`), `test_
 (`tests/test_shell_hooks.py:601`), `scripts/scaffold-history.py`, 0018's release pattern.
 
 ## Steps
-- [ ] **S1**: State the framework positioning.
+- [x] **S1**: State the framework positioning.
   - **Files:**
     - `tests/test_cli.py` (modify): new `Docs.test_framework_positioning`: both manifest descriptions contain
       `AI-native software engineering framework` and none of `orchestration`, `guarantee`, `sandbox`; `CLAUDE.md`
@@ -44,7 +44,7 @@ Code reused: `test_changelog_has_the_release` (`tests/test_cli.py:1263`), `test_
     - `README.md` (modify): the intro and list already in the working tree, plus the practices link (R-5).
   - **Test first:** the new test fails on the manifest description.
   - Covers: AC-1, AC-2
-- [ ] **S2**: Release 0.2.1.
+- [x] **S2**: Release 0.2.1.
   - **Files:**
     - `tests/test_shell_hooks.py` (modify): `test_version_matches_changelog` expects `0.2.1`.
     - `tests/test_cli.py` (modify): `test_changelog_has_the_release` expects `0.2.1`; the newest section names
@@ -56,7 +56,7 @@ Code reused: `test_changelog_has_the_release` (`tests/test_cli.py:1263`), `test_
     - `defaults/scaffold-history.json` (regenerate): a `0.2.1` entry equal to `0.2.0`'s.
   - **Test first:** both release tests fail on the version (`0.2.0` != `0.2.1`).
   - Covers: AC-3, AC-4, AC-5
-- [ ] **S3**: Prove the change.
+- [x] **S3**: Prove the change.
   - **Commands:** `make check`; `make validate`; `python3 scripts/scaffold-history.py --check`; a JSON comparison
     (the `0.2.1` entry equals `0.2.0`'s, released entries equal main's); `git diff --name-only main...HEAD` (only
     S1-S2's files and `.aiops/0019-*`); a README link check (every relative link and anchor resolves).
@@ -84,3 +84,4 @@ Code reused: `test_changelog_has_the_release` (`tests/test_cli.py:1263`), `test_
 ## Deviation log
 | Date | Step | Deviation from plan | Reason | Commit |
 |---|---|---|---|---|
+| 2026-11-25 | S3 | Results: `make check` OK (577 tests, 3 skipped) on 3490821; `make validate` passed with the one existing warning (root `CLAUDE.md`); `scaffold-history.py --check` up to date; the `0.2.1` entry equals `0.2.0`'s and every entry on `origin/main` is unchanged, no `unreleased` key; every README relative link and anchor resolves; `git diff --name-only origin/main...HEAD` lists only S1-S2's files and `.aiops/0019-*`. Red commits: 7f3f31a (positioning test fails on the manifest description), f439e8a (both fail `'0.2.0' != '0.2.1'`). The comparison base is `origin/main`: the local `main` ref is behind it | The verification itself; no deviation from the plan | 3490821 |
