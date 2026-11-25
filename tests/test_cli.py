@@ -1234,14 +1234,17 @@ class Docs(unittest.TestCase):
         self.assertNotIn("**0009, one-pass", roadmap)
         self.assertNotIn("**0010, evals", roadmap)
 
-    def test_release_banner_is_beta(self):
-        """0008 AC-4: neither the README's status line nor the newest CHANGELOG section's banner says alpha."""
+    def test_release_banner_is_not_prerelease(self):
+        """0008 AC-4, 0018 AC-2/AC-3: neither the README's status line nor the newest CHANGELOG section's banner (if
+        any) says alpha or beta."""
         log = self.text("CHANGELOG.md")
         section = log.split("\n## [", 2)[2].split("\n## [", 1)[0]  # the newest release, after [Unreleased]
-        banner = next(ln for ln in section.splitlines() if ln.startswith(">"))
-        self.assertNotIn("alpha", banner.lower())
+        for line in (ln for ln in section.splitlines() if ln.startswith(">")):
+            self.assertNotIn("alpha", line.lower())
+            self.assertNotIn("beta", line.lower())
         status = next(ln for ln in self.text("README.md").splitlines() if ln.startswith("> **Status"))
         self.assertNotIn("alpha", status.lower())
+        self.assertNotIn("beta", status.lower())
 
     def test_no_shipped_file_names_alpha_4(self):
         """0008 AC-2: the unreleased alpha (built before beta.1) is named by no tracked file outside .aiops/ and
@@ -1262,10 +1265,16 @@ class Docs(unittest.TestCase):
         import re
 
         version = json.loads(self.text(".claude-plugin/plugin.json"))["version"]
-        self.assertEqual(version, "0.2.0-beta.4")  # 0017: 0016 the intent skill
+        self.assertEqual(version, "0.2.0")  # 0018: the AGPL license, the README Quick start
+        manifest = json.loads(self.text(".claude-plugin/plugin.json"))
+        self.assertEqual(manifest["license"], "AGPL-3.0-or-later")  # the LICENSE file since PR #36
+        self.assertIn(version, json.loads(self.text("defaults/scaffold-history.json")))
         log = self.text("CHANGELOG.md")
         section = log.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
-        self.assertIn(".aiops/0016-intent-skill-refinements/", section)
+        for piece in ("AGPL-3.0-or-later", "MIT", "Quick start"):
+            self.assertIn(piece, section, piece)
+        beta4 = log.split("## [0.2.0-beta.4]", 1)[1].split("\n## [", 1)[0]  # 0017's release keeps its checks
+        self.assertIn(".aiops/0016-intent-skill-refinements/", beta4)
         beta3 = log.split("## [0.2.0-beta.3]", 1)[1].split("\n## [", 1)[0]  # 0015's release keeps its checks
         for piece in (
             ".aiops/0011-scope-sizing/",
@@ -1296,8 +1305,14 @@ class Docs(unittest.TestCase):
         # collects the next entries (0011), and the section checks above prove what moved into the release.
         self.assertIn(f"[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v{version}...HEAD", log)
         readme = self.text("README.md")
-        self.assertEqual(set(re.findall(r"0\.2\.0-(?:alpha|beta|rc)\.\d+", readme.split("\n## Lifecycle", 1)[0])), {version})
+        top = readme.split("\n## Lifecycle", 1)[0]
+        self.assertEqual(re.findall(r"0\.2\.0-(?:alpha|beta|rc)\.\d+", top), [])  # 0018: no pre-release is current
         self.assertEqual(readme.count(f"@v{version}"), 2)  # both marketplace commands
+        self.assertIn(f"checkout v{version}\n", readme)
+        self.assertIn(f'"ref": "v{version}"', readme)
+        license_ = readme.split("\n## License", 1)[1].split("\n## ", 1)[0]
+        for piece in ("AGPL-3.0-or-later", "MIT", "LICENSE"):
+            self.assertIn(piece, license_, piece)
         self.assertIn(f'"ref": "v{version}"', readme)
         history = json.loads(self.text("defaults/scaffold-history.json"))
         self.assertIn(version, history)
