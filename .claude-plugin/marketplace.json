@@ -6,7 +6,7 @@
     {
       "name": "zouj-ai-sdlc",
       "source": "./",
-      "description": "AI-native SDLC state machine with human-only gates (intent → spec → plan → implement → review)."
+      "description": "AI-native software engineering framework: a Git-backed SDLC state machine with human approval gates (intent → spec → plan → implement → review)."
     }
   ]
 }

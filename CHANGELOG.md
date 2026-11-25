@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-25
+
+Positions zouj-ai-sdlc as an AI-native software engineering framework, currently implemented as a Claude Code plugin
+(`.aiops/0019-framework-positioning-0-2-1/`), and adds the copyright and contribution-licensing docs. Wording and
+docs only: the gates, the guards and what CI audits are unchanged.
+
+### Changed
+- **Positioning: an AI-native software engineering framework, currently implemented as a Claude Code plugin.** The
+  README intro and a short list separate the category, the current implementation (Claude Code is the only supported
+  environment), the core mechanism, the engineering practices and the limits (hooks are a deterrent, not a
+  sandbox). The `plugin.json` and `marketplace.json` descriptions and `CLAUDE.md`'s opening sentence match, and
+  `docs/sdlc.md` gains an `## Engineering practices` section tying each practice to its mechanism. The plugin id,
+  command prefix, skills and hooks are unchanged.
+
 ### Added
 - **Copyright notice:** the README's `## License and copyright` section names the copyright holder (Ulrich-Jagger
   Z.O), states that no third-party code is bundled, that the AI-Native SDLC Playbook and the Superpowers style are
@@ -633,7 +647,8 @@ First release as a Claude Code plugin. Earlier history is the `ai-native-sdlc-te
 - `scripts/bootstrap.sh`, `new-intent.sh`, `doctor.sh`, `validate-template.sh` and `run-evals.py` (replaced by `sdlc init`,
   `sdlc new`, `sdlc doctor`, `make check` and `claude plugin eval`). The template-only workflows have moved to the scaffold.
 
-[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.4...v0.2.0
 [0.2.0-beta.4]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.3...v0.2.0-beta.4
 [0.2.0-beta.3]: https://github.com/zoujagger/zouj-ai-sdlc/compare/v0.2.0-beta.2...v0.2.0-beta.3

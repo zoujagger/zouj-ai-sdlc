@@ -602,7 +602,7 @@ class ShellHooks(RepoCase):
         import re
 
         version = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
-        self.assertEqual(version, "0.2.0")  # the AGPL license, the README Quick start (0018)
+        self.assertEqual(version, "0.2.1")  # the framework positioning (0019)
         log = (ROOT / "CHANGELOG.md").read_text()
         released = re.findall(r"^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]", log, re.M)
         self.assertEqual(released[0], version, "the newest CHANGELOG release must match plugin.json")

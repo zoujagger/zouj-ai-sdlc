@@ -1,7 +1,7 @@
 {
   "name": "zouj-ai-sdlc",
-  "version": "0.2.0",
-  "description": "Agentic SDLC orchestration modeled on Anthropic's AI-Native SDLC Playbook: a 5-state machine (intent → spec → read-only plan → autonomous TDD → review) over Git-versioned Markdown artifacts, with human-only gates enforced by hooks.",
+  "version": "0.2.1",
+  "description": "AI-native software engineering framework, implemented as a Claude Code plugin: a deterministic 5-state machine (intent → spec → read-only plan → TDD → review) over Git-versioned Markdown artifacts, with human approval gates and hook-enforced guardrails. Modeled on Anthropic's AI-Native SDLC Playbook.",
   "author": {
     "name": "zoujagger"
   },
