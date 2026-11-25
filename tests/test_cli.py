@@ -1289,14 +1289,17 @@ class Docs(unittest.TestCase):
         import re
 
         version = json.loads(self.text(".claude-plugin/plugin.json"))["version"]
-        self.assertEqual(version, "0.2.0")  # 0018: the AGPL license, the README Quick start
+        self.assertEqual(version, "0.2.1")  # 0019: the framework positioning, copyright, contribution licensing
         manifest = json.loads(self.text(".claude-plugin/plugin.json"))
         self.assertEqual(manifest["license"], "AGPL-3.0-or-later")  # the LICENSE file since PR #36
         self.assertIn(version, json.loads(self.text("defaults/scaffold-history.json")))
         log = self.text("CHANGELOG.md")
         section = log.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
-        for piece in ("AGPL-3.0-or-later", "MIT", "Quick start"):
+        for piece in ("AI-native software engineering framework", "Copyright", "CLA"):
             self.assertIn(piece, section, piece)
+        v020 = log.split("## [0.2.0]", 1)[1].split("\n## [", 1)[0]  # 0018's release keeps its checks
+        for piece in ("AGPL-3.0-or-later", "MIT", "Quick start"):
+            self.assertIn(piece, v020, piece)
         beta4 = log.split("## [0.2.0-beta.4]", 1)[1].split("\n## [", 1)[0]  # 0017's release keeps its checks
         self.assertIn(".aiops/0016-intent-skill-refinements/", beta4)
         beta3 = log.split("## [0.2.0-beta.3]", 1)[1].split("\n## [", 1)[0]  # 0015's release keeps its checks
